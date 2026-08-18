@@ -21,6 +21,82 @@ const MICRO_ACTION_KEYS = Object.freeze({
   submit: "ACT12"
 });
 const RENDERER_ACTIONS = new Set(["pin", "new"]);
+const PIN_ACTION_LABELS = Object.freeze([
+  "Pin chat",
+  "Unpin chat",
+  "置顶聊天",
+  "取消置顶聊天",
+  "釘選聊天",
+  "取消釘選聊天"
+]);
+const NEW_ACTION_LABELS = Object.freeze([
+  "New task",
+  "New chat",
+  "New conversation",
+  "新对话",
+  "新對話",
+  "新建任务",
+  "新建聊天",
+  "新增任務",
+  "新增聊天"
+]);
+const STEER_ACTION_LABELS = Object.freeze([
+  "Steer",
+  "调整方向",
+  "調整方向",
+  "引導"
+]);
+
+export function rendererActionExpression(action) {
+  return `(() => {
+    const action = ${JSON.stringify(action)};
+    const visible = (element) => element && element.offsetParent !== null;
+    let target = null;
+    if (action === "pin") {
+      const active = document.querySelector(
+        "[data-app-action-sidebar-thread-active=true]"
+      ) ?? document.querySelector(
+        "[data-app-action-sidebar-thread-id][aria-current=page]"
+      );
+      const labels = new Set(${JSON.stringify(PIN_ACTION_LABELS)});
+      target = active && [...active.querySelectorAll("button")].find(
+        (button) => visible(button) && labels.has(button.getAttribute("aria-label"))
+      );
+    } else if (action === "new") {
+      const labels = new Set(${JSON.stringify(NEW_ACTION_LABELS)});
+      const buttons = [...document.querySelectorAll("button")].filter(visible);
+      target = buttons.find((button) => [
+        button.getAttribute("aria-label"),
+        button.getAttribute("title"),
+        (button.innerText || "").trim()
+      ].some((label) => labels.has(label)));
+    }
+    if (!target) return false;
+    target.click();
+    return true;
+  })()`;
+}
+
+export function composerSteerExpression() {
+  return `(() => {
+    const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"]')]
+      .find((element) => element.offsetParent !== null);
+    if (!editor) throw new Error("Codex composer is not available");
+    editor.focus();
+    const labels = new Set(${JSON.stringify(STEER_ACTION_LABELS)});
+    const steer = [...document.querySelectorAll('button')]
+      .find((element) =>
+        element.offsetParent !== null && [
+          element.getAttribute("aria-label"),
+          element.getAttribute("title"),
+          (element.innerText || "").trim()
+        ].some((label) => labels.has(label))
+      );
+    if (!steer) return false;
+    steer.click();
+    return true;
+  })()`;
+}
 
 const ENABLE_EXPRESSION = `(async () => {
   const gateName = "3207467860";
@@ -367,53 +443,14 @@ export class CodexCdpClient {
 
   async dispatchRendererAction(action) {
     await this.connect();
-    const invoked = await this.evaluate(`(() => {
-      const action = ${JSON.stringify(action)};
-      const visible = (element) => element && element.offsetParent !== null;
-      let target = null;
-      if (action === "pin") {
-        const active = document.querySelector(
-          "[data-app-action-sidebar-thread-active=true]"
-        ) ?? document.querySelector(
-          "[data-app-action-sidebar-thread-id][aria-current=page]"
-        );
-        target = active && [...active.querySelectorAll("button")].find(
-          (button) => visible(button) && ["Pin chat", "Unpin chat"].includes(
-            button.getAttribute("aria-label")
-          )
-        );
-      } else if (action === "new") {
-        const buttons = [...document.querySelectorAll("button")].filter(visible);
-        target = buttons.find(
-          (button) => button.getAttribute("aria-label") === "New chat"
-        ) ?? buttons.find(
-          (button) => (button.innerText || "").trim() === "New chat"
-        );
-      }
-      if (!target) return false;
-      target.click();
-      return true;
-    })()`);
+    const invoked = await this.evaluate(rendererActionExpression(action));
     if (!invoked) throw new Error(`Codex ${action} action is not available`);
     return true;
   }
 
   async dispatchComposerSteer() {
     await this.connect();
-    const clicked = await this.evaluate(`(() => {
-      const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"]')]
-        .find((element) => element.offsetParent !== null);
-      if (!editor) throw new Error("Codex composer is not available");
-      editor.focus();
-      const steer = [...document.querySelectorAll('button')]
-        .find((element) =>
-          element.offsetParent !== null &&
-          element.getAttribute("aria-label") === "Steer"
-        );
-      if (!steer) return false;
-      steer.click();
-      return true;
-    })()`);
+    const clicked = await this.evaluate(composerSteerExpression());
     if (!clicked) throw new Error("Codex Steer action is not available");
   }
 

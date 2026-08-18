@@ -1,121 +1,105 @@
 # openCodexMicro
 
-**把 Ulanzi D200 变成 Codex Micro，再加上足以完整操控 Codex Desktop 的常用按键。**
+**通过 Ulanzi Studio，用 Ulanzi D200 操控 Codex Desktop。**
 
 [English](README.md)
 
 ![Ulanzi D200 上的 openCodexMicro](docs/images/codex-keyboard-hero.png)
 
-openCodexMicro 为 Codex Desktop 提供一块专用硬件控制面板：直接查看最近任务的运行状态，一键切换任务，并把最高频的 Codex 操作放到手边。
+openCodexMicro 通过本机回环 Bridge 暴露 Codex 的实时 Micro 状态，再由原生
+Ulanzi Studio 插件显示最近任务、精确切换任务，并提供 Fast、Usage、Pin、New、
+Fork、Steer、Mic 和 Submit 操作。
 
 ## 实现的功能
 
 | 功能 | 行为 |
 | --- | --- |
-| 五个实时任务键 | 合并本机与 Codex 管理的 SSH 任务，按 Most Recent 排序并显示空闲、运行、完成、等待输入/审批或错误 |
-| 一键切换任务 | 打开实体按键当前显示的准确任务 |
-| Codex 常用控制 | Fast、Pin、New、Fork、Steer、Mic 和 Submit |
-| Usage 显示 | 展示剩余周额度并自动刷新 |
-| 时钟与 Focus | 保留 D200 固件时钟，按下可聚焦 Codex |
-| Renderer 原生集成 | 直接使用 Codex Micro store 的本机/SSH 排序、状态、选中态和路由 |
-| 响应式显示 | 只传输发生变化的键，并始终优先处理实体输入 |
-| HID 恢复 | daemon 启动或 D200 重连后，先恢复可用缓存，再全量刷新所有按键 |
+| 五个实时任务 Action | 展示 Codex Most Recent 任务及空闲、运行、完成、等待处理或错误状态 |
+| 精确任务切换 | 通过 Codex 自己的 Micro event bus 打开按键显示的任务 |
+| Codex 常用控制 | Fast、Usage、Pin、New、Fork、Steer、Mic 和 Submit |
+| Usage 显示 | 在按键上动态绘制剩余额度，点击后回到 Codex 应用 |
+| Ulanzi Studio 集成 | 由 Ulanzi Studio 独占设备并管理实体键位 |
+| 仅本机通信 | CDP 与 Bridge API 都只绑定回环地址 |
 
-![openCodexMicro 平面键位示意图](docs/images/open-codex-micro-layout.png)
+这是由 Ulanzi 维护、通过 CDP 与 Bridge API 对接 Codex Desktop 的插件项目；
+它不是 OpenAI 官方集成，也不代表 OpenAI 的背书或支持。
 
-![桌面环境中的 openCodexMicro](docs/images/codex-keyboard-workspace.png)
-
-这是非官方项目，目前支持 **macOS、Codex Desktop 和 Ulanzi D200**。
-整个项目由 Codex 纯 vibe coding 完成。
+Ulanzi 的实现与维护范围仅限
+`integration/com.ulanzi.codexmicro.ulanziPlugin/` 插件目录。插件只消费现有
+本机 Bridge 暴露的状态与操作接口；Ulanzi 没有参与 CDP 或 Codex CDP 实现的
+设计、规范制定、开发或维护。完整责任边界见[改动与责任声明](NOTICE.md)。
 
 ## 安装
 
 要求：
 
-- 已安装 Codex Desktop 的 macOS
-- 通过 USB 连接的 Ulanzi D200
-- Node.js 20+
-- 支持 `venv` 的 Python 3.11+
+- 已安装 Codex Desktop 与 Ulanzi Studio 的 macOS；
+- 已在 Ulanzi Studio 中连接 Ulanzi D200；
+- Node.js 20 或更高版本。
 
-克隆仓库后运行：
+克隆仓库后只需完成以下两步。
+
+### 1. Setup Codex Bridge.app
 
 ```bash
 npm install
 npm run setup
 ```
 
-安装器会创建独立 Python 环境、安装 `hidapi` 和 Pillow、注册 D200 与 bridge
-sidecar 两个用户级 LaunchAgent，并把 **Codex Bridge.app** 安装到
-`~/Applications`。已有 CodexKeyboard 安装会自动迁移；旧的自定义主题会先复制，再清理旧运行目录。
+该命令构建本机 Bridge sidecar、注册用户级 LaunchAgent，并把
+`Codex Bridge.app` 安装到 `~/Applications`。
 
-要使用最快的直接跳转，先完全退出 Codex，再双击
-`~/Applications/Codex Bridge.app`。它会给真实 Codex 可执行文件增加仅绑定
-回环地址的 CDP 参数。任务键随后复用 Codex 官方 Micro event bus，包括 Codex
-保存的 SSH host/project 路由；官方 Micro 设置页会显示模拟设备已连接。Steer
-直接触发 Codex composer 的真实操作，不再模拟 Enter 组合键；Fast、Fork、
-Submit 和 Mic 发送官方 Micro 事件，Pin 和 New 调用对应的 renderer 控件。
-Bridge 模式中若 HTTP 响应不确定，不会再用 AppleScript 重放动作。
+### 2. 安装 Ulanzi Studio 插件
 
-Bridge 每 500ms 更新一次 renderer 状态缓存。JS 资源发现和 React Fiber 遍历
-只在每个 renderer 生命周期首次执行；后续快照直接读取缓存的 Micro store 引用。
-因此 `client-new-thread:<uuid>` 临时任务也会保留，直到 Codex 将它晋升为正式 UUID。
+```bash
+npm run install:plugin
+```
 
-如果 Codex 是普通方式启动，openCodexMicro 会自动启用 local-only 的
-app-server/rollout 回退，只显示本机任务；默认不再建立 SSH 连接或读取远端
-SQLite。旧的本机/SSH monitor 仅通过 `--native-state` 显式诊断模式保留。
+仓库已经包含构建完成的插件。该命令只把
+`com.ulanzi.codexmicro.ulanziPlugin` 安装到 Ulanzi Studio 的本地插件目录，
+不会在安装时重新构建。安装后重启 Ulanzi Studio。
 
-Bridge 不可用并进入 local-only 模式后，这些功能键才使用 Codex 配置的快捷键。
-Mic 对应 `realtimeVoice.toggleMicrophoneMute`；安装器会在缺失时补充
-`Command+Alt+M`，已有用户自定义不会被覆盖。Steer 不做快捷键回退，因为
-Enter 组合键可能变成普通发送或排队。
+完全退出 Codex，再打开 `~/Applications/Codex Bridge.app`。可用以下命令确认连接：
 
-权限、日志、诊断、更新、迁移和卸载方法见 [安装与运行](docs/setup-and-operations.md)。
+```bash
+curl http://127.0.0.1:17373/health
+curl http://127.0.0.1:17373/state
+```
+
+最后在 Ulanzi Studio 中把 Codex Micro actions 拖到需要的按键。安装路径、诊断、
+更新与卸载方法见 [安装与运行](docs/setup-and-operations.md)。
 
 ## 配置
 
-openCodexMicro 直接跟随 Codex Desktop 的快捷键，不维护第二套快捷键系统。
+实体布局完全由 Ulanzi Studio 管理。插件提供 Codex Task 1–5、Fast、Usage、Pin、
+New、Fork、Steer、Mic 和 Submit，不需要额外的设备 daemon 或快捷键映射。
 
-快捷键覆盖：
+Action 行为和布局建议见 [配置详解](docs/configuration.md)，版本说明见
+[CHANGELOG.md](CHANGELOG.md)。
 
-```text
-~/.codex/keybindings.json
-```
-
-Submit 行为：
-
-```text
-~/.codex/config.toml
-```
-
-主题覆盖：
-
-```text
-~/Library/Application Support/openCodexMicro/icon-theme.json
-```
-
-快捷键和 Desktop 设置会在按键时读取，通常无需重启驱动；主题变化需要刷新设备画面。
-
-支持的 command、快捷键格式、Submit/Steer 行为、实体键位调整和主题选项见 [配置详解](docs/configuration.md)。
-
-版本说明见 [CHANGELOG.md](CHANGELOG.md)。
-
-仓库还包含三个可复用的 Codex skill：
+仓库包含两个可复用的 Codex skill：
 
 | Skill | 用途 |
 | --- | --- |
-| [`install-open-codex-micro`](skills/install-open-codex-micro/SKILL.md) | 安装或更新，确认是否修改快捷键，提示权限，并选择是否启动 daemon |
-| [`customize-open-codex-micro-icons`](skills/customize-open-codex-micro-icons/SKILL.md) | 替换或生成任务键和功能键图标 |
-| [`remap-open-codex-micro-keys`](skills/remap-open-codex-micro-keys/SKILL.md) | 移动现有按键或实现新的按键动作 |
+| [`setup-codex-bridge`](skills/setup-codex-bridge/SKILL.md) | 安装、更新、验证或修复 `Codex Bridge.app` 与 sidecar |
+| [`install-ulanzi-studio-plugin`](skills/install-ulanzi-studio-plugin/SKILL.md) | 把仓库中的预构建插件目录安装到 Ulanzi Studio |
+
+## LLM 与代码 Agent 安装入口
+
+LLM 和代码 Agent 在执行安装前必须先阅读 [AGENTS.md](AGENTS.md)。规定流程会先在
+Ulanzi Studio 已安装插件中检索 Codex Micro 的 manifest UUID；若未安装，使用
+`$install-ulanzi-studio-plugin` 并完成验证，再使用 `$setup-codex-bridge`；若插件
+已经安装，则不重复安装，直接使用 `$setup-codex-bridge`。
 
 ## 文档
 
 - [配置详解](docs/configuration.md)
 - [安装与运行](docs/setup-and-operations.md)
 - [架构说明](docs/architecture.md)
-- [D200 协议说明](docs/d200-standalone.md)
 - [工程约束](docs/errors.md)
 
 ## License
 
-项目采用 [MIT License](LICENSE)。第三方归属见
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+项目自有代码采用 [MIT License](LICENSE)。上游署名、实质改动、Ulanzi 维护关系、
+与 OpenAI 的独立关系及责任边界见[改动与责任声明](NOTICE.md)，运行时和构建依赖
+的许可见[第三方许可声明](THIRD_PARTY_NOTICES.md)。

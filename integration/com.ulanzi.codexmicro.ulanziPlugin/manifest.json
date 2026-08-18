@@ -1,0 +1,141 @@
+{
+  "Author": "openCodexMicro",
+  "Name": "Codex Micro",
+  "Overview": "Control Codex Desktop from Ulanzi Studio through the local openCodexMicro Bridge.",
+  "Description": "Control five live Codex task slots and the complete openCodexMicro action set: Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit.\nRequires openCodexMicro and Codex Bridge.app to be running.",
+  "Icon": "assets/icons/plugin.png",
+  "Category": "AI",
+  "CategoryIcon": "assets/icons/plugin.png",
+  "Version": "0.2.0",
+  "UUID": "com.ulanzi.ulanzistudio.codexmicro",
+  "Type": "JavaScript",
+  "CodePath": "dist/app.js",
+  "Software": {
+    "MinVersion": "3.0.0"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12.0"
+    }
+  ],
+  "Actions": [
+    {
+      "Name": "Codex Task 1",
+      "Icon": "assets/icons/task-idle.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.task1",
+      "Tooltip": "Open recent Codex task slot 1 and show its live status.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+    },
+    {
+      "Name": "Codex Task 2",
+      "Icon": "assets/icons/task-idle.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.task2",
+      "Tooltip": "Open recent Codex task slot 2 and show its live status.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+    },
+    {
+      "Name": "Codex Task 3",
+      "Icon": "assets/icons/task-idle.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.task3",
+      "Tooltip": "Open recent Codex task slot 3 and show its live status.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+    },
+    {
+      "Name": "Codex Task 4",
+      "Icon": "assets/icons/task-idle.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.task4",
+      "Tooltip": "Open recent Codex task slot 4 and show its live status.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+    },
+    {
+      "Name": "Codex Task 5",
+      "Icon": "assets/icons/task-idle.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.task5",
+      "Tooltip": "Open recent Codex task slot 5 and show its live status.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+    },
+    {
+      "Name": "Codex Fast",
+      "Icon": "assets/icons/fast.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.fast",
+      "Tooltip": "Toggle Fast mode for the active Codex task.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Fast", "Image": "assets/icons/fast.png" }]
+    },
+    {
+      "Name": "Codex Usage",
+      "Icon": "assets/icons/usage.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.usage",
+      "Tooltip": "Show the remaining Codex usage allowance and focus Codex when pressed.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Usage", "Image": "assets/icons/usage.png" }]
+    },
+    {
+      "Name": "Pin Codex Task",
+      "Icon": "assets/icons/pin.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.pin",
+      "Tooltip": "Pin or unpin the active Codex task.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Pin", "Image": "assets/icons/pin.png" }]
+    },
+    {
+      "Name": "New Codex Task",
+      "Icon": "assets/icons/new.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.new",
+      "Tooltip": "Create a new Codex task.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "New", "Image": "assets/icons/new.png" }]
+    },
+    {
+      "Name": "Fork Codex Task",
+      "Icon": "assets/icons/fork.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.fork",
+      "Tooltip": "Fork the active Codex task into a new task.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Fork", "Image": "assets/icons/fork.png" }]
+    },
+    {
+      "Name": "Steer Codex",
+      "Icon": "assets/icons/steer.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.steer",
+      "Tooltip": "Send the current composer text as steering input to the running task.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Steer", "Image": "assets/icons/steer.png" }]
+    },
+    {
+      "Name": "Codex Microphone",
+      "Icon": "assets/icons/mic.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.mic",
+      "Tooltip": "Toggle the Codex microphone action.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Microphone", "Image": "assets/icons/mic.png" }]
+    },
+    {
+      "Name": "Submit to Codex",
+      "Icon": "assets/icons/submit.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.submit",
+      "Tooltip": "Submit or queue the current Codex composer text.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Submit", "Image": "assets/icons/submit.png" }]
+    }
+  ]
+}

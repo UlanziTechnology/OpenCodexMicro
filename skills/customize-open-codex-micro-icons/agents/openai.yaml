@@ -1,4 +1,0 @@
-interface:
-  display_name: "Customize openCodexMicro Icons"
-  short_description: "Replace or generate D200 task and action icons"
-  default_prompt: "Use $customize-open-codex-micro-icons to customize my D200 icons."

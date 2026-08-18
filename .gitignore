@@ -1,11 +1,8 @@
 node_modules/
 dist/
-.venv/
-__pycache__/
-*.pyc
 .DS_Store
 *.log
 
-# Keep local icon-generation inputs and superseded variants out of releases.
-standalone/assets/generated/source/
-standalone/assets/generated/runtime/task-complete-v2.png
+# Ship the prebuilt Ulanzi Studio plugin; installation only copies this output.
+!integration/com.ulanzi.codexmicro.ulanziPlugin/dist/
+!integration/com.ulanzi.codexmicro.ulanziPlugin/dist/**

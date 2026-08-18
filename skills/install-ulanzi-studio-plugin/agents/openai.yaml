@@ -1,0 +1,4 @@
+interface:
+  display_name: "Install Ulanzi Studio Plugin"
+  short_description: "Install the prebuilt Codex Micro Ulanzi plugin"
+  default_prompt: "Use $install-ulanzi-studio-plugin to install the prebuilt Codex Micro plugin."

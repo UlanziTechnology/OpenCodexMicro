@@ -3,41 +3,26 @@ import {
   cp,
   mkdir,
   readFile,
-  readdir,
   rm,
   writeFile
 } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 const home = homedir();
 const uid = process.getuid();
 const packageMetadata = JSON.parse(await readFile(resolve("package.json"), "utf8"));
 const releaseVersion = String(packageMetadata.version);
-const startDaemon = !process.argv.includes("--no-start");
+const start = !process.argv.slice(2).includes("--no-start");
 const appRoot = join(home, "Library", "Application Support", "openCodexMicro");
 const userApplications = join(home, "Applications");
 const bridgeApp = join(userApplications, "Codex Bridge.app");
-const legacyAppRoot = join(
-  home,
-  "Library",
-  "Application Support",
-  "CodexKeyboard"
-);
-const venv = join(appRoot, "venv");
 const agentsRoot = join(home, "Library", "LaunchAgents");
-const d200Agent = join(
-  agentsRoot,
-  "io.opencodexmicro.d200.plist"
-);
 const bridgeAgent = join(
   agentsRoot,
   "io.opencodexmicro.bridge.plist"
 );
-const python = execFileSync("/usr/bin/which", ["python3"], {
-  encoding: "utf8"
-}).trim();
 const xml = (value) => String(value)
   .replaceAll("&", "&amp;")
   .replaceAll("<", "&lt;")
@@ -45,116 +30,10 @@ const xml = (value) => String(value)
   .replaceAll('"', "&quot;")
   .replaceAll("'", "&apos;");
 
-try {
-  execFileSync(python, [
-    "-c",
-    "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
-  ]);
-} catch {
-  throw new Error(
-    `openCodexMicro requires Python 3.11 or newer; found ${python}.`
-  );
-}
-
 await mkdir(appRoot, { recursive: true, mode: 0o700 });
 await chmod(appRoot, 0o700);
 await mkdir(agentsRoot, { recursive: true });
 await mkdir(userApplications, { recursive: true });
-const legacyAgents = (await readdir(agentsRoot))
-  .filter((name) => name.endsWith(".plist") && name.includes("codexkeyboard"))
-  .map((name) => join(agentsRoot, name));
-
-const userTheme = join(appRoot, "icon-theme.json");
-const legacyTheme = join(legacyAppRoot, "icon-theme.json");
-const userThemeTemplate = `${JSON.stringify({
-  overridesOnly: true,
-  surfaces: {},
-  tasks: {},
-  usage: {}
-}, null, 2)}\n`;
-
-async function validJsonObject(file) {
-  try {
-    const value = JSON.parse(await readFile(file, "utf8"));
-    return value && typeof value === "object" && !Array.isArray(value);
-  } catch {
-    return false;
-  }
-}
-
-async function ensureCodexShortcut(command, key) {
-  const path = join(home, ".codex", "keybindings.json");
-  await mkdir(dirname(path), { recursive: true });
-  let entries = [];
-  try {
-    const parsed = JSON.parse(await readFile(path, "utf8"));
-    if (!Array.isArray(parsed)) throw new Error("not an array");
-    entries = parsed;
-  } catch {
-    try {
-      const backup = `${path}.invalid-${Date.now()}.bak`;
-      await cp(path, backup);
-      console.warn(`Invalid Codex keybindings preserved at: ${backup}`);
-    } catch {
-      // No existing file needs to be retained.
-    }
-  }
-  if (entries.some((entry) => entry?.command === command)) return;
-  entries.push({ command, key });
-  await writeFile(path, `${JSON.stringify(entries, null, 2)}\n`, {
-    mode: 0o600
-  });
-  console.log(`Added Codex shortcut: ${command} → ${key}`);
-}
-
-let hasUserTheme = await validJsonObject(userTheme);
-if (!hasUserTheme) {
-  try {
-    await readFile(userTheme);
-    const backup = `${userTheme}.invalid-${Date.now()}.bak`;
-    await cp(userTheme, backup);
-    console.warn(`Invalid theme preserved at: ${backup}`);
-  } catch {
-    // No current theme exists.
-  }
-  if (await validJsonObject(legacyTheme)) {
-    await cp(legacyTheme, userTheme);
-    hasUserTheme = true;
-    console.log("Migrated the CodexKeyboard theme to openCodexMicro.");
-  }
-}
-if (!hasUserTheme) {
-  await writeFile(userTheme, userThemeTemplate, { mode: 0o600 });
-}
-await ensureCodexShortcut(
-  "realtimeVoice.toggleMicrophoneMute",
-  "Command+Alt+M"
-);
-
-try {
-  await readFile(legacyTheme);
-  await cp(legacyTheme, join(appRoot, "icon-theme.legacy-backup.json"));
-} catch {
-  // No legacy theme needs to be retained.
-}
-
-await cp(resolve("standalone/d200.py"), join(appRoot, "d200.py"));
-await cp(resolve("standalone/native_codex.py"), join(appRoot, "native_codex.py"));
-await rm(join(appRoot, "codex-recent-locator"), { force: true });
-await rm(join(appRoot, "codex-ax-locator"), { force: true });
-await rm(join(appRoot, "swift-module-cache"), { recursive: true, force: true });
-await rm(join(appRoot, "assets"), { recursive: true, force: true });
-await cp(resolve("standalone/assets"), join(appRoot, "assets"), {
-  recursive: true
-});
-await cp(
-  resolve("standalone/icon-theme.default.json"),
-  join(appRoot, "icon-theme.default.json")
-);
-await cp(
-  resolve("standalone/requirements.txt"),
-  join(appRoot, "requirements.txt")
-);
 execFileSync(process.execPath, [resolve("scripts/build-bridge.mjs")], {
   stdio: "inherit"
 });
@@ -163,6 +42,7 @@ await cp(resolve("dist/bridge.mjs"), join(appRoot, "bridge.mjs"));
 const bridgeContents = join(bridgeApp, "Contents");
 const bridgeMacOS = join(bridgeContents, "MacOS");
 const bridgeResources = join(bridgeContents, "Resources");
+const bridgeLicenses = join(bridgeResources, "licenses");
 const bridgeExecutable = join(bridgeMacOS, "Codex Bridge");
 const bridgeIcon = join(bridgeResources, "CodexBridge.icns");
 const iconset = join(appRoot, "CodexBridge.iconset");
@@ -170,7 +50,12 @@ await rm(bridgeApp, { recursive: true, force: true });
 await rm(iconset, { recursive: true, force: true });
 await mkdir(bridgeMacOS, { recursive: true });
 await mkdir(bridgeResources, { recursive: true });
+await mkdir(bridgeLicenses, { recursive: true });
 await mkdir(iconset, { recursive: true });
+for (const notice of ["LICENSE", "NOTICE.md", "THIRD_PARTY_NOTICES.md"]) {
+  await cp(resolve(notice), join(bridgeLicenses, notice));
+  await cp(resolve(notice), join(appRoot, notice));
+}
 
 const iconSource = resolve("bridge/CodexBridge.png");
 for (const [name, size] of [
@@ -277,35 +162,6 @@ execFileSync("/usr/bin/codesign", [
 ], { stdio: "ignore" });
 console.log(`Codex Bridge app installed at: ${bridgeApp}`);
 
-execFileSync(python, ["-m", "venv", venv], { stdio: "inherit" });
-execFileSync(join(venv, "bin", "pip"), [
-  "install",
-  "--disable-pip-version-check",
-  "-r",
-  join(appRoot, "requirements.txt")
-], { stdio: "inherit" });
-
-const d200Plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>io.opencodexmicro.d200</string>
-  <key>ProgramArguments</key><array>
-    <string>${xml(join(venv, "bin", "python"))}</string>
-    <string>${xml(join(appRoot, "d200.py"))}</string>
-  </array>
-  <key>EnvironmentVariables</key><dict>
-    <key>OPEN_CODEX_MICRO_OUTPUT_WRITES</key><string>1</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Background</string>
-  <key>ThrottleInterval</key><integer>2</integer>
-  <key>StandardOutPath</key><string>${xml(join(appRoot, "d200.log"))}</string>
-  <key>StandardErrorPath</key><string>${xml(join(appRoot, "d200-error.log"))}</string>
-</dict></plist>
-`;
-await writeFile(d200Agent, d200Plist, { mode: 0o644 });
-
 const bridgePlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -324,7 +180,7 @@ const bridgePlist = `<?xml version="1.0" encoding="UTF-8"?>
 `;
 await writeFile(bridgeAgent, bridgePlist, { mode: 0o644 });
 
-for (const agent of [d200Agent, bridgeAgent, ...legacyAgents]) {
+for (const agent of [bridgeAgent]) {
   try {
     execFileSync("/bin/launchctl", ["bootout", `gui/${uid}`, agent], {
       stdio: "ignore"
@@ -333,15 +189,9 @@ for (const agent of [d200Agent, bridgeAgent, ...legacyAgents]) {
     // The service may not be installed.
   }
 }
-for (const agent of legacyAgents) {
-  await rm(agent, { force: true });
-}
-await rm(legacyAppRoot, { recursive: true, force: true });
-
-if (startDaemon) {
+if (start) {
   execFileSync("/bin/launchctl", ["bootstrap", `gui/${uid}`, bridgeAgent]);
-  execFileSync("/bin/launchctl", ["bootstrap", `gui/${uid}`, d200Agent]);
-  console.log("openCodexMicro installed and started.");
+  console.log("Codex Bridge installed and started.");
 } else {
-  console.log("openCodexMicro installed; daemon start skipped.");
+  console.log("Codex Bridge installed; daemon start skipped.");
 }

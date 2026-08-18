@@ -1,4 +1,0 @@
-interface:
-  display_name: "Install openCodexMicro"
-  short_description: "Install safely, prevent duplicate daemons, and check permissions"
-  default_prompt: "Use $install-open-codex-micro to install openCodexMicro on this Mac."

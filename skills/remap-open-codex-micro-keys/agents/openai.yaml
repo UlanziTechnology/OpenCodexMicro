@@ -1,4 +1,0 @@
-interface:
-  display_name: "Remap openCodexMicro Keys"
-  short_description: "Change D200 key positions and Codex actions safely"
-  default_prompt: "Use $remap-open-codex-micro-keys to change my D200 key functions."

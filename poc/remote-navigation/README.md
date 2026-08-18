@@ -17,9 +17,6 @@ Measured against `lite-shanghai / admin / hi`:
 
 The bridge implementation lives in `src/bridge/`. It enables Codex's Micro
 gate, finds the renderer event bus, emits a connected device state, then sends
-`codex-micro-hid-event` with `local:<thread-id>`. The `local:` prefix is also
-used for SSH tasks; Codex's saved assignment performs the remote routing.
-
-Without a loopback CDP endpoint, `standalone/native_codex.py` falls back to the
-Dock Recent callback for SSH tasks. It requires an exact unique title and
-never uses mouse coordinates.
+`codex-micro-hid-event` with the displayed thread key. Codex's saved assignment
+performs local or SSH routing. The Ulanzi Studio plugin uses this Bridge path;
+the other probes remain historical comparisons only.
