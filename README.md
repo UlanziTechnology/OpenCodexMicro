@@ -33,39 +33,51 @@ did not participate in the design, specification, development, or maintenance
 of CDP or Codex's CDP implementation. See [NOTICE.md](NOTICE.md) for the full
 responsibility boundary.
 
-## Install
+## Installation
 
-Requirements:
+### Installation environment
 
-- macOS with Codex Desktop and Ulanzi Studio installed;
+- macOS 13 or later;
+- Codex Desktop;
+- Ulanzi Studio 3.0 or later;
 - Ulanzi D200 Series connected to Ulanzi Studio;
 - Node.js 20 or newer.
 
-Clone the repository, then complete these two steps.
+### 1. LLM / Agent installation
 
-### 1. Set up Codex Bridge.app
+An LLM or coding agent must follow these steps:
+
+1. Read [AGENTS.md](AGENTS.md) and inspect the installed Ulanzi Studio plugin
+   manifests under `~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/`.
+2. Treat Codex Micro as installed only when manifest UUID
+   `com.ulanzi.ulanzistudio.codexmicro` is present and its `CodePath` exists.
+3. If it is missing or invalid, load
+   [`$install-ulanzi-studio-plugin`](skills/install-ulanzi-studio-plugin/SKILL.md),
+   install the plugin, and verify its manifest and entry point.
+4. After the plugin is verified, load
+   [`$setup-codex-bridge`](skills/setup-codex-bridge/SKILL.md), install or repair
+   `Codex Bridge.app` and its sidecar, and verify the local health endpoint.
+5. Report plugin installation and Bridge connectivity separately. Do not
+   reinstall a valid plugin unless an update or repair was requested.
+
+### 2. Manual installation
 
 ```bash
+git clone https://github.com/UlanziTechnology/OpenCodexMicro.git
+cd OpenCodexMicro
 npm install
+npm run install:plugin
 npm run setup
 ```
 
-This builds the loopback Bridge sidecar, registers its user LaunchAgent, and
-installs `Codex Bridge.app` in `~/Applications`.
+Quit Ulanzi Studio before running `npm run install:plugin`. The command
+validates and atomically installs the prebuilt plugin. `npm run setup` builds
+the loopback Bridge sidecar, registers its user LaunchAgent, and installs
+`Codex Bridge.app` in `~/Applications`.
 
-### 2. Install the Ulanzi Studio plugin
-
-```bash
-npm run install:plugin
-```
-
-The repository includes the prebuilt plugin. This command only installs
-`com.ulanzi.codexmicro.ulanziPlugin` under Ulanzi Studio's local plugin
-directory; it does not rebuild during installation. Restart Ulanzi Studio
-after installation.
-
-Quit Codex and open `~/Applications/Codex Bridge.app`. The wrapper starts
-Codex with a loopback-only CDP endpoint. Confirm the connection with:
+Reopen Ulanzi Studio. Quit Codex Desktop, then open
+`~/Applications/Codex Bridge.app`; the wrapper starts Codex with a
+loopback-only CDP endpoint. Confirm the connection with:
 
 ```bash
 curl http://127.0.0.1:17373/health
@@ -83,7 +95,7 @@ actions: Codex Task 1–5, Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit.
 No separate device daemon or shortcut mapping is required.
 
 See [Configuration](docs/configuration.md) for action behavior and layout
-guidance, and [CHANGELOG.md](CHANGELOG.md) for release notes.
+guidance.
 
 The repository includes two reusable Codex skills:
 
@@ -91,15 +103,6 @@ The repository includes two reusable Codex skills:
 | --- | --- |
 | [`setup-codex-bridge`](skills/setup-codex-bridge/SKILL.md) | Install, update, verify, or repair `Codex Bridge.app` and its sidecar |
 | [`install-ulanzi-studio-plugin`](skills/install-ulanzi-studio-plugin/SKILL.md) | Install the repository's prebuilt plugin directory into Ulanzi Studio |
-
-## LLM and coding-agent setup
-
-LLMs and coding agents must read [AGENTS.md](AGENTS.md) before setup. The
-required flow first searches the installed Ulanzi Studio plugins for the Codex
-Micro manifest UUID. If it is missing, use `$install-ulanzi-studio-plugin` and
-verify the installation; then use `$setup-codex-bridge`. If the plugin is
-already installed, go directly to `$setup-codex-bridge` without reinstalling
-the plugin.
 
 ## Documentation
 

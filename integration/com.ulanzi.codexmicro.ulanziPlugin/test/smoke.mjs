@@ -1,7 +1,33 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
+
+const packageRootUrl = new URL("..", import.meta.url);
+const manifest = JSON.parse(await readFile(new URL("manifest.json", packageRootUrl)));
+assert.match(manifest.Overview, /Ulanzi D200 Series/);
+assert.match(manifest.Description, /INSTALLATION ENVIRONMENT/);
+assert.match(manifest.Description, /LLM \/ AGENT INSTALLATION/);
+assert.match(manifest.Description, /MANUAL INSTALLATION/);
+
+for (const locale of [
+  "en.json",
+  "zh_CN.json",
+  "zh_HK.json",
+  "ja_JP.json",
+  "de_DE.json",
+  "ko_KR.json",
+  "pt_PT.json",
+  "es_ES.json"
+]) {
+  const messages = JSON.parse(await readFile(new URL(locale, packageRootUrl)));
+  assert.equal(messages.Name, "Codex Micro", `${locale} must localize Name`);
+  assert.ok(messages.Overview?.length > 20, `${locale} must localize Overview`);
+  assert.match(messages.Description, /https:\/\/github\.com\/UlanziTechnology\/OpenCodexMicro/);
+  assert.match(messages.Description, /npm run install:plugin/);
+  assert.match(messages.Description, /npm run setup/);
+}
 
 const bridgeRequests = [];
 const bridge = createServer((request, response) => {

@@ -12,6 +12,16 @@ import { basename, dirname, join, resolve } from "node:path";
 const source = resolve(
   "integration/com.ulanzi.codexmicro.ulanziPlugin"
 );
+const localizationFiles = [
+  "en.json",
+  "zh_CN.json",
+  "zh_HK.json",
+  "ja_JP.json",
+  "de_DE.json",
+  "ko_KR.json",
+  "pt_PT.json",
+  "es_ES.json"
+];
 const pluginName = basename(source);
 const pluginsRoot = join(
   homedir(),
@@ -44,6 +54,14 @@ if (manifest.UUID !== "com.ulanzi.ulanzistudio.codexmicro") {
 if (!manifest.CodePath || !await exists(join(source, manifest.CodePath))) {
   throw new Error(`Plugin CodePath is missing: ${manifest.CodePath || "unset"}`);
 }
+for (const locale of localizationFiles) {
+  const messages = JSON.parse(await readFile(join(source, locale), "utf8"));
+  for (const field of ["Name", "Overview", "Description"]) {
+    if (typeof messages[field] !== "string" || !messages[field].trim()) {
+      throw new Error(`${locale} is missing localized ${field}`);
+    }
+  }
+}
 
 await mkdir(pluginsRoot, { recursive: true });
 await rm(staging, { recursive: true, force: true });
@@ -52,6 +70,7 @@ await mkdir(staging, { recursive: true });
 
 for (const relative of [
   "manifest.json",
+  ...localizationFiles,
   "assets/icons",
   "dist"
 ]) {

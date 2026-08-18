@@ -29,37 +29,50 @@ Ulanzi 的实现与维护范围仅限
 本机 Bridge 暴露的状态与操作接口；Ulanzi 没有参与 CDP 或 Codex CDP 实现的
 设计、规范制定、开发或维护。完整责任边界见[改动与责任声明](NOTICE.md)。
 
-## 安装
+## 安装说明
 
-要求：
+### 安装环境
 
-- 已安装 Codex Desktop 与 Ulanzi Studio 的 macOS；
+- macOS 13 或更高版本；
+- Codex Desktop；
+- Ulanzi Studio 3.0 或更高版本；
 - 已在 Ulanzi Studio 中连接 Ulanzi D200 Series；
 - Node.js 20 或更高版本。
 
-克隆仓库后只需完成以下两步。
+### 1. LLM / Agent 安装
 
-### 1. Setup Codex Bridge.app
+LLM 或代码 Agent 必须按以下步骤执行：
+
+1. 阅读 [AGENTS.md](AGENTS.md)，检查
+   `~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/` 下已经安装的插件
+   manifest。
+2. 仅当 manifest UUID 为 `com.ulanzi.ulanzistudio.codexmicro`，且其 `CodePath`
+   确实存在时，才判断 Codex Micro 已安装。
+3. 如果插件缺失或无效，加载
+   [`$install-ulanzi-studio-plugin`](skills/install-ulanzi-studio-plugin/SKILL.md)，
+   安装插件并验证 manifest 和入口文件。
+4. 插件验证通过后，加载
+   [`$setup-codex-bridge`](skills/setup-codex-bridge/SKILL.md)，安装或修复
+   `Codex Bridge.app` 与 sidecar，并验证本机 health 接口。
+5. 分别报告插件安装状态和 Bridge 连接状态。除非用户要求更新或修复，否则不要重复
+   安装有效插件。
+
+### 2. 手动安装
 
 ```bash
+git clone https://github.com/UlanziTechnology/OpenCodexMicro.git
+cd OpenCodexMicro
 npm install
+npm run install:plugin
 npm run setup
 ```
 
-该命令构建本机 Bridge sidecar、注册用户级 LaunchAgent，并把
-`Codex Bridge.app` 安装到 `~/Applications`。
+运行 `npm run install:plugin` 前请退出 Ulanzi Studio。该命令会校验并原子安装仓库
+中的预构建插件；`npm run setup` 会构建本机 Bridge sidecar、注册用户级
+LaunchAgent，并把 `Codex Bridge.app` 安装到 `~/Applications`。
 
-### 2. 安装 Ulanzi Studio 插件
-
-```bash
-npm run install:plugin
-```
-
-仓库已经包含构建完成的插件。该命令只把
-`com.ulanzi.codexmicro.ulanziPlugin` 安装到 Ulanzi Studio 的本地插件目录，
-不会在安装时重新构建。安装后重启 Ulanzi Studio。
-
-完全退出 Codex，再打开 `~/Applications/Codex Bridge.app`。可用以下命令确认连接：
+重新打开 Ulanzi Studio。完全退出 Codex Desktop，再打开
+`~/Applications/Codex Bridge.app`。可用以下命令确认连接：
 
 ```bash
 curl http://127.0.0.1:17373/health
@@ -74,8 +87,7 @@ curl http://127.0.0.1:17373/state
 实体布局完全由 Ulanzi Studio 管理。插件提供 Codex Task 1–5、Fast、Usage、Pin、
 New、Fork、Steer、Mic 和 Submit，不需要额外的设备 daemon 或快捷键映射。
 
-Action 行为和布局建议见 [配置详解](docs/configuration.md)，版本说明见
-[CHANGELOG.md](CHANGELOG.md)。
+Action 行为和布局建议见[配置详解](docs/configuration.md)。
 
 仓库包含两个可复用的 Codex skill：
 
@@ -83,13 +95,6 @@ Action 行为和布局建议见 [配置详解](docs/configuration.md)，版本�
 | --- | --- |
 | [`setup-codex-bridge`](skills/setup-codex-bridge/SKILL.md) | 安装、更新、验证或修复 `Codex Bridge.app` 与 sidecar |
 | [`install-ulanzi-studio-plugin`](skills/install-ulanzi-studio-plugin/SKILL.md) | 把仓库中的预构建插件目录安装到 Ulanzi Studio |
-
-## LLM 与代码 Agent 安装入口
-
-LLM 和代码 Agent 在执行安装前必须先阅读 [AGENTS.md](AGENTS.md)。规定流程会先在
-Ulanzi Studio 已安装插件中检索 Codex Micro 的 manifest UUID；若未安装，使用
-`$install-ulanzi-studio-plugin` 并完成验证，再使用 `$setup-codex-bridge`；若插件
-已经安装，则不重复安装，直接使用 `$setup-codex-bridge`。
 
 ## 文档
 

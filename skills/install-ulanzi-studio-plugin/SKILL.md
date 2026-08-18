@@ -32,6 +32,9 @@ Resolve the project root as two directories above this file. Require
    test -f "$plugin/manifest.json"
    test -f "$plugin/dist/app.js"
    test -f "$plugin/dist/package.json"
+   for locale in en zh_CN zh_HK ja_JP de_DE ko_KR pt_PT es_ES; do
+     test -f "$plugin/$locale.json"
+   done
    ```
 
 6. Ask the user to reopen Ulanzi Studio and confirm that the **Codex Micro**

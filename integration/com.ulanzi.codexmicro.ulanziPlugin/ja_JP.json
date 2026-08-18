@@ -1,0 +1,5 @@
+{
+  "Name": "Codex Micro",
+  "Overview": "Ulanzi Studio の Ulanzi D200 Series から Codex Desktop のタスクと操作を制御します。",
+  "Description": "Ulanzi Studio を通じて、Ulanzi D200 Series を Codex Desktop 専用のコントロールサーフェスにします。\n\n機能\n- 最近の 5 件の Codex タスクをリアルタイム状態付きで表示し、選択したタスクを正確に開きます。\n- Fast、Usage、Pin、New、Fork、Steer、Mic、Submit を操作できます。\n- Codex Bridge.app とループバック限定エンドポイントを使用して通信をローカルに保ちます。\n\nインストール環境\n- macOS 13 以降\n- Codex Desktop\n- Ulanzi Studio 3.0 以降\n- Ulanzi Studio に接続された Ulanzi D200 Series\n- Bridge セットアップ用の Node.js 20 以降\n\nLLM / AGENT インストール\nAgent に次のように入力します：\nこのプラグインをインストールしてください：https://github.com/UlanziTechnology/OpenCodexMicro\n\n手動インストール\n1. https://github.com/UlanziTechnology/OpenCodexMicro をクローンしてリポジトリを開きます。\n2. Ulanzi Studio を終了します。\n3. 実行：npm install\n4. 実行：npm run install:plugin\n5. 実行：npm run setup\n6. Ulanzi Studio を再度開き、Codex Desktop を終了して ~/Applications/Codex Bridge.app を起動します。\n7. Ulanzi Studio で Codex Micro actions をキーに追加します。"
+}
