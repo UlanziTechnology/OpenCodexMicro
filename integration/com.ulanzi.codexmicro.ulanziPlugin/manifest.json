@@ -6,6 +6,11 @@
   "Icon": "assets/icons/plugin.png",
   "Category": "AI",
   "CategoryIcon": "assets/icons/plugin.png",
+  "Banner": [
+    "assets/banners/codex-micro-banner-1.png",
+    "assets/banners/codex-micro-banner-2.png",
+    "assets/banners/codex-micro-banner-3.png"
+  ],
   "Version": "0.2.0",
   "UUID": "com.ulanzi.ulanzistudio.codexmicro",
   "Type": "JavaScript",
