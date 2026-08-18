@@ -76,6 +76,7 @@ test("new renderer action accepts the current localized New conversation control
     click() { clicks += 1; }
   };
   const document = {
+    querySelector() { return null; },
     querySelectorAll(selector) {
       assert.equal(selector, "button");
       return [button];
@@ -87,6 +88,41 @@ test("new renderer action accepts the current localized New conversation control
     true
   );
   assert.equal(clicks, 1);
+});
+
+test("new renderer action prefers the language-independent sidebar structure", () => {
+  let structuralClicks = 0;
+  let localizedClicks = 0;
+  const structuralButton = {
+    offsetParent: {},
+    click() { structuralClicks += 1; }
+  };
+  const localizedButton = {
+    offsetParent: {},
+    innerText: "New conversation",
+    getAttribute() { return null; },
+    click() { localizedClicks += 1; }
+  };
+  const sidebar = {
+    querySelectorAll(selector) {
+      assert.equal(selector, ".sidebar-item.relative > button.sidebar-item");
+      return [structuralButton];
+    }
+  };
+  const anchor = { closest: selector => selector === "nav" ? sidebar : null };
+  const document = {
+    querySelector(selector) {
+      return selector === "[data-app-action-sidebar-project-create]" ? anchor : null;
+    },
+    querySelectorAll() { return [localizedButton]; }
+  };
+
+  assert.equal(
+    vm.runInNewContext(rendererActionExpression("new"), { document }),
+    true
+  );
+  assert.equal(structuralClicks, 1);
+  assert.equal(localizedClicks, 0);
 });
 
 test("pin renderer action accepts the current localized Pin chat control", () => {

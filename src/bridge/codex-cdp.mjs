@@ -63,13 +63,26 @@ export function rendererActionExpression(action) {
         (button) => visible(button) && labels.has(button.getAttribute("aria-label"))
       );
     } else if (action === "new") {
-      const labels = new Set(${JSON.stringify(NEW_ACTION_LABELS)});
-      const buttons = [...document.querySelectorAll("button")].filter(visible);
-      target = buttons.find((button) => [
-        button.getAttribute("aria-label"),
-        button.getAttribute("title"),
-        (button.innerText || "").trim()
-      ].some((label) => labels.has(label)));
+      const sidebarAnchor = document.querySelector(
+        "[data-app-action-sidebar-project-create]"
+      ) ?? document.querySelector("[data-app-action-sidebar-thread-id]");
+      const sidebar = sidebarAnchor?.closest("nav");
+      const structuralCandidates = [...(
+        sidebar?.querySelectorAll(
+          ".sidebar-item.relative > button.sidebar-item"
+        ) ?? []
+      )].filter(visible);
+      if (structuralCandidates.length === 1) {
+        target = structuralCandidates[0];
+      } else {
+        const labels = new Set(${JSON.stringify(NEW_ACTION_LABELS)});
+        const buttons = [...document.querySelectorAll("button")].filter(visible);
+        target = buttons.find((button) => [
+          button.getAttribute("aria-label"),
+          button.getAttribute("title"),
+          (button.innerText || "").trim()
+        ].some((label) => labels.has(label)));
+      }
     }
     if (!target) return false;
     target.click();

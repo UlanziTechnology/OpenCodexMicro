@@ -10,6 +10,8 @@ assert.match(manifest.Overview, /Ulanzi D200 Series/);
 assert.match(manifest.Description, /INSTALLATION ENVIRONMENT/);
 assert.match(manifest.Description, /LLM \/ AGENT INSTALLATION/);
 assert.match(manifest.Description, /MANUAL INSTALLATION/);
+assert.match(manifest.Description, /always launch Codex through ~\/Applications\/Codex Bridge\.app/i);
+assert.match(manifest.Description, /open ~\/Applications\/Codex\\ Bridge\.app$/);
 
 for (const locale of [
   "en.json",
@@ -27,6 +29,11 @@ for (const locale of [
   assert.match(messages.Description, /https:\/\/github\.com\/UlanziTechnology\/OpenCodexMicro/);
   assert.match(messages.Description, /npm run install:plugin/);
   assert.match(messages.Description, /npm run setup/);
+  assert.match(
+    messages.Description.split("\n\n").at(-1),
+    /open ~\/Applications\/Codex\\ Bridge\.app$/,
+    `${locale} must end with the Bridge launch command`
+  );
 }
 
 const bridgeRequests = [];
@@ -159,7 +166,8 @@ try {
   );
   const usageItem = usageState?.param?.statelist?.[0];
   assert.equal(usageItem?.type, 1);
-  assert.equal(usageItem?.showtext, false);
+  assert.equal(usageItem?.showtext, true);
+  assert.equal(usageItem?.textdata, "USAGE");
   assert.match(usageItem?.data || "", /^data:image\/svg\+xml;base64,/);
   const usageSvg = Buffer.from(usageItem.data.split(",")[1], "base64").toString();
   assert.match(usageSvg, />23<tspan/);

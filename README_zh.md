@@ -82,6 +82,15 @@ curl http://127.0.0.1:17373/state
 最后在 Ulanzi Studio 中把 Codex Micro actions 拖到需要的按键。安装路径、诊断、
 更新与卸载方法见 [安装与运行](docs/setup-and-operations.md)。
 
+> **注意事项：** 使用 Codex Micro 时，必须通过
+> `~/Applications/Codex Bridge.app` 启动 Codex，请勿直接打开 Codex Desktop。
+>
+> 启动命令：
+>
+> ```bash
+> open ~/Applications/Codex\ Bridge.app
+> ```
+
 ## 配置
 
 实体布局完全由 Ulanzi Studio 管理。插件提供 Codex Task 1–5、Fast、Usage、Pin、

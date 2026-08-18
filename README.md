@@ -88,6 +88,15 @@ In Ulanzi Studio, drag the Codex Micro actions onto the desired keys. See
 [Setup and operations](docs/setup-and-operations.md) for installed paths,
 diagnostics, updates, and uninstall instructions.
 
+> **Important:** When using Codex Micro, always launch Codex through
+> `~/Applications/Codex Bridge.app`. Do not open Codex Desktop directly.
+>
+> Launch command:
+>
+> ```bash
+> open ~/Applications/Codex\ Bridge.app
+> ```
+
 ## Configure
 
 The physical layout is managed in Ulanzi Studio. The plugin ships these

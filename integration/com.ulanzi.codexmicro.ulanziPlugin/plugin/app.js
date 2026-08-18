@@ -177,7 +177,8 @@ function setUsageDisplay(instance, usage) {
         key: instance.key,
         type: 1,
         data: usageIconData(usage),
-        showtext: false
+        showtext: true,
+        textdata: ACTION_LABELS.usage
       }]
     }
   });
