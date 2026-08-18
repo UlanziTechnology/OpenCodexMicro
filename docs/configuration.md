@@ -1,6 +1,6 @@
 # Configuration
 
-The openCodexMicro layout is configured entirely in Ulanzi Studio. Open the
+The OpenCodexMicro layout is configured entirely in Ulanzi Studio. Open the
 Codex Micro category and drag any action onto a keypad position.
 
 ## Actions

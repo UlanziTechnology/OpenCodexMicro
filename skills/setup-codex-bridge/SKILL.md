@@ -1,13 +1,13 @@
 ---
 name: setup-codex-bridge
-description: Install, update, verify, diagnose, or remove openCodexMicro's Codex Bridge.app and loopback sidecar on macOS. Use when the request concerns Bridge setup or its local LaunchAgent, not Ulanzi Studio plugin installation.
+description: Install, update, verify, diagnose, or remove OpenCodexMicro's Codex Bridge.app and loopback sidecar on macOS. Use when the request concerns Bridge setup or its local LaunchAgent, not Ulanzi Studio plugin installation.
 ---
 
 # Setup Codex Bridge
 
 Resolve the project root as two directories above this file. Require
 `package.json`, `scripts/install.mjs`, and `src/bridge/`; otherwise ask for the
-openCodexMicro checkout.
+OpenCodexMicro checkout.
 
 ## Workflow
 

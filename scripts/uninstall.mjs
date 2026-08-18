@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 const home = homedir();
 const uid = process.getuid();
-const appRoot = join(home, "Library", "Application Support", "openCodexMicro");
+const appRoot = join(home, "Library", "Application Support", "OpenCodexMicro");
 const bridgeApp = join(home, "Applications", "Codex Bridge.app");
 const agentsRoot = join(home, "Library", "LaunchAgents");
 const plugin = join(
@@ -35,4 +35,4 @@ for (const agent of agents) {
 await rm(appRoot, { recursive: true, force: true });
 await rm(bridgeApp, { recursive: true, force: true });
 await rm(plugin, { recursive: true, force: true });
-console.log("openCodexMicro removed.");
+console.log("OpenCodexMicro removed.");

@@ -1,6 +1,6 @@
 # Architecture
 
-openCodexMicro uses Ulanzi Studio as the only device owner.
+OpenCodexMicro uses Ulanzi Studio as the only device owner.
 
 ```text
 Codex renderer Micro store

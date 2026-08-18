@@ -15,7 +15,7 @@ const uid = process.getuid();
 const packageMetadata = JSON.parse(await readFile(resolve("package.json"), "utf8"));
 const releaseVersion = String(packageMetadata.version);
 const start = !process.argv.slice(2).includes("--no-start");
-const appRoot = join(home, "Library", "Application Support", "openCodexMicro");
+const appRoot = join(home, "Library", "Application Support", "OpenCodexMicro");
 const userApplications = join(home, "Applications");
 const bridgeApp = join(userApplications, "Codex Bridge.app");
 const agentsRoot = join(home, "Library", "LaunchAgents");
@@ -111,7 +111,7 @@ set -u
 unsetopt BG_NICE
 
 codex_binary="/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
-bridge_log="$HOME/Library/Logs/openCodexMicro-codex-bridge.log"
+bridge_log="$HOME/Library/Logs/OpenCodexMicro-codex-bridge.log"
 
 if [[ ! -x "$codex_binary" ]]; then
   /usr/bin/osascript -e 'display alert "Codex Bridge" message "Codex was not found at /Applications/ChatGPT.app." as critical'

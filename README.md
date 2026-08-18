@@ -1,15 +1,15 @@
-# openCodexMicro
+# OpenCodexMicro
 
-**Control Codex Desktop from an Ulanzi D200 through Ulanzi Studio.**
+**Control Codex Desktop from an Ulanzi D200 Series through Ulanzi Studio.**
 
 [中文说明](README_zh.md)
 
-openCodexMicro exposes Codex's live Micro state through a loopback Bridge and
+OpenCodexMicro exposes Codex's live Micro state through a loopback Bridge and
 turns it into a native Ulanzi Studio plugin. It shows recent tasks, switches to
 the exact task displayed on a key, and provides Fast, Usage, Pin, New, Fork,
 Steer, Mic, and Submit actions.
 
-![openCodexMicro on an Ulanzi D200](docs/images/codex-keyboard-hero.png)
+![OpenCodexMicro on an Ulanzi D200 Series](docs/images/codex-keyboard-hero.png)
 
 ## What it does
 
@@ -23,7 +23,7 @@ Steer, Mic, and Submit actions.
 | Local-only transport | Bind CDP and the Bridge API to loopback addresses only |
 
 This Ulanzi-maintained project is an unofficial integration with Codex Desktop
-for **macOS, Ulanzi Studio, and Ulanzi D200**. It is not affiliated with or
+for **macOS, Ulanzi Studio, and Ulanzi D200 Series**. It is not affiliated with or
 endorsed by OpenAI. The entire project was vibe-coded with Codex.
 
 Ulanzi's implementation and maintenance scope is limited to
@@ -38,7 +38,7 @@ responsibility boundary.
 Requirements:
 
 - macOS with Codex Desktop and Ulanzi Studio installed;
-- Ulanzi D200 connected to Ulanzi Studio;
+- Ulanzi D200 Series connected to Ulanzi Studio;
 - Node.js 20 or newer.
 
 Clone the repository, then complete these two steps.

@@ -7,7 +7,7 @@ description: Install, update, verify, or diagnose the repository's prebuilt Code
 
 Resolve the project root as two directories above this file. Require
 `integration/com.ulanzi.codexmicro.ulanziPlugin/manifest.json` and
-`scripts/install-plugin.mjs`; otherwise ask for the openCodexMicro checkout.
+`scripts/install-plugin.mjs`; otherwise ask for the OpenCodexMicro checkout.
 
 ## Workflow
 

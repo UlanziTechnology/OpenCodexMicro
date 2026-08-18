@@ -1,6 +1,6 @@
 # Setup and Operations
 
-openCodexMicro has two installed components:
+OpenCodexMicro has two installed components:
 
 ```text
 Codex Desktop <-> Codex Bridge sidecar <-> Ulanzi Studio plugin <-> D200
@@ -80,9 +80,9 @@ Neither endpoint is reachable from the LAN.
 
 ```text
 ~/Applications/Codex Bridge.app
-~/Library/Application Support/openCodexMicro/bridge.mjs
-~/Library/Application Support/openCodexMicro/bridge.log
-~/Library/Application Support/openCodexMicro/bridge-error.log
+~/Library/Application Support/OpenCodexMicro/bridge.mjs
+~/Library/Application Support/OpenCodexMicro/bridge.log
+~/Library/Application Support/OpenCodexMicro/bridge-error.log
 ~/Library/LaunchAgents/io.opencodexmicro.bridge.plist
 ~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/com.ulanzi.codexmicro.ulanziPlugin
 ```
@@ -99,8 +99,8 @@ launchctl kickstart -k "gui/$(id -u)/io.opencodexmicro.bridge"
 ```bash
 curl http://127.0.0.1:17373/health
 curl http://127.0.0.1:17373/state
-tail -f "$HOME/Library/Application Support/openCodexMicro/bridge.log"
-tail -f "$HOME/Library/Application Support/openCodexMicro/bridge-error.log"
+tail -f "$HOME/Library/Application Support/OpenCodexMicro/bridge.log"
+tail -f "$HOME/Library/Application Support/OpenCodexMicro/bridge-error.log"
 ```
 
 | Symptom | Check |

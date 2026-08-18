@@ -1,12 +1,12 @@
-# openCodexMicro
+# OpenCodexMicro
 
-**通过 Ulanzi Studio，用 Ulanzi D200 操控 Codex Desktop。**
+**通过 Ulanzi Studio，用 Ulanzi D200 Series 操控 Codex Desktop。**
 
 [English](README.md)
 
-![Ulanzi D200 上的 openCodexMicro](docs/images/codex-keyboard-hero.png)
+![Ulanzi D200 Series 上的 OpenCodexMicro](docs/images/codex-keyboard-hero.png)
 
-openCodexMicro 通过本机回环 Bridge 暴露 Codex 的实时 Micro 状态，再由原生
+OpenCodexMicro 通过本机回环 Bridge 暴露 Codex 的实时 Micro 状态，再由原生
 Ulanzi Studio 插件显示最近任务、精确切换任务，并提供 Fast、Usage、Pin、New、
 Fork、Steer、Mic 和 Submit 操作。
 
@@ -34,7 +34,7 @@ Ulanzi 的实现与维护范围仅限
 要求：
 
 - 已安装 Codex Desktop 与 Ulanzi Studio 的 macOS；
-- 已在 Ulanzi Studio 中连接 Ulanzi D200；
+- 已在 Ulanzi Studio 中连接 Ulanzi D200 Series；
 - Node.js 20 或更高版本。
 
 克隆仓库后只需完成以下两步。

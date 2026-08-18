@@ -2,6 +2,7 @@ node_modules/
 dist/
 .DS_Store
 *.log
+CHANGELOG.md
 
 # Ship the prebuilt Ulanzi Studio plugin; installation only copies this output.
 !integration/com.ulanzi.codexmicro.ulanziPlugin/dist/

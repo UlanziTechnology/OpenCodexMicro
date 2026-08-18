@@ -1,4 +1,4 @@
-# openCodexMicro LLM Guide
+# OpenCodexMicro LLM Guide
 
 This file is the repository entry point for LLMs and coding agents. It explains
 what the project contains and how to route setup work through the repository's
@@ -6,7 +6,7 @@ skills.
 
 ## Project overview
 
-openCodexMicro connects Codex Desktop to an Ulanzi Studio plugin through a
+OpenCodexMicro connects Codex Desktop to an Ulanzi Studio plugin through a
 loopback-only Bridge:
 
 ```text
@@ -21,7 +21,7 @@ specify, develop, or maintain CDP or Codex's CDP implementation. Read
 
 ## Required setup routing
 
-When asked to install, configure, repair, or start openCodexMicro, inspect the
+When asked to install, configure, repair, or start OpenCodexMicro, inspect the
 installed Ulanzi Studio plugins before choosing a skill. Do not infer plugin
 installation from the presence of this repository.
 

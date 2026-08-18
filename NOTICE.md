@@ -1,13 +1,13 @@
 # Project Attribution, Modifications, and Responsibility
 
 This notice records provenance and responsibility boundaries for this fork of
-openCodexMicro. The MIT terms in `LICENSE` control the project-authored code.
+OpenCodexMicro. The MIT terms in `LICENSE` control the project-authored code.
 Third-party components remain subject to the licenses listed in
 `THIRD_PARTY_NOTICES.md`.
 
 ## Provenance and material changes
 
-The original openCodexMicro work is copyright 2026 Nian Liu. The original
+The original OpenCodexMicro work is copyright 2026 Nian Liu. The original
 copyright and MIT permission notice are preserved in `LICENSE`.
 
 This fork materially changes the original distribution by:
@@ -68,7 +68,7 @@ future versions is not guaranteed.
 
 ## 中文说明
 
-本项目是在 openCodexMicro 原始工作的基础上修改的 fork。原作者 Nian Liu
+本项目是在 OpenCodexMicro 原始工作的基础上修改的 fork。原作者 Nian Liu
 的版权声明和 MIT 许可完整保留在 `LICENSE` 中。本 fork 的主要改动包括：删除
 Python/D200 直连运行时及其安装、依赖、测试和文档；改由 Ulanzi Studio 负责
 设备集成；将安装流程收敛为 `Codex Bridge.app`/sidecar 与 Codex Micro 插件；

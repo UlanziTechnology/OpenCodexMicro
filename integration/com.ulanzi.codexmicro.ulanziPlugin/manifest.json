@@ -1,8 +1,8 @@
 {
-  "Author": "openCodexMicro",
+  "Author": "OpenCodexMicro",
   "Name": "Codex Micro",
-  "Overview": "Control Codex Desktop from Ulanzi Studio through the local openCodexMicro Bridge.",
-  "Description": "Control five live Codex task slots and the complete openCodexMicro action set: Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit.\nRequires openCodexMicro and Codex Bridge.app to be running.",
+  "Overview": "Control Codex Desktop from Ulanzi Studio through the local OpenCodexMicro Bridge.",
+  "Description": "Control five live Codex task slots and the complete OpenCodexMicro action set: Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit.\nRequires OpenCodexMicro and Codex Bridge.app to be running.",
   "Icon": "assets/icons/plugin.png",
   "Category": "AI",
   "CategoryIcon": "assets/icons/plugin.png",
