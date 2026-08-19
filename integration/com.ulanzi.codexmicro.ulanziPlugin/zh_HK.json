@@ -1,5 +1,21 @@
 {
   "Name": "Codex Micro",
   "Overview": "透過 Ulanzi Studio，在 Ulanzi D200 Series 上查看並控制 Codex Desktop。",
-  "Description": "透過 Ulanzi Studio，將 Ulanzi D200 Series 變成 Codex Desktop 專用控制台。\n\n功能\n- 即時顯示最近五個 Codex 任務的狀態，並準確開啟所選任務。\n- 提供 Fast、Usage、Pin、New、Fork、Steer、Mic 和 Submit 操作。\n- 使用 Latest Task & Scroll 旋鈕開啟 task1，並上下捲動 Codex。\n- 透過 Codex Bridge.app 及僅限迴環位址的介面維持本機通訊。\n\n安裝環境\n- macOS 13 或更新版本\n- Codex Desktop\n- Ulanzi Studio 3.0.1 或更新版本\n- 已在 Ulanzi Studio 中連接 Ulanzi D200 Series\n- 設定 Bridge 所需的 Node.js 20 或更新版本\n\nLLM / AGENT 安裝\n在 Agent 中輸入：\n請幫我安裝這個外掛程式：https://github.com/UlanziTechnology/OpenCodexMicro\n\n手動安裝\n1. 複製 https://github.com/UlanziTechnology/OpenCodexMicro 並進入儲存庫目錄。\n2. 結束 Ulanzi Studio。\n3. 執行：npm install\n4. 執行：npm run install:plugin\n5. 執行：npm run setup\n6. 重新開啟 Ulanzi Studio，結束 Codex Desktop，再啟動 ~/Applications/Codex Bridge.app。\n7. 在 Ulanzi Studio 中將 Codex Micro actions 加到按鍵。\n\n注意事項\n使用 Codex Micro 時，必須透過 ~/Applications/Codex Bridge.app 啟動 Codex，請勿直接開啟 Codex Desktop。\n啟動指令： open ~/Applications/Codex\\ Bridge.app"
+  "Description": "透過 Ulanzi Studio，將 Ulanzi D200 Series 變成 Codex Desktop 專用控制台。\n\n功能\n- 即時顯示最近五個 Codex 任務的狀態，並準確開啟所選任務。\n- 提供 Fast、Usage、Pin、New、Fork、Steer、Mic 和 Submit 操作。\n- 使用 Latest Task & Scroll 旋鈕開啟 task1，並上下捲動 Codex。\n- 透過 Codex Bridge.app 及僅限迴環位址的介面維持本機通訊。\n\n安裝環境\n- macOS 13 或更新版本\n- Codex Desktop\n- Ulanzi Studio 3.0.1 或更新版本\n- 已在 Ulanzi Studio 中連接 Ulanzi D200 Series\n- 設定 Bridge 所需的 Node.js 20 或更新版本\n\nLLM / AGENT 安裝\n在 Agent 中輸入：\n請幫我安裝這個外掛程式：https://github.com/UlanziTechnology/OpenCodexMicro\n\n手動安裝\n1. 複製 https://github.com/UlanziTechnology/OpenCodexMicro 並進入儲存庫目錄。\n2. 結束 Ulanzi Studio。\n3. 執行：npm install\n4. 執行：npm run install:plugin\n5. 執行：npm run setup\n6. 重新開啟 Ulanzi Studio，結束 Codex Desktop，再啟動 ~/Applications/Codex Bridge.app。\n7. 在 Ulanzi Studio 中將 Codex Micro actions 加到按鍵。\n\n注意事項\n使用 Codex Micro 時，必須透過 ~/Applications/Codex Bridge.app 啟動 Codex，請勿直接開啟 Codex Desktop。\n啟動指令： open ~/Applications/Codex\\ Bridge.app",
+  "Actions": [
+    { "Name": "Codex 任務 1", "Tooltip": "開啟最近的 Codex 任務欄位 1，並顯示即時狀態。" },
+    { "Name": "Codex 任務 2", "Tooltip": "開啟最近的 Codex 任務欄位 2，並顯示即時狀態。" },
+    { "Name": "Codex 任務 3", "Tooltip": "開啟最近的 Codex 任務欄位 3，並顯示即時狀態。" },
+    { "Name": "Codex 任務 4", "Tooltip": "開啟最近的 Codex 任務欄位 4，並顯示即時狀態。" },
+    { "Name": "Codex 任務 5", "Tooltip": "開啟最近的 Codex 任務欄位 5，並顯示即時狀態。" },
+    { "Name": "Codex 快速模式", "Tooltip": "切換目前 Codex 任務的快速模式。" },
+    { "Name": "Codex 用量", "Tooltip": "顯示 Codex 剩餘用量，按下時聚焦 Codex。" },
+    { "Name": "固定 Codex 任務", "Tooltip": "固定或取消固定目前的 Codex 任務。" },
+    { "Name": "新增 Codex 任務", "Tooltip": "建立新的 Codex 任務。" },
+    { "Name": "最新任務與捲動", "Tooltip": "按下開啟最新的 Codex 任務；向左轉向上捲動，向右轉向下捲動。" },
+    { "Name": "分支 Codex 任務", "Tooltip": "從目前 Codex 任務建立新的分支任務。" },
+    { "Name": "引導 Codex", "Tooltip": "將目前編輯器文字作為引導輸入傳送給執行中的任務。" },
+    { "Name": "Codex 麥克風", "Tooltip": "切換 Codex 麥克風操作。" },
+    { "Name": "提交至 Codex", "Tooltip": "提交或排隊傳送目前的 Codex 編輯器文字。" }
+  ]
 }

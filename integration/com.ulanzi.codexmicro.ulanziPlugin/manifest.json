@@ -11,7 +11,7 @@
     "assets/banners/codex-micro-banner-2.png",
     "assets/banners/codex-micro-banner-3.png"
   ],
-  "Version": "0.3.0",
+  "Version": "0.3.1",
   "UUID": "com.ulanzi.ulanzistudio.codexmicro",
   "Type": "JavaScript",
   "CodePath": "dist/app.js",

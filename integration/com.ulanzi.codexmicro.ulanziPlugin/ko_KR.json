@@ -1,5 +1,21 @@
 {
   "Name": "Codex Micro",
   "Overview": "Ulanzi Studio의 Ulanzi D200 Series에서 Codex Desktop 작업과 동작을 제어합니다.",
-  "Description": "Ulanzi Studio를 통해 Ulanzi D200 Series를 Codex Desktop 전용 컨트롤 표면으로 사용합니다.\n\n기능\n- 최근 Codex 작업 5개의 실시간 상태를 표시하고 선택한 작업을 정확히 엽니다.\n- Fast, Usage, Pin, New, Fork, Steer, Mic, Submit 동작을 제공합니다.\n- Latest Task & Scroll Encoder로 task1을 열고 Codex를 위아래로 스크롤합니다.\n- Codex Bridge.app과 루프백 전용 엔드포인트를 통해 통신을 로컬로 유지합니다.\n\n설치 환경\n- macOS 13 이상\n- Codex Desktop\n- Ulanzi Studio 3.0.1 이상\n- Ulanzi Studio에 연결된 Ulanzi D200 Series\n- Bridge 설정용 Node.js 20 이상\n\nLLM / AGENT 설치\nAgent에 다음과 같이 입력하세요:\n이 플러그인을 설치해 주세요: https://github.com/UlanziTechnology/OpenCodexMicro\n\n수동 설치\n1. https://github.com/UlanziTechnology/OpenCodexMicro 저장소를 복제하고 디렉터리를 엽니다.\n2. Ulanzi Studio를 종료합니다.\n3. 실행: npm install\n4. 실행: npm run install:plugin\n5. 실행: npm run setup\n6. Ulanzi Studio를 다시 열고 Codex Desktop을 종료한 다음 ~/Applications/Codex Bridge.app을 실행합니다.\n7. Ulanzi Studio에서 Codex Micro actions를 원하는 키에 추가합니다.\n\n중요 사항\nCodex Micro를 사용할 때는 항상 ~/Applications/Codex Bridge.app을 통해 Codex를 실행하세요. Codex Desktop을 직접 열지 마세요.\n실행 명령: open ~/Applications/Codex\\ Bridge.app"
+  "Description": "Ulanzi Studio를 통해 Ulanzi D200 Series를 Codex Desktop 전용 컨트롤 표면으로 사용합니다.\n\n기능\n- 최근 Codex 작업 5개의 실시간 상태를 표시하고 선택한 작업을 정확히 엽니다.\n- Fast, Usage, Pin, New, Fork, Steer, Mic, Submit 동작을 제공합니다.\n- Latest Task & Scroll Encoder로 task1을 열고 Codex를 위아래로 스크롤합니다.\n- Codex Bridge.app과 루프백 전용 엔드포인트를 통해 통신을 로컬로 유지합니다.\n\n설치 환경\n- macOS 13 이상\n- Codex Desktop\n- Ulanzi Studio 3.0.1 이상\n- Ulanzi Studio에 연결된 Ulanzi D200 Series\n- Bridge 설정용 Node.js 20 이상\n\nLLM / AGENT 설치\nAgent에 다음과 같이 입력하세요:\n이 플러그인을 설치해 주세요: https://github.com/UlanziTechnology/OpenCodexMicro\n\n수동 설치\n1. https://github.com/UlanziTechnology/OpenCodexMicro 저장소를 복제하고 디렉터리를 엽니다.\n2. Ulanzi Studio를 종료합니다.\n3. 실행: npm install\n4. 실행: npm run install:plugin\n5. 실행: npm run setup\n6. Ulanzi Studio를 다시 열고 Codex Desktop을 종료한 다음 ~/Applications/Codex Bridge.app을 실행합니다.\n7. Ulanzi Studio에서 Codex Micro actions를 원하는 키에 추가합니다.\n\n중요 사항\nCodex Micro를 사용할 때는 항상 ~/Applications/Codex Bridge.app을 통해 Codex를 실행하세요. Codex Desktop을 직접 열지 마세요.\n실행 명령: open ~/Applications/Codex\\ Bridge.app",
+  "Actions": [
+    { "Name": "Codex 작업 1", "Tooltip": "최근 Codex 작업 슬롯 1을 열고 실시간 상태를 표시합니다." },
+    { "Name": "Codex 작업 2", "Tooltip": "최근 Codex 작업 슬롯 2를 열고 실시간 상태를 표시합니다." },
+    { "Name": "Codex 작업 3", "Tooltip": "최근 Codex 작업 슬롯 3을 열고 실시간 상태를 표시합니다." },
+    { "Name": "Codex 작업 4", "Tooltip": "최근 Codex 작업 슬롯 4를 열고 실시간 상태를 표시합니다." },
+    { "Name": "Codex 작업 5", "Tooltip": "최근 Codex 작업 슬롯 5를 열고 실시간 상태를 표시합니다." },
+    { "Name": "Codex 빠른 모드", "Tooltip": "활성 Codex 작업의 빠른 모드를 전환합니다." },
+    { "Name": "Codex 사용량", "Tooltip": "남은 Codex 사용량을 표시하고 누르면 Codex에 포커스를 맞춥니다." },
+    { "Name": "Codex 작업 고정", "Tooltip": "활성 Codex 작업을 고정하거나 고정을 해제합니다." },
+    { "Name": "새 Codex 작업", "Tooltip": "새 Codex 작업을 만듭니다." },
+    { "Name": "최신 작업 및 스크롤", "Tooltip": "누르면 최신 Codex 작업을 엽니다. 왼쪽으로 돌리면 위로, 오른쪽으로 돌리면 아래로 스크롤합니다." },
+    { "Name": "Codex 작업 포크", "Tooltip": "활성 Codex 작업을 새 작업으로 포크합니다." },
+    { "Name": "Codex 조정", "Tooltip": "현재 입력창 텍스트를 실행 중인 작업에 조정 입력으로 보냅니다." },
+    { "Name": "Codex 마이크", "Tooltip": "Codex 마이크 동작을 전환합니다." },
+    { "Name": "Codex에 제출", "Tooltip": "현재 Codex 입력창 텍스트를 제출하거나 대기열에 추가합니다." }
+  ]
 }

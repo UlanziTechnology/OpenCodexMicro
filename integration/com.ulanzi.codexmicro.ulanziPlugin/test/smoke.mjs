@@ -11,7 +11,7 @@ const navigateAction = manifest.Actions.find(action =>
 );
 assert.deepEqual(navigateAction?.Controllers, ["Encoder"]);
 assert.equal(navigateAction?.Encoder?.layout, "$UA1");
-assert.equal(manifest.Version, "0.3.0");
+assert.equal(manifest.Version, "0.3.1");
 assert.equal(manifest.Software?.MinVersion, "3.0.1");
 assert.match(manifest.Overview, /Ulanzi D200 Series/);
 assert.match(manifest.Description, /INSTALLATION ENVIRONMENT/);
@@ -20,6 +20,17 @@ assert.match(manifest.Description, /MANUAL INSTALLATION/);
 assert.match(manifest.Description, /Latest Task & Scroll Encoder/);
 assert.match(manifest.Description, /always launch Codex through ~\/Applications\/Codex Bridge\.app/i);
 assert.match(manifest.Description, /open ~\/Applications\/Codex\\ Bridge\.app$/);
+
+const localizedActionNames = {
+  "en.json": ["Codex Task 1", "Latest Task & Scroll", "Submit to Codex"],
+  "zh_CN.json": ["Codex 任务 1", "最新任务与滚动", "提交到 Codex"],
+  "zh_HK.json": ["Codex 任務 1", "最新任務與捲動", "提交至 Codex"],
+  "ja_JP.json": ["Codex タスク 1", "最新タスクとスクロール", "Codex に送信"],
+  "de_DE.json": ["Codex-Aufgabe 1", "Letzte Aufgabe & Scrollen", "An Codex senden"],
+  "ko_KR.json": ["Codex 작업 1", "최신 작업 및 스크롤", "Codex에 제출"],
+  "pt_PT.json": ["Tarefa Codex 1", "Tarefa recente e deslocamento", "Enviar para o Codex"],
+  "es_ES.json": ["Tarea Codex 1", "Tarea reciente y desplazamiento", "Enviar a Codex"]
+};
 
 for (const locale of [
   "en.json",
@@ -38,6 +49,16 @@ for (const locale of [
   assert.match(messages.Description, /npm run install:plugin/);
   assert.match(messages.Description, /npm run setup/);
   assert.match(messages.Description, /Latest Task & Scroll/);
+  assert.equal(messages.Actions?.length, manifest.Actions.length, `${locale} must localize every action`);
+  assert.ok(
+    messages.Actions.every(action => action.Name?.length > 0 && action.Tooltip?.length > 0),
+    `${locale} must localize every action name and tooltip`
+  );
+  assert.deepEqual(
+    [messages.Actions[0].Name, messages.Actions[9].Name, messages.Actions[13].Name],
+    localizedActionNames[locale],
+    `${locale} action localization must follow manifest action order`
+  );
   assert.match(
     messages.Description.split("\n\n").at(-1),
     /open ~\/Applications\/Codex\\ Bridge\.app$/,

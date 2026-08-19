@@ -1,5 +1,21 @@
 {
   "Name": "Codex Micro",
   "Overview": "Ulanzi Studio の Ulanzi D200 Series から Codex Desktop のタスクと操作を制御します。",
-  "Description": "Ulanzi Studio を通じて、Ulanzi D200 Series を Codex Desktop 専用のコントロールサーフェスにします。\n\n機能\n- 最近の 5 件の Codex タスクをリアルタイム状態付きで表示し、選択したタスクを正確に開きます。\n- Fast、Usage、Pin、New、Fork、Steer、Mic、Submit を操作できます。\n- Latest Task & Scroll Encoder で task1 を開き、Codex を上下にスクロールできます。\n- Codex Bridge.app とループバック限定エンドポイントを使用して通信をローカルに保ちます。\n\nインストール環境\n- macOS 13 以降\n- Codex Desktop\n- Ulanzi Studio 3.0.1 以降\n- Ulanzi Studio に接続された Ulanzi D200 Series\n- Bridge セットアップ用の Node.js 20 以降\n\nLLM / AGENT インストール\nAgent に次のように入力します：\nこのプラグインをインストールしてください：https://github.com/UlanziTechnology/OpenCodexMicro\n\n手動インストール\n1. https://github.com/UlanziTechnology/OpenCodexMicro をクローンしてリポジトリを開きます。\n2. Ulanzi Studio を終了します。\n3. 実行：npm install\n4. 実行：npm run install:plugin\n5. 実行：npm run setup\n6. Ulanzi Studio を再度開き、Codex Desktop を終了して ~/Applications/Codex Bridge.app を起動します。\n7. Ulanzi Studio で Codex Micro actions をキーに追加します。\n\n重要事項\nCodex Micro を使用する際は、必ず ~/Applications/Codex Bridge.app から Codex を起動してください。Codex Desktop を直接開かないでください。\n起動コマンド： open ~/Applications/Codex\\ Bridge.app"
+  "Description": "Ulanzi Studio を通じて、Ulanzi D200 Series を Codex Desktop 専用のコントロールサーフェスにします。\n\n機能\n- 最近の 5 件の Codex タスクをリアルタイム状態付きで表示し、選択したタスクを正確に開きます。\n- Fast、Usage、Pin、New、Fork、Steer、Mic、Submit を操作できます。\n- Latest Task & Scroll Encoder で task1 を開き、Codex を上下にスクロールできます。\n- Codex Bridge.app とループバック限定エンドポイントを使用して通信をローカルに保ちます。\n\nインストール環境\n- macOS 13 以降\n- Codex Desktop\n- Ulanzi Studio 3.0.1 以降\n- Ulanzi Studio に接続された Ulanzi D200 Series\n- Bridge セットアップ用の Node.js 20 以降\n\nLLM / AGENT インストール\nAgent に次のように入力します：\nこのプラグインをインストールしてください：https://github.com/UlanziTechnology/OpenCodexMicro\n\n手動インストール\n1. https://github.com/UlanziTechnology/OpenCodexMicro をクローンしてリポジトリを開きます。\n2. Ulanzi Studio を終了します。\n3. 実行：npm install\n4. 実行：npm run install:plugin\n5. 実行：npm run setup\n6. Ulanzi Studio を再度開き、Codex Desktop を終了して ~/Applications/Codex Bridge.app を起動します。\n7. Ulanzi Studio で Codex Micro actions をキーに追加します。\n\n重要事項\nCodex Micro を使用する際は、必ず ~/Applications/Codex Bridge.app から Codex を起動してください。Codex Desktop を直接開かないでください。\n起動コマンド： open ~/Applications/Codex\\ Bridge.app",
+  "Actions": [
+    { "Name": "Codex タスク 1", "Tooltip": "最近の Codex タスクスロット 1 を開き、リアルタイム状態を表示します。" },
+    { "Name": "Codex タスク 2", "Tooltip": "最近の Codex タスクスロット 2 を開き、リアルタイム状態を表示します。" },
+    { "Name": "Codex タスク 3", "Tooltip": "最近の Codex タスクスロット 3 を開き、リアルタイム状態を表示します。" },
+    { "Name": "Codex タスク 4", "Tooltip": "最近の Codex タスクスロット 4 を開き、リアルタイム状態を表示します。" },
+    { "Name": "Codex タスク 5", "Tooltip": "最近の Codex タスクスロット 5 を開き、リアルタイム状態を表示します。" },
+    { "Name": "Codex 高速モード", "Tooltip": "アクティブな Codex タスクの高速モードを切り替えます。" },
+    { "Name": "Codex 使用量", "Tooltip": "Codex の残り使用量を表示し、押すと Codex にフォーカスします。" },
+    { "Name": "Codex タスクをピン留め", "Tooltip": "アクティブな Codex タスクをピン留めまたは解除します。" },
+    { "Name": "新しい Codex タスク", "Tooltip": "新しい Codex タスクを作成します。" },
+    { "Name": "最新タスクとスクロール", "Tooltip": "押すと最新の Codex タスクを開きます。左回転で上、右回転で下にスクロールします。" },
+    { "Name": "Codex タスクをフォーク", "Tooltip": "アクティブな Codex タスクを新しいタスクとしてフォークします。" },
+    { "Name": "Codex を誘導", "Tooltip": "現在の入力欄のテキストを実行中タスクへの誘導入力として送信します。" },
+    { "Name": "Codex マイク", "Tooltip": "Codex のマイク操作を切り替えます。" },
+    { "Name": "Codex に送信", "Tooltip": "現在の Codex 入力欄のテキストを送信またはキューに追加します。" }
+  ]
 }
