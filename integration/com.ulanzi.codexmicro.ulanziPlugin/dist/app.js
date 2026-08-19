@@ -3722,6 +3722,7 @@ var ACTION_LABELS = Object.freeze({
   usage: "USAGE",
   pin: "PIN",
   new: "NEW",
+  navigate: "LATEST",
   fork: "FORK",
   steer: "STEER",
   mic: "MIC",
@@ -3873,11 +3874,24 @@ function renderInstance(instance) {
   if (slot === null) {
     const action = actionName(instance.uuid);
     if (!latestState?.connected) {
-      setDisplay(instance, 0, "Bridge Offline");
+      if (action === "navigate") {
+        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Bridge Offline");
+      } else {
+        setDisplay(instance, 0, "Bridge Offline");
+      }
       return;
     }
     if (action === "usage") {
       setUsageDisplay(instance, latestState.usage);
+      return;
+    }
+    if (action === "navigate") {
+      const task2 = latestState.slots?.[0];
+      if (!task2?.threadKey) {
+        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Latest Task");
+        return;
+      }
+      setTaskDisplay(instance, taskIconPath(task2.status), shortTitle(task2.title));
       return;
     }
     setDisplay(instance, 0, ACTION_LABELS[action] || "CODEX");
@@ -3908,6 +3922,11 @@ async function bridgeRequest(path, method = "GET") {
   }
   return payload;
 }
+async function openTaskSlot(slot) {
+  const task = latestState?.slots?.[slot];
+  if (!task?.threadKey) throw new Error(`Codex task slot ${slot + 1} is empty`);
+  await bridgeRequest(`/thread/${encodeURIComponent(task.threadKey)}/click?slot=${slot}`, "POST");
+}
 async function pollBridge() {
   if (pollInFlight) return;
   pollInFlight = true;
@@ -3925,9 +3944,7 @@ async function invoke(instance, pressed) {
   try {
     if (slot !== null) {
       if (!pressed) return;
-      const task = latestState?.slots?.[slot];
-      if (!task?.threadKey) throw new Error(`Codex task slot ${slot + 1} is empty`);
-      await bridgeRequest(`/thread/${encodeURIComponent(task.threadKey)}/click?slot=${slot}`, "POST");
+      await openTaskSlot(slot);
       return;
     }
     const action = actionName(instance.uuid);
@@ -3937,6 +3954,25 @@ async function invoke(instance, pressed) {
       return;
     }
     await bridgeRequest(`/action/${action}/${pressed ? "down" : "up"}`, "POST");
+  } catch (error) {
+    send({ cmd: "logMessage", uuid: instance.uuid, actionid: instance.actionid, key: instance.key, level: "error", message: error.message });
+    send({ cmd: "showAlert", uuid: instance.uuid, actionid: instance.actionid, key: instance.key });
+  }
+}
+async function invokeEncoder(instance, message) {
+  try {
+    if (message.cmd === "dialdown") {
+      await openTaskSlot(0);
+      return;
+    }
+    if (message.cmd !== "dialrotate") return;
+    const keylist = {
+      left: "SCROLL UP",
+      "hold-left": "SCROLL UP",
+      right: "SCROLL DOWN",
+      "hold-right": "SCROLL DOWN"
+    }[message.rotateEvent];
+    if (keylist) send({ cmd: "hotkey", keylist });
   } catch (error) {
     send({ cmd: "logMessage", uuid: instance.uuid, actionid: instance.actionid, key: instance.key, level: "error", message: error.message });
     send({ cmd: "showAlert", uuid: instance.uuid, actionid: instance.actionid, key: instance.key });
@@ -3985,6 +4021,12 @@ function handleMessage(raw) {
     return;
   }
   if (message.cmd === "run") {
+    ack(message);
+    return;
+  }
+  if (["dialdown", "dialup", "dialrotate"].includes(message.cmd)) {
+    const instance = instances.get(contextOf(message)) || addInstance(message);
+    if (actionName(instance.uuid) === "navigate") void invokeEncoder(instance, message);
     ack(message);
     return;
   }

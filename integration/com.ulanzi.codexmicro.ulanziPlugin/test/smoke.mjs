@@ -6,10 +6,18 @@ import { WebSocketServer } from "ws";
 
 const packageRootUrl = new URL("..", import.meta.url);
 const manifest = JSON.parse(await readFile(new URL("manifest.json", packageRootUrl)));
+const navigateAction = manifest.Actions.find(action =>
+  action.UUID === "com.ulanzi.ulanzistudio.codexmicro.navigate"
+);
+assert.deepEqual(navigateAction?.Controllers, ["Encoder"]);
+assert.equal(navigateAction?.Encoder?.layout, "$UA1");
+assert.equal(manifest.Version, "0.3.0");
+assert.equal(manifest.Software?.MinVersion, "3.0.1");
 assert.match(manifest.Overview, /Ulanzi D200 Series/);
 assert.match(manifest.Description, /INSTALLATION ENVIRONMENT/);
 assert.match(manifest.Description, /LLM \/ AGENT INSTALLATION/);
 assert.match(manifest.Description, /MANUAL INSTALLATION/);
+assert.match(manifest.Description, /Latest Task & Scroll Encoder/);
 assert.match(manifest.Description, /always launch Codex through ~\/Applications\/Codex Bridge\.app/i);
 assert.match(manifest.Description, /open ~\/Applications\/Codex\\ Bridge\.app$/);
 
@@ -29,6 +37,7 @@ for (const locale of [
   assert.match(messages.Description, /https:\/\/github\.com\/UlanziTechnology\/OpenCodexMicro/);
   assert.match(messages.Description, /npm run install:plugin/);
   assert.match(messages.Description, /npm run setup/);
+  assert.match(messages.Description, /Latest Task & Scroll/);
   assert.match(
     messages.Description.split("\n\n").at(-1),
     /open ~\/Applications\/Codex\\ Bridge\.app$/,
@@ -121,6 +130,34 @@ try {
   await new Promise(resolve => setTimeout(resolve, 150));
   const threadRequests = bridgeRequests.filter(item => item.includes("/thread/11111111-1111-1111-1111-111111111111/click?slot=0"));
   assert.equal(threadRequests.length, 1, "run must not duplicate a keydown task invocation");
+
+  const navigateEvent = {
+    uuid: "com.ulanzi.ulanzistudio.codexmicro.navigate",
+    actionid: "action-navigate",
+    key: "Encoder_0",
+    param: {}
+  };
+  client.send(JSON.stringify({ cmd: "add", ...navigateEvent }));
+  client.send(JSON.stringify({ cmd: "dialdown", ...navigateEvent }));
+  client.send(JSON.stringify({ cmd: "dialup", ...navigateEvent }));
+  client.send(JSON.stringify({ cmd: "dialrotate", rotateEvent: "left", ...navigateEvent }));
+  client.send(JSON.stringify({ cmd: "dialrotate", rotateEvent: "right", ...navigateEvent }));
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(
+    bridgeRequests.filter(item => item.includes("/thread/11111111-1111-1111-1111-111111111111/click?slot=0")).length,
+    2,
+    "Encoder press must open task slot 1"
+  );
+  assert.deepEqual(
+    messages.filter(message => message.cmd === "hotkey").map(message => message.keylist),
+    ["SCROLL UP", "SCROLL DOWN"]
+  );
+  const navigateState = messages.find(message =>
+    message.cmd === "state" &&
+    message.param?.statelist?.[0]?.uuid === navigateEvent.uuid
+  );
+  assert.equal(navigateState?.param?.statelist?.[0]?.path, "assets/icons/task-working.png");
+  assert.equal(navigateState?.param?.statelist?.[0]?.textdata, "Working task");
 
   const actions = ["fast", "pin", "new", "fork", "steer", "mic", "submit"];
   for (const [index, action] of actions.entries()) {

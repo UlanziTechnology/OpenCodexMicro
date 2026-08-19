@@ -2,7 +2,7 @@
   "Author": "OpenCodexMicro",
   "Name": "Codex Micro",
   "Overview": "Control Codex Desktop tasks and actions from Ulanzi D200 Series in Ulanzi Studio.",
-  "Description": "Turn Ulanzi D200 Series into a dedicated Codex Desktop control surface through Ulanzi Studio.\n\nFEATURES\n- View five recent Codex tasks with live status and open the exact selected task.\n- Use Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit actions.\n- Keep communication local through Codex Bridge.app and loopback-only endpoints.\n\nINSTALLATION ENVIRONMENT\n- macOS 13 or later\n- Codex Desktop\n- Ulanzi Studio 3.0 or later\n- Ulanzi D200 Series connected in Ulanzi Studio\n- Node.js 20 or later for Bridge setup\n\nLLM / AGENT INSTALLATION\nIn your Agent, enter:\nHelp me install this plugin: https://github.com/UlanziTechnology/OpenCodexMicro\n\nMANUAL INSTALLATION\n1. Clone https://github.com/UlanziTechnology/OpenCodexMicro and open the repository directory.\n2. Quit Ulanzi Studio.\n3. Run: npm install\n4. Run: npm run install:plugin\n5. Run: npm run setup\n6. Reopen Ulanzi Studio, quit Codex Desktop, and launch ~/Applications/Codex Bridge.app.\n7. Add the Codex Micro actions to your keys in Ulanzi Studio.\n\nIMPORTANT\nWhen using Codex Micro, always launch Codex through ~/Applications/Codex Bridge.app. Do not open Codex Desktop directly.\nLaunch command: open ~/Applications/Codex\\ Bridge.app",
+  "Description": "Turn Ulanzi D200 Series into a dedicated Codex Desktop control surface through Ulanzi Studio.\n\nFEATURES\n- View five recent Codex tasks with live status and open the exact selected task.\n- Use Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit actions.\n- Use the Latest Task & Scroll Encoder action to open task 1 and scroll Codex.\n- Keep communication local through Codex Bridge.app and loopback-only endpoints.\n\nINSTALLATION ENVIRONMENT\n- macOS 13 or later\n- Codex Desktop\n- Ulanzi Studio 3.0.1 or later\n- Ulanzi D200 Series connected in Ulanzi Studio\n- Node.js 20 or later for Bridge setup\n\nLLM / AGENT INSTALLATION\nIn your Agent, enter:\nHelp me install this plugin: https://github.com/UlanziTechnology/OpenCodexMicro\n\nMANUAL INSTALLATION\n1. Clone https://github.com/UlanziTechnology/OpenCodexMicro and open the repository directory.\n2. Quit Ulanzi Studio.\n3. Run: npm install\n4. Run: npm run install:plugin\n5. Run: npm run setup\n6. Reopen Ulanzi Studio, quit Codex Desktop, and launch ~/Applications/Codex Bridge.app.\n7. Add the Codex Micro actions to your keys in Ulanzi Studio.\n\nIMPORTANT\nWhen using Codex Micro, always launch Codex through ~/Applications/Codex Bridge.app. Do not open Codex Desktop directly.\nLaunch command: open ~/Applications/Codex\\ Bridge.app",
   "Icon": "assets/icons/plugin.png",
   "Category": "AI",
   "CategoryIcon": "assets/icons/plugin.png",
@@ -11,12 +11,12 @@
     "assets/banners/codex-micro-banner-2.png",
     "assets/banners/codex-micro-banner-3.png"
   ],
-  "Version": "0.2.0",
+  "Version": "0.3.0",
   "UUID": "com.ulanzi.ulanzistudio.codexmicro",
   "Type": "JavaScript",
   "CodePath": "dist/app.js",
   "Software": {
-    "MinVersion": "3.0.0"
+    "MinVersion": "3.0.1"
   },
   "OS": [
     {
@@ -105,6 +105,16 @@
       "Controllers": ["Keypad"],
       "DisableAutomaticStates": true,
       "States": [{ "Name": "New", "Image": "assets/icons/new.png" }]
+    },
+    {
+      "Name": "Latest Task & Scroll",
+      "Icon": "assets/icons/task-idle.png",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.navigate",
+      "Tooltip": "Press to open the latest Codex task. Turn left to scroll up and right to scroll down.",
+      "Controllers": ["Encoder"],
+      "Encoder": { "layout": "$UA1" },
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Latest Task", "Image": "assets/icons/task-idle.png" }]
     },
     {
       "Name": "Fork Codex Task",

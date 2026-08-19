@@ -7,7 +7,7 @@
 OpenCodexMicro exposes Codex's live Micro state through a loopback Bridge and
 turns it into a native Ulanzi Studio plugin. It shows recent tasks, switches to
 the exact task displayed on a key, and provides Fast, Usage, Pin, New, Fork,
-Steer, Mic, and Submit actions.
+Steer, Mic, Submit, and Latest Task & Scroll Encoder actions.
 
 ![OpenCodexMicro on an Ulanzi D200 Series](docs/images/codex-keyboard-hero.png)
 
@@ -18,6 +18,7 @@ Steer, Mic, and Submit actions.
 | Five live task actions | Show Codex's Most Recent tasks with idle, working, complete, attention, or error state |
 | Exact task switching | Route the selected thread through Codex's own Micro event bus |
 | Codex controls | Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit |
+| Encoder navigation | Press to open task 1; turn left/right to scroll up/down through Ulanzi Studio's hotkey protocol |
 | Live usage | Draw the remaining Codex allowance directly on the key; press to return to Codex |
 | Ulanzi Studio integration | Let Ulanzi Studio own the device and manage the key layout |
 | Local-only transport | Bind CDP and the Bridge API to loopback addresses only |
@@ -39,7 +40,7 @@ responsibility boundary.
 
 - macOS 13 or later;
 - Codex Desktop;
-- Ulanzi Studio 3.0 or later;
+- Ulanzi Studio 3.0.1 or later;
 - Ulanzi D200 Series connected to Ulanzi Studio;
 - Node.js 20 or newer.
 
@@ -100,8 +101,12 @@ diagnostics, updates, and uninstall instructions.
 ## Configure
 
 The physical layout is managed in Ulanzi Studio. The plugin ships these
-actions: Codex Task 1–5, Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit.
+actions: Codex Task 1–5, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit, and
+Latest Task & Scroll for Encoder controls.
 No separate device daemon or shortcut mapping is required.
+
+On macOS, enable Ulanzi Studio in **System Settings > Privacy & Security >
+Accessibility** so Encoder rotation can send mouse-wheel events.
 
 See [Configuration](docs/configuration.md) for action behavior and layout
 guidance.

@@ -8,7 +8,7 @@
 
 OpenCodexMicro 通过本机回环 Bridge 暴露 Codex 的实时 Micro 状态，再由原生
 Ulanzi Studio 插件显示最近任务、精确切换任务，并提供 Fast、Usage、Pin、New、
-Fork、Steer、Mic 和 Submit 操作。
+Fork、Steer、Mic、Submit 和 Latest Task & Scroll 旋钮操作。
 
 ## 实现的功能
 
@@ -17,6 +17,7 @@ Fork、Steer、Mic 和 Submit 操作。
 | 五个实时任务 Action | 展示 Codex Most Recent 任务及空闲、运行、完成、等待处理或错误状态 |
 | 精确任务切换 | 通过 Codex 自己的 Micro event bus 打开按键显示的任务 |
 | Codex 常用控制 | Fast、Usage、Pin、New、Fork、Steer、Mic 和 Submit |
+| 旋钮导航 | 按下打开 task1；左/右旋转通过 Ulanzi Studio hotkey 协议向上/向下滚动 |
 | Usage 显示 | 在按键上动态绘制剩余额度，点击后回到 Codex 应用 |
 | Ulanzi Studio 集成 | 由 Ulanzi Studio 独占设备并管理实体键位 |
 | 仅本机通信 | CDP 与 Bridge API 都只绑定回环地址 |
@@ -35,7 +36,7 @@ Ulanzi 的实现与维护范围仅限
 
 - macOS 13 或更高版本；
 - Codex Desktop；
-- Ulanzi Studio 3.0 或更高版本；
+- Ulanzi Studio 3.0.1 或更高版本；
 - 已在 Ulanzi Studio 中连接 Ulanzi D200 Series；
 - Node.js 20 或更高版本。
 
@@ -94,7 +95,11 @@ curl http://127.0.0.1:17373/state
 ## 配置
 
 实体布局完全由 Ulanzi Studio 管理。插件提供 Codex Task 1–5、Fast、Usage、Pin、
-New、Fork、Steer、Mic 和 Submit，不需要额外的设备 daemon 或快捷键映射。
+New、Fork、Steer、Mic、Submit 和 Latest Task & Scroll 旋钮 Action，不需要额外的
+设备 daemon 或快捷键映射。
+
+在 macOS 中，请在“系统设置 > 隐私与安全性 > 辅助功能”中允许 Ulanzi Studio，
+否则旋钮无法发送鼠标滚轮事件。
 
 Action 行为和布局建议见[配置详解](docs/configuration.md)。
 
