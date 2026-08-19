@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { createBridgeInstaller } from "./bridge-installer.js";
 
 const PLUGIN_UUID = "com.ulanzi.ulanzistudio.codexmicro";
 const BRIDGE_URL = process.env.CODEX_BRIDGE_URL || "http://127.0.0.1:17373";
@@ -8,6 +9,12 @@ const [address = "127.0.0.1", port = "3906"] = process.argv.slice(2);
 const HOST_URL = `ws://${address}:${port}`;
 const instances = new Map();
 const PLUGIN_ROOT = resolve(dirname(resolve(process.argv[1])), "..");
+const MANIFEST = JSON.parse(readFileSync(resolve(PLUGIN_ROOT, "manifest.json"), "utf8"));
+const bridgeSetup = createBridgeInstaller({
+  pluginRoot: PLUGIN_ROOT,
+  bridgeUrl: BRIDGE_URL,
+  version: MANIFEST.Version
+});
 const USAGE_BASE64 = readFileSync(
   resolve(PLUGIN_ROOT, "assets/icons/usage-base.png")
 ).toString("base64");
@@ -35,6 +42,7 @@ let reconnectTimer;
 let pollTimer;
 let pollInFlight = false;
 let latestState = null;
+let setupOperation = null;
 
 function contextOf(message) {
   return String(message.actionid || `${message.uuid}___${message.key}`);
@@ -108,6 +116,76 @@ function ack(message) {
     active: message.active,
     param: message.param || {}
   });
+}
+
+function sendToInspector(message, payload) {
+  send({
+    cmd: "sendToPropertyInspector",
+    uuid: message.uuid,
+    actionid: message.actionid,
+    key: message.key,
+    payload
+  });
+}
+
+async function sendBridgeSetupStatus(message, extra = {}) {
+  const status = await bridgeSetup.status();
+  sendToInspector(message, {
+    type: "bridgeSetupStatus",
+    status,
+    busy: Boolean(setupOperation),
+    operation: setupOperation,
+    ...extra
+  });
+}
+
+async function handleBridgeSetupMessage(message) {
+  const action = message.payload?.action;
+  if (action === "openGuide") {
+    send({
+      cmd: "openurl",
+      url: "https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation",
+      local: false
+    });
+    await sendBridgeSetupStatus(message);
+    return;
+  }
+  if (action === "status" || !action) {
+    await sendBridgeSetupStatus(message);
+    return;
+  }
+  if (!["install", "launch", "uninstall"].includes(action)) {
+    await sendBridgeSetupStatus(message, { error: `Unknown setup action: ${action}` });
+    return;
+  }
+  if (setupOperation) {
+    await sendBridgeSetupStatus(message);
+    return;
+  }
+
+  setupOperation = action;
+  await sendBridgeSetupStatus(message);
+  let result = null;
+  let failure = null;
+  try {
+    if (action === "install") await bridgeSetup.install();
+    if (action === "launch") await bridgeSetup.launch();
+    if (action === "uninstall") await bridgeSetup.uninstall();
+    result = action;
+  } catch (error) {
+    failure = error.message;
+    send({
+      cmd: "logMessage",
+      uuid: message.uuid,
+      actionid: message.actionid,
+      key: message.key,
+      level: "error",
+      message: `Codex Bridge ${action} failed: ${error.message}`
+    });
+  } finally {
+    setupOperation = null;
+  }
+  await sendBridgeSetupStatus(message, { result, error: failure });
 }
 
 function taskIconPath(status) {
@@ -342,6 +420,13 @@ function handleMessage(raw) {
   if (message.cmd === "clear") {
     for (const item of message.param || []) instances.delete(contextOf(item));
     ack(message);
+    return;
+  }
+  if (message.cmd === "sendToPlugin") {
+    ack(message);
+    if (message.payload?.type === "bridgeSetup") {
+      void handleBridgeSetupMessage(message);
+    }
     return;
   }
   if (message.cmd === "run") {

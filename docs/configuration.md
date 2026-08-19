@@ -3,6 +3,12 @@
 The OpenCodexMicro layout is configured entirely in Ulanzi Studio. Open the
 Codex Micro category and drag any action onto a keypad position.
 
+Select any configured action to open the shared **Codex Bridge Setup** page.
+The page distinguishes the wrapper app installation, Bridge background
+service, and Codex CDP connection. It can install or repair the Bridge from
+resources bundled with the plugin, launch Codex Bridge, and recheck status.
+No repository or npm working directory is required for this flow.
+
 ## Actions
 
 | Action | Behavior |

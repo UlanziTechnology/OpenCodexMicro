@@ -1,6 +1,6 @@
 {
   "name": "open-codex-micro",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "Control Codex Desktop from Ulanzi Studio through a local bridge",

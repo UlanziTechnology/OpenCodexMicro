@@ -42,7 +42,7 @@ responsibility boundary.
 - Codex Desktop;
 - Ulanzi Studio 3.0.1 or later;
 - Ulanzi D200 Series connected to Ulanzi Studio;
-- Node.js 20 or newer.
+- Node.js 20 or newer only for repository-based manual installation.
 
 ### 1. LLM / Agent installation
 
@@ -61,7 +61,20 @@ An LLM or coding agent must follow these steps:
 5. Report plugin installation and Bridge connectivity separately. Do not
    reinstall a valid plugin unless an update or repair was requested.
 
-### 2. Manual installation
+### 2. Install Bridge from Ulanzi Studio
+
+After installing the Codex Micro plugin, drag any Codex Micro action onto a
+key and select it. Its shared **Codex Bridge Setup** page can:
+
+- show whether `Codex Bridge.app`, the Bridge service, and CDP are available;
+- install or repair the bundled Bridge without a repository or npm directory;
+- launch `~/Applications/Codex Bridge.app`; and
+- recheck the connection or open the full installation guide.
+
+The installer writes only to the current user's Applications, Application
+Support, and LaunchAgents directories and does not require `sudo`.
+
+### 3. Manual installation
 
 ```bash
 git clone https://github.com/UlanziTechnology/OpenCodexMicro.git
@@ -104,6 +117,10 @@ The physical layout is managed in Ulanzi Studio. The plugin ships these
 actions: Codex Task 1–5, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit, and
 Latest Task & Scroll for Encoder controls.
 No separate device daemon or shortcut mapping is required.
+
+Select any configured action to open the shared **Codex Bridge Setup** page.
+It shows Bridge installation, service, and CDP status and provides Install /
+Repair and Launch controls.
 
 On macOS, enable Ulanzi Studio in **System Settings > Privacy & Security >
 Accessibility** so Encoder rotation can send mouse-wheel events.

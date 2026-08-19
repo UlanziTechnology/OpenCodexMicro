@@ -11,9 +11,17 @@ Codex Desktop <-> Codex Bridge sidecar <-> Ulanzi Studio plugin <-> D200
 - macOS;
 - Codex Desktop;
 - Ulanzi Studio with a supported keypad device;
-- Node.js 20 or newer.
+- Node.js 20 or newer only for repository-based manual installation.
 
-## 1. Set up Codex Bridge.app
+## 1. Set up Codex Bridge.app in Ulanzi Studio
+
+Drag any Codex Micro action onto a key and select it. In the shared
+**Codex Bridge Setup** page, choose **Install / Repair**. The plugin installs
+its bundled Bridge runtime, wrapper app, and user LaunchAgent without requiring
+a repository path, npm, or administrator access. Then choose
+**Launch Codex Bridge** and wait for the CDP status to become connected.
+
+## 2. Set up Codex Bridge.app from the repository
 
 From the repository root:
 
@@ -35,7 +43,7 @@ To install without starting the sidecar LaunchAgent:
 npm run setup -- --no-start
 ```
 
-## 2. Install the Ulanzi Studio plugin
+## 3. Install the Ulanzi Studio plugin
 
 Quit Ulanzi Studio before replacing a plugin that is currently loaded, then
 run:

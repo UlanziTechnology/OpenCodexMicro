@@ -1,7 +1,7 @@
 {
   "Name": "Codex Micro",
   "Overview": "Ulanzi Studio の Ulanzi D200 Series から Codex Desktop のタスクと操作を制御します。",
-  "Description": "Ulanzi Studio を通じて、Ulanzi D200 Series を Codex Desktop 専用のコントロールサーフェスにします。\n\n機能\n- 最近の 5 件の Codex タスクをリアルタイム状態付きで表示し、選択したタスクを正確に開きます。\n- Fast、Usage、Pin、New、Fork、Steer、Mic、Submit を操作できます。\n- Latest Task & Scroll Encoder で task1 を開き、Codex を上下にスクロールできます。\n- Codex Bridge.app とループバック限定エンドポイントを使用して通信をローカルに保ちます。\n\nインストール環境\n- macOS 13 以降\n- Codex Desktop\n- Ulanzi Studio 3.0.1 以降\n- Ulanzi Studio に接続された Ulanzi D200 Series\n- Bridge セットアップ用の Node.js 20 以降\n\nLLM / AGENT インストール\nAgent に次のように入力します：\nこのプラグインをインストールしてください：https://github.com/UlanziTechnology/OpenCodexMicro\n\n手動インストール\n1. https://github.com/UlanziTechnology/OpenCodexMicro をクローンしてリポジトリを開きます。\n2. Ulanzi Studio を終了します。\n3. 実行：npm install\n4. 実行：npm run install:plugin\n5. 実行：npm run setup\n6. Ulanzi Studio を再度開き、Codex Desktop を終了して ~/Applications/Codex Bridge.app を起動します。\n7. Ulanzi Studio で Codex Micro actions をキーに追加します。\n\n重要事項\nCodex Micro を使用する際は、必ず ~/Applications/Codex Bridge.app から Codex を起動してください。Codex Desktop を直接開かないでください。\n起動コマンド： open ~/Applications/Codex\\ Bridge.app",
+  "Description": "Ulanzi Studio を通じて、Ulanzi D200 Series を Codex Desktop 専用のコントロールサーフェスにします。\n\n機能\n- 最近の 5 件の Codex タスクをリアルタイム状態付きで表示し、選択したタスクを正確に開きます。\n- Fast、Usage、Pin、New、Fork、Steer、Mic、Submit を操作できます。\n- Latest Task & Scroll Encoder で task1 を開き、Codex を上下にスクロールできます。\n- 各 Action の設定ページから Codex Bridge のインストール、修復、起動、確認ができます。\n- Codex Bridge.app とループバック限定エンドポイントを使用して通信をローカルに保ちます。\n\nインストール環境\n- macOS 13 以降\n- Codex Desktop\n- Ulanzi Studio 3.0.1 以降\n- Ulanzi Studio に接続された Ulanzi D200 Series\n- リポジトリから手動設定する場合のみ Node.js 20 以降\n\nLLM / AGENT インストール\nAgent に次のように入力します：\nUlanzi Studio プラグインをインストールしてください：[https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation](https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation)\n\n手動インストール\n1. https://github.com/UlanziTechnology/OpenCodexMicro をクローンしてリポジトリを開きます。\n2. Ulanzi Studio を終了します。\n3. 実行：npm install\n4. 実行：npm run install:plugin\n5. 実行：npm run setup\n6. Ulanzi Studio を再度開き、Codex Desktop を終了して ~/Applications/Codex Bridge.app を起動します。\n7. Ulanzi Studio で Codex Micro actions をキーに追加します。\n8. 任意の Action を選択し、Codex Bridge 設定ページでインストール、サービス、CDP の状態を確認します。\n\n重要事項\nCodex Micro を使用する際は、必ず ~/Applications/Codex Bridge.app から Codex を起動してください。Codex Desktop を直接開かないでください。\n起動コマンド： open ~/Applications/Codex\\ Bridge.app",
   "Actions": [
     { "Name": "Codex タスク 1", "Tooltip": "最近の Codex タスクスロット 1 を開き、リアルタイム状態を表示します。" },
     { "Name": "Codex タスク 2", "Tooltip": "最近の Codex タスクスロット 2 を開き、リアルタイム状態を表示します。" },
@@ -17,5 +17,32 @@
     { "Name": "Codex を誘導", "Tooltip": "現在の入力欄のテキストを実行中タスクへの誘導入力として送信します。" },
     { "Name": "Codex マイク", "Tooltip": "Codex のマイク操作を切り替えます。" },
     { "Name": "Codex に送信", "Tooltip": "現在の Codex 入力欄のテキストを送信またはキューに追加します。" }
-  ]
+  ],
+  "Localization": {
+    "BridgeSetup": "Codex Bridge 設定",
+    "BridgeSetupDescription": "ローカルの Codex 接続をインストール、起動、確認します。",
+    "BridgeApp": "Codex Bridge.app",
+    "BridgeService": "Bridge サービス",
+    "CDPConnection": "CDP 接続",
+    "InstallRepair": "インストール / 修復",
+    "LaunchBridge": "Codex Bridge を起動",
+    "UninstallBridge": "Codex Bridge をアンインストール",
+    "UninstallingBridge": "アンインストール中…",
+    "UninstallBridgeDone": "Codex Bridge をアンインストールしました。Ulanzi プラグインと Codex Desktop は保持されます。",
+    "UninstallBridgeConfirm": "Codex Bridge とバックグラウンドサービスをアンインストールしますか？Ulanzi プラグインと Codex Desktop は削除されません。",
+    "BridgeAppInfoTitle": "Codex Bridge.app とは？",
+    "BridgeAppDescription": "Codex Bridge.app はローカルランチャーです。Codex が実行中の場合は正常終了を要求し、ループバック専用の CDP 起動引数で公式 Codex Desktop 実行ファイルを起動します。",
+    "BridgeAppSafety": "このランチャーは Codex Desktop、アカウント、プロジェクト、ユーザーファイルを変更せず、CDP をこの Mac の外部に公開しません。その他の権限昇格や破壊的操作も行いません。別の Bridge サービスがローカル状態と Action 通信を処理します。",
+    "BackgroundActivityTitle": "バックグラウンド動作と Node.js",
+    "LaunchAgentDescription": "LaunchAgent はログイン時にローカル Codex Bridge サービスを起動し、終了した場合は再起動します。サービスはループバックアドレスでこの Mac 内だけを待ち受けます。",
+    "NodeSelectionStrategy": "インストール / 修復では、ログイン環境、PATH、Homebrew、一般的なパスから Node.js 20 以降を優先し、見つからない場合のみ Ulanzi Studio 内蔵 Node を使用します。",
+    "NodeInstallRecommendation": "推奨：Terminal で最新の Node.js をインストールし、インストール / 修復を再実行してください：",
+    "UlanziNodeSignatureNotice": "Ulanzi Studio Node にフォールバックすると、macOS のバックグラウンド項目に Ulanzi Studio の署名付きアクティビティが表示されることがあります。これは Codex Bridge サービスが Ulanzi Studio の Node 実行ファイルで動作しているためです。",
+    "CurrentNodeRuntime": "現在のランタイム：{runtime} {version}",
+    "SystemNode": "システム Node.js",
+    "UlanziNode": "Ulanzi Studio Node",
+    "UnknownNode": "未インストールまたは記録なし",
+    "CheckAgain": "再確認",
+    "InstallationGuide": "インストールガイド"
+  }
 }

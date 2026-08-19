@@ -1,7 +1,7 @@
 {
   "Name": "Codex Micro",
   "Overview": "Codex-Desktop-Aufgaben und -Aktionen mit der Ulanzi D200 Series in Ulanzi Studio steuern.",
-  "Description": "Verwandeln Sie die Ulanzi D200 Series über Ulanzi Studio in eine dedizierte Steueroberfläche für Codex Desktop.\n\nFUNKTIONEN\n- Zeigt fünf aktuelle Codex-Aufgaben mit Live-Status und öffnet exakt die ausgewählte Aufgabe.\n- Bietet Fast, Usage, Pin, New, Fork, Steer, Mic und Submit.\n- Mit Latest Task & Scroll öffnen Sie task1 und scrollen Codex über den Encoder.\n- Hält die Kommunikation über Codex Bridge.app und ausschließlich lokale Loopback-Endpunkte auf dem Mac.\n\nINSTALLATIONSUMGEBUNG\n- macOS 13 oder neuer\n- Codex Desktop\n- Ulanzi Studio 3.0.1 oder neuer\n- In Ulanzi Studio verbundene Ulanzi D200 Series\n- Node.js 20 oder neuer für die Bridge-Einrichtung\n\nLLM-/AGENT-INSTALLATION\nGeben Sie in Ihrem Agent ein:\nInstalliere bitte dieses Plugin: https://github.com/UlanziTechnology/OpenCodexMicro\n\nMANUELLE INSTALLATION\n1. https://github.com/UlanziTechnology/OpenCodexMicro klonen und das Repository öffnen.\n2. Ulanzi Studio beenden.\n3. Ausführen: npm install\n4. Ausführen: npm run install:plugin\n5. Ausführen: npm run setup\n6. Ulanzi Studio erneut öffnen, Codex Desktop beenden und ~/Applications/Codex Bridge.app starten.\n7. Die Codex-Micro-Aktionen in Ulanzi Studio den gewünschten Tasten hinzufügen.\n\nWICHTIG\nStarten Sie Codex bei Verwendung von Codex Micro immer über ~/Applications/Codex Bridge.app. Öffnen Sie Codex Desktop nicht direkt.\nStartbefehl: open ~/Applications/Codex\\ Bridge.app",
+  "Description": "Verwandeln Sie die Ulanzi D200 Series über Ulanzi Studio in eine dedizierte Steueroberfläche für Codex Desktop.\n\nFUNKTIONEN\n- Zeigt fünf aktuelle Codex-Aufgaben mit Live-Status und öffnet exakt die ausgewählte Aufgabe.\n- Bietet Fast, Usage, Pin, New, Fork, Steer, Mic und Submit.\n- Mit Latest Task & Scroll öffnen Sie task1 und scrollen Codex über den Encoder.\n- Codex Bridge über die Einstellungsseite jeder Action installieren, reparieren, starten und prüfen.\n- Hält die Kommunikation über Codex Bridge.app und ausschließlich lokale Loopback-Endpunkte auf dem Mac.\n\nINSTALLATIONSUMGEBUNG\n- macOS 13 oder neuer\n- Codex Desktop\n- Ulanzi Studio 3.0.1 oder neuer\n- In Ulanzi Studio verbundene Ulanzi D200 Series\n- Node.js 20 oder neuer nur für die manuelle Einrichtung aus dem Repository\n\nLLM-/AGENT-INSTALLATION\nGeben Sie in Ihrem Agent ein:\nInstalliere bitte das Ulanzi-Studio-Plugin für mich: [https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation](https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation)\n\nMANUELLE INSTALLATION\n1. https://github.com/UlanziTechnology/OpenCodexMicro klonen und das Repository öffnen.\n2. Ulanzi Studio beenden.\n3. Ausführen: npm install\n4. Ausführen: npm run install:plugin\n5. Ausführen: npm run setup\n6. Ulanzi Studio erneut öffnen, Codex Desktop beenden und ~/Applications/Codex Bridge.app starten.\n7. Die Codex-Micro-Aktionen in Ulanzi Studio den gewünschten Tasten hinzufügen.\n8. Eine Action auswählen und Installation, Dienst sowie CDP auf der Codex-Bridge-Seite prüfen.\n\nWICHTIG\nStarten Sie Codex bei Verwendung von Codex Micro immer über ~/Applications/Codex Bridge.app. Öffnen Sie Codex Desktop nicht direkt.\nStartbefehl: open ~/Applications/Codex\\ Bridge.app",
   "Actions": [
     { "Name": "Codex-Aufgabe 1", "Tooltip": "Öffnet den letzten Codex-Aufgabenplatz 1 und zeigt seinen Live-Status." },
     { "Name": "Codex-Aufgabe 2", "Tooltip": "Öffnet den letzten Codex-Aufgabenplatz 2 und zeigt seinen Live-Status." },
@@ -17,5 +17,32 @@
     { "Name": "Codex steuern", "Tooltip": "Sendet den aktuellen Eingabetext als Steueranweisung an die laufende Aufgabe." },
     { "Name": "Codex-Mikrofon", "Tooltip": "Schaltet die Codex-Mikrofonaktion um." },
     { "Name": "An Codex senden", "Tooltip": "Sendet den aktuellen Codex-Eingabetext oder stellt ihn in die Warteschlange." }
-  ]
+  ],
+  "Localization": {
+    "BridgeSetup": "Codex Bridge einrichten",
+    "BridgeSetupDescription": "Lokale Codex-Verbindung installieren, starten und prüfen.",
+    "BridgeApp": "Codex Bridge.app",
+    "BridgeService": "Bridge-Dienst",
+    "CDPConnection": "CDP-Verbindung",
+    "InstallRepair": "Installieren / Reparieren",
+    "LaunchBridge": "Codex Bridge starten",
+    "UninstallBridge": "Codex Bridge deinstallieren",
+    "UninstallingBridge": "Wird deinstalliert…",
+    "UninstallBridgeDone": "Codex Bridge wurde deinstalliert. Das Ulanzi-Plugin und Codex Desktop bleiben erhalten.",
+    "UninstallBridgeConfirm": "Codex Bridge und den Hintergrunddienst deinstallieren? Das Ulanzi-Plugin und Codex Desktop werden nicht entfernt.",
+    "BridgeAppInfoTitle": "Was ist Codex Bridge.app?",
+    "BridgeAppDescription": "Codex Bridge.app ist ein lokaler Starter. Falls Codex bereits läuft, wird es regulär beendet und anschließend die offizielle Codex-Desktop-Datei mit ausschließlich lokalen CDP-Startparametern gestartet.",
+    "BridgeAppSafety": "Der Starter verändert weder Codex Desktop noch Konten, Projekte oder Benutzerdateien und gibt CDP nicht außerhalb dieses Macs frei. Er führt keine weiteren privilegierten oder destruktiven Aktionen aus. Der separate Bridge-Dienst übernimmt lokalen Status und Action-Kommunikation.",
+    "BackgroundActivityTitle": "Hintergrundaktivität und Node.js",
+    "LaunchAgentDescription": "Der LaunchAgent startet den lokalen Codex-Bridge-Dienst bei der Anmeldung und startet ihn nach einem Beenden neu. Der Dienst lauscht nur über eine Loopback-Adresse auf diesem Mac.",
+    "NodeSelectionStrategy": "Installieren / Reparieren bevorzugt Node.js 20 oder neuer aus Anmeldeumgebung, PATH, Homebrew oder üblichen Installationspfaden. Nur ersatzweise wird das in Ulanzi Studio enthaltene Node verwendet.",
+    "NodeInstallRecommendation": "Empfohlen: Installieren Sie die neueste Node.js-Version im Terminal und führen Sie Installieren / Reparieren erneut aus:",
+    "UlanziNodeSignatureNotice": "Beim Rückgriff auf Ulanzi Studio Node kann macOS unter Hintergrundobjekte eine Aktivität mit Ulanzi-Studio-Signatur anzeigen. Dabei läuft der Codex-Bridge-Dienst mit der Node-Datei von Ulanzi Studio.",
+    "CurrentNodeRuntime": "Aktuelle Laufzeit: {runtime} {version}",
+    "SystemNode": "System-Node.js",
+    "UlanziNode": "Ulanzi Studio Node",
+    "UnknownNode": "Nicht installiert oder nicht erfasst",
+    "CheckAgain": "Erneut prüfen",
+    "InstallationGuide": "Installationsanleitung"
+  }
 }

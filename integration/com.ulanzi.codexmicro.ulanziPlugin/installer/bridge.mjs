@@ -1,10 +1,17 @@
+import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __commonJS = (cb, mod) => function __require() {
+var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+}) : x)(function(x) {
+  if (typeof require !== "undefined") return require.apply(this, arguments);
+  throw Error('Dynamic require of "' + x + '" is not supported');
+});
+var __commonJS = (cb, mod) => function __require2() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 var __copyProps = (to, from, except, desc) => {
@@ -26,12 +33,12 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 
 // ../../node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
-  "../../node_modules/ws/lib/constants.js"(exports2, module2) {
+  "../../node_modules/ws/lib/constants.js"(exports, module) {
     "use strict";
     var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
     var hasBlob = typeof Blob !== "undefined";
     if (hasBlob) BINARY_TYPES.push("blob");
-    module2.exports = {
+    module.exports = {
       BINARY_TYPES,
       CLOSE_TIMEOUT: 3e4,
       EMPTY_BUFFER: Buffer.alloc(0),
@@ -49,7 +56,7 @@ var require_constants = __commonJS({
 
 // ../../node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS({
-  "../../node_modules/ws/lib/buffer-util.js"(exports2, module2) {
+  "../../node_modules/ws/lib/buffer-util.js"(exports, module) {
     "use strict";
     var { EMPTY_BUFFER } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
@@ -98,7 +105,7 @@ var require_buffer_util = __commonJS({
       }
       return buf;
     }
-    module2.exports = {
+    module.exports = {
       concat,
       mask: _mask,
       toArrayBuffer,
@@ -107,12 +114,12 @@ var require_buffer_util = __commonJS({
     };
     if (!process.env.WS_NO_BUFFER_UTIL) {
       try {
-        const bufferUtil = require("bufferutil");
-        module2.exports.mask = function(source, mask, output, offset, length) {
+        const bufferUtil = __require("bufferutil");
+        module.exports.mask = function(source, mask, output, offset, length) {
           if (length < 48) _mask(source, mask, output, offset, length);
           else bufferUtil.mask(source, mask, output, offset, length);
         };
-        module2.exports.unmask = function(buffer, mask) {
+        module.exports.unmask = function(buffer, mask) {
           if (buffer.length < 32) _unmask(buffer, mask);
           else bufferUtil.unmask(buffer, mask);
         };
@@ -124,7 +131,7 @@ var require_buffer_util = __commonJS({
 
 // ../../node_modules/ws/lib/limiter.js
 var require_limiter = __commonJS({
-  "../../node_modules/ws/lib/limiter.js"(exports2, module2) {
+  "../../node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
     var kDone = Symbol("kDone");
     var kRun = Symbol("kRun");
@@ -168,15 +175,15 @@ var require_limiter = __commonJS({
         }
       }
     };
-    module2.exports = Limiter;
+    module.exports = Limiter;
   }
 });
 
 // ../../node_modules/ws/lib/permessage-deflate.js
 var require_permessage_deflate = __commonJS({
-  "../../node_modules/ws/lib/permessage-deflate.js"(exports2, module2) {
+  "../../node_modules/ws/lib/permessage-deflate.js"(exports, module) {
     "use strict";
-    var zlib = require("zlib");
+    var zlib = __require("zlib");
     var bufferUtil = require_buffer_util();
     var Limiter = require_limiter();
     var { kStatusCode } = require_constants();
@@ -526,7 +533,7 @@ var require_permessage_deflate = __commonJS({
         });
       }
     };
-    module2.exports = PerMessageDeflate2;
+    module.exports = PerMessageDeflate2;
     function deflateOnData(chunk) {
       this[kBuffers].push(chunk);
       this[kTotalLength] += chunk.length;
@@ -557,9 +564,9 @@ var require_permessage_deflate = __commonJS({
 
 // ../../node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
-  "../../node_modules/ws/lib/validation.js"(exports2, module2) {
+  "../../node_modules/ws/lib/validation.js"(exports, module) {
     "use strict";
-    var { isUtf8 } = require("buffer");
+    var { isUtf8 } = __require("buffer");
     var { hasBlob } = require_constants();
     var tokenChars = [
       0,
@@ -734,20 +741,20 @@ var require_validation = __commonJS({
     function isBlob(value) {
       return hasBlob && typeof value === "object" && typeof value.arrayBuffer === "function" && typeof value.type === "string" && typeof value.stream === "function" && (value[Symbol.toStringTag] === "Blob" || value[Symbol.toStringTag] === "File");
     }
-    module2.exports = {
+    module.exports = {
       isBlob,
       isValidStatusCode,
       isValidUTF8: _isValidUTF8,
       tokenChars
     };
     if (isUtf8) {
-      module2.exports.isValidUTF8 = function(buf) {
+      module.exports.isValidUTF8 = function(buf) {
         return buf.length < 24 ? _isValidUTF8(buf) : isUtf8(buf);
       };
     } else if (!process.env.WS_NO_UTF_8_VALIDATE) {
       try {
-        const isValidUTF8 = require("utf-8-validate");
-        module2.exports.isValidUTF8 = function(buf) {
+        const isValidUTF8 = __require("utf-8-validate");
+        module.exports.isValidUTF8 = function(buf) {
           return buf.length < 32 ? _isValidUTF8(buf) : isValidUTF8(buf);
         };
       } catch (e) {
@@ -758,9 +765,9 @@ var require_validation = __commonJS({
 
 // ../../node_modules/ws/lib/receiver.js
 var require_receiver = __commonJS({
-  "../../node_modules/ws/lib/receiver.js"(exports2, module2) {
+  "../../node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
-    var { Writable } = require("stream");
+    var { Writable } = __require("stream");
     var PerMessageDeflate2 = require_permessage_deflate();
     var {
       BINARY_TYPES,
@@ -1375,19 +1382,19 @@ var require_receiver = __commonJS({
         return err;
       }
     };
-    module2.exports = Receiver2;
+    module.exports = Receiver2;
   }
 });
 
 // ../../node_modules/ws/lib/sender.js
 var require_sender = __commonJS({
-  "../../node_modules/ws/lib/sender.js"(exports2, module2) {
+  "../../node_modules/ws/lib/sender.js"(exports, module) {
     "use strict";
-    var { Duplex } = require("stream");
-    var { randomFillSync } = require("crypto");
+    var { Duplex } = __require("stream");
+    var { randomFillSync } = __require("crypto");
     var {
       types: { isUint8Array }
-    } = require("util");
+    } = __require("util");
     var PerMessageDeflate2 = require_permessage_deflate();
     var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
     var { isBlob, isValidStatusCode } = require_validation();
@@ -1409,13 +1416,13 @@ var require_sender = __commonJS({
        * @param {Function} [generateMask] The function used to generate the masking
        *     key
        */
-      constructor(socket2, extensions, generateMask) {
+      constructor(socket, extensions, generateMask) {
         this._extensions = extensions || {};
         if (generateMask) {
           this._generateMask = generateMask;
           this._maskBuffer = Buffer.alloc(4);
         }
-        this._socket = socket2;
+        this._socket = socket;
         this._firstFragment = true;
         this._compress = false;
         this._bufferedBytes = 0;
@@ -1856,7 +1863,7 @@ var require_sender = __commonJS({
         }
       }
     };
-    module2.exports = Sender2;
+    module.exports = Sender2;
     function callCallbacks(sender, err, cb) {
       if (typeof cb === "function") cb(err);
       for (let i = 0; i < sender._queue.length; i++) {
@@ -1874,7 +1881,7 @@ var require_sender = __commonJS({
 
 // ../../node_modules/ws/lib/event-target.js
 var require_event_target = __commonJS({
-  "../../node_modules/ws/lib/event-target.js"(exports2, module2) {
+  "../../node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
     var kCode = Symbol("kCode");
@@ -2084,7 +2091,7 @@ var require_event_target = __commonJS({
         }
       }
     };
-    module2.exports = {
+    module.exports = {
       CloseEvent,
       ErrorEvent,
       Event,
@@ -2103,7 +2110,7 @@ var require_event_target = __commonJS({
 
 // ../../node_modules/ws/lib/extension.js
 var require_extension = __commonJS({
-  "../../node_modules/ws/lib/extension.js"(exports2, module2) {
+  "../../node_modules/ws/lib/extension.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function push(dest, name, elem) {
@@ -2250,22 +2257,22 @@ var require_extension = __commonJS({
         }).join(", ");
       }).join(", ");
     }
-    module2.exports = { format, parse };
+    module.exports = { format, parse };
   }
 });
 
 // ../../node_modules/ws/lib/websocket.js
 var require_websocket = __commonJS({
-  "../../node_modules/ws/lib/websocket.js"(exports2, module2) {
+  "../../node_modules/ws/lib/websocket.js"(exports, module) {
     "use strict";
-    var EventEmitter = require("events");
-    var https = require("https");
-    var http = require("http");
-    var net = require("net");
-    var tls = require("tls");
-    var { randomBytes, createHash } = require("crypto");
-    var { Duplex, Readable } = require("stream");
-    var { URL } = require("url");
+    var EventEmitter = __require("events");
+    var https = __require("https");
+    var http = __require("http");
+    var net = __require("net");
+    var tls = __require("tls");
+    var { randomBytes, createHash } = __require("crypto");
+    var { Duplex, Readable } = __require("stream");
+    var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
     var Sender2 = require_sender();
@@ -2298,7 +2305,7 @@ var require_websocket = __commonJS({
        * @param {(String|String[])} [protocols] The subprotocols
        * @param {Object} [options] Connection options
        */
-      constructor(address2, protocols, options) {
+      constructor(address, protocols, options) {
         super();
         this._binaryType = BINARY_TYPES[0];
         this._closeCode = 1006;
@@ -2314,7 +2321,7 @@ var require_websocket = __commonJS({
         this._receiver = null;
         this._sender = null;
         this._socket = null;
-        if (address2 !== null) {
+        if (address !== null) {
           this._bufferedAmount = 0;
           this._isServer = false;
           this._redirects = 0;
@@ -2328,7 +2335,7 @@ var require_websocket = __commonJS({
               protocols = [protocols];
             }
           }
-          initAsClient(this, address2, protocols, options);
+          initAsClient(this, address, protocols, options);
         } else {
           this._autoPong = options.autoPong;
           this._closeTimeout = options.closeTimeout;
@@ -2434,7 +2441,7 @@ var require_websocket = __commonJS({
        *     not to skip UTF-8 validation for text and close messages
        * @private
        */
-      setSocket(socket2, head, options) {
+      setSocket(socket, head, options) {
         const receiver = new Receiver2({
           allowSynchronousEvents: options.allowSynchronousEvents,
           binaryType: this.binaryType,
@@ -2445,13 +2452,13 @@ var require_websocket = __commonJS({
           maxPayload: options.maxPayload,
           skipUTF8Validation: options.skipUTF8Validation
         });
-        const sender = new Sender2(socket2, this._extensions, options.generateMask);
+        const sender = new Sender2(socket, this._extensions, options.generateMask);
         this._receiver = receiver;
         this._sender = sender;
-        this._socket = socket2;
+        this._socket = socket;
         receiver[kWebSocket] = this;
         sender[kWebSocket] = this;
-        socket2[kWebSocket] = this;
+        socket[kWebSocket] = this;
         receiver.on("conclude", receiverOnConclude);
         receiver.on("drain", receiverOnDrain);
         receiver.on("error", receiverOnError);
@@ -2459,13 +2466,13 @@ var require_websocket = __commonJS({
         receiver.on("ping", receiverOnPing);
         receiver.on("pong", receiverOnPong);
         sender.onerror = senderOnError;
-        if (socket2.setTimeout) socket2.setTimeout(0);
-        if (socket2.setNoDelay) socket2.setNoDelay();
-        if (head.length > 0) socket2.unshift(head);
-        socket2.on("close", socketOnClose);
-        socket2.on("data", socketOnData);
-        socket2.on("end", socketOnEnd);
-        socket2.on("error", socketOnError);
+        if (socket.setTimeout) socket.setTimeout(0);
+        if (socket.setNoDelay) socket.setNoDelay();
+        if (head.length > 0) socket.unshift(head);
+        socket.on("close", socketOnClose);
+        socket.on("data", socketOnData);
+        socket.on("end", socketOnEnd);
+        socket.on("error", socketOnError);
         this._readyState = _WebSocket.OPEN;
         this.emit("open");
       }
@@ -2734,8 +2741,8 @@ var require_websocket = __commonJS({
     });
     WebSocket2.prototype.addEventListener = addEventListener;
     WebSocket2.prototype.removeEventListener = removeEventListener;
-    module2.exports = WebSocket2;
-    function initAsClient(websocket, address2, protocols, options) {
+    module.exports = WebSocket2;
+    function initAsClient(websocket, address, protocols, options) {
       const opts = {
         allowSynchronousEvents: true,
         autoPong: true,
@@ -2766,13 +2773,13 @@ var require_websocket = __commonJS({
         );
       }
       let parsedUrl;
-      if (address2 instanceof URL) {
-        parsedUrl = address2;
+      if (address instanceof URL2) {
+        parsedUrl = address;
       } else {
         try {
-          parsedUrl = new URL(address2);
+          parsedUrl = new URL2(address);
         } catch {
-          throw new SyntaxError(`Invalid URL: ${address2}`);
+          throw new SyntaxError(`Invalid URL: ${address}`);
         }
       }
       if (parsedUrl.protocol === "http:") {
@@ -2907,7 +2914,7 @@ var require_websocket = __commonJS({
           req.abort();
           let addr;
           try {
-            addr = new URL(location, address2);
+            addr = new URL2(location, address);
           } catch (e) {
             const err = new SyntaxError(`Invalid URL: ${location}`);
             emitErrorAndClose(websocket, err);
@@ -2922,18 +2929,18 @@ var require_websocket = __commonJS({
           );
         }
       });
-      req.on("upgrade", (res, socket2, head) => {
+      req.on("upgrade", (res, socket, head) => {
         websocket.emit("upgrade", res);
         if (websocket.readyState !== WebSocket2.CONNECTING) return;
         req = websocket._req = null;
         const upgrade = res.headers.upgrade;
         if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
-          abortHandshake(websocket, socket2, "Invalid Upgrade header");
+          abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
         const digest = createHash("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
-          abortHandshake(websocket, socket2, "Invalid Sec-WebSocket-Accept header");
+          abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
         }
         const serverProt = res.headers["sec-websocket-protocol"];
@@ -2948,7 +2955,7 @@ var require_websocket = __commonJS({
           protError = "Server sent no subprotocol";
         }
         if (protError) {
-          abortHandshake(websocket, socket2, protError);
+          abortHandshake(websocket, socket, protError);
           return;
         }
         if (serverProt) websocket._protocol = serverProt;
@@ -2956,7 +2963,7 @@ var require_websocket = __commonJS({
         if (secWebSocketExtensions !== void 0) {
           if (!perMessageDeflate) {
             const message = "Server sent a Sec-WebSocket-Extensions header but no extension was requested";
-            abortHandshake(websocket, socket2, message);
+            abortHandshake(websocket, socket, message);
             return;
           }
           let extensions;
@@ -2964,25 +2971,25 @@ var require_websocket = __commonJS({
             extensions = parse(secWebSocketExtensions);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
-            abortHandshake(websocket, socket2, message);
+            abortHandshake(websocket, socket, message);
             return;
           }
           const extensionNames = Object.keys(extensions);
           if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate2.extensionName) {
             const message = "Server indicated an extension that was not requested";
-            abortHandshake(websocket, socket2, message);
+            abortHandshake(websocket, socket, message);
             return;
           }
           try {
             perMessageDeflate.accept(extensions[PerMessageDeflate2.extensionName]);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Extensions header";
-            abortHandshake(websocket, socket2, message);
+            abortHandshake(websocket, socket, message);
             return;
           }
           websocket._extensions[PerMessageDeflate2.extensionName] = perMessageDeflate;
         }
-        websocket.setSocket(socket2, head, {
+        websocket.setSocket(socket, head, {
           allowSynchronousEvents: opts.allowSynchronousEvents,
           generateMask: opts.generateMask,
           maxBufferedChunks: opts.maxBufferedChunks,
@@ -3152,10 +3159,10 @@ var require_websocket = __commonJS({
 
 // ../../node_modules/ws/lib/stream.js
 var require_stream = __commonJS({
-  "../../node_modules/ws/lib/stream.js"(exports2, module2) {
+  "../../node_modules/ws/lib/stream.js"(exports, module) {
     "use strict";
     var WebSocket2 = require_websocket();
-    var { Duplex } = require("stream");
+    var { Duplex } = __require("stream");
     function emitClose(stream) {
       stream.emit("close");
     }
@@ -3244,13 +3251,13 @@ var require_stream = __commonJS({
       duplex.on("error", duplexOnError);
       return duplex;
     }
-    module2.exports = createWebSocketStream2;
+    module.exports = createWebSocketStream2;
   }
 });
 
 // ../../node_modules/ws/lib/subprotocol.js
 var require_subprotocol = __commonJS({
-  "../../node_modules/ws/lib/subprotocol.js"(exports2, module2) {
+  "../../node_modules/ws/lib/subprotocol.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function parse(header) {
@@ -3289,18 +3296,18 @@ var require_subprotocol = __commonJS({
       protocols.add(protocol);
       return protocols;
     }
-    module2.exports = { parse };
+    module.exports = { parse };
   }
 });
 
 // ../../node_modules/ws/lib/websocket-server.js
 var require_websocket_server = __commonJS({
-  "../../node_modules/ws/lib/websocket-server.js"(exports2, module2) {
+  "../../node_modules/ws/lib/websocket-server.js"(exports, module) {
     "use strict";
-    var EventEmitter = require("events");
-    var http = require("http");
-    var { Duplex } = require("stream");
-    var { createHash } = require("crypto");
+    var EventEmitter = __require("events");
+    var http = __require("http");
+    var { Duplex } = __require("stream");
+    var { createHash } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -3401,8 +3408,8 @@ var require_websocket_server = __commonJS({
           this._removeListeners = addListeners(this._server, {
             listening: this.emit.bind(this, "listening"),
             error: this.emit.bind(this, "error"),
-            upgrade: (req, socket2, head) => {
-              this.handleUpgrade(req, socket2, head, emitConnection);
+            upgrade: (req, socket, head) => {
+              this.handleUpgrade(req, socket, head, emitConnection);
             }
           });
         }
@@ -3465,10 +3472,10 @@ var require_websocket_server = __commonJS({
             process.nextTick(emitClose, this);
           }
         } else {
-          const server = this._server;
+          const server2 = this._server;
           this._removeListeners();
           this._removeListeners = this._server = null;
-          server.close(() => {
+          server2.close(() => {
             emitClose(this);
           });
         }
@@ -3497,35 +3504,35 @@ var require_websocket_server = __commonJS({
        * @param {Function} cb Callback
        * @public
        */
-      handleUpgrade(req, socket2, head, cb) {
-        socket2.on("error", socketOnError);
+      handleUpgrade(req, socket, head, cb) {
+        socket.on("error", socketOnError);
         const key = req.headers["sec-websocket-key"];
         const upgrade = req.headers.upgrade;
         const version = +req.headers["sec-websocket-version"];
         if (req.method !== "GET") {
           const message = "Invalid HTTP method";
-          abortHandshakeOrEmitwsClientError(this, req, socket2, 405, message);
+          abortHandshakeOrEmitwsClientError(this, req, socket, 405, message);
           return;
         }
         if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
           const message = "Invalid Upgrade header";
-          abortHandshakeOrEmitwsClientError(this, req, socket2, 400, message);
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
           return;
         }
         if (key === void 0 || !keyRegex.test(key)) {
           const message = "Missing or invalid Sec-WebSocket-Key header";
-          abortHandshakeOrEmitwsClientError(this, req, socket2, 400, message);
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
           return;
         }
         if (version !== 13 && version !== 8) {
           const message = "Missing or invalid Sec-WebSocket-Version header";
-          abortHandshakeOrEmitwsClientError(this, req, socket2, 400, message, {
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message, {
             "Sec-WebSocket-Version": "13, 8"
           });
           return;
         }
         if (!this.shouldHandle(req)) {
-          abortHandshake(socket2, 400);
+          abortHandshake(socket, 400);
           return;
         }
         const secWebSocketProtocol = req.headers["sec-websocket-protocol"];
@@ -3535,7 +3542,7 @@ var require_websocket_server = __commonJS({
             protocols = subprotocol2.parse(secWebSocketProtocol);
           } catch (err) {
             const message = "Invalid Sec-WebSocket-Protocol header";
-            abortHandshakeOrEmitwsClientError(this, req, socket2, 400, message);
+            abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
             return;
           }
         }
@@ -3555,7 +3562,7 @@ var require_websocket_server = __commonJS({
             }
           } catch (err) {
             const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
-            abortHandshakeOrEmitwsClientError(this, req, socket2, 400, message);
+            abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
             return;
           }
         }
@@ -3568,23 +3575,23 @@ var require_websocket_server = __commonJS({
           if (this.options.verifyClient.length === 2) {
             this.options.verifyClient(info, (verified, code, message, headers) => {
               if (!verified) {
-                return abortHandshake(socket2, code || 401, message, headers);
+                return abortHandshake(socket, code || 401, message, headers);
               }
               this.completeUpgrade(
                 extensions,
                 key,
                 protocols,
                 req,
-                socket2,
+                socket,
                 head,
                 cb
               );
             });
             return;
           }
-          if (!this.options.verifyClient(info)) return abortHandshake(socket2, 401);
+          if (!this.options.verifyClient(info)) return abortHandshake(socket, 401);
         }
-        this.completeUpgrade(extensions, key, protocols, req, socket2, head, cb);
+        this.completeUpgrade(extensions, key, protocols, req, socket, head, cb);
       }
       /**
        * Upgrade the connection to WebSocket.
@@ -3599,14 +3606,14 @@ var require_websocket_server = __commonJS({
        * @throws {Error} If called more than once with the same socket
        * @private
        */
-      completeUpgrade(extensions, key, protocols, req, socket2, head, cb) {
-        if (!socket2.readable || !socket2.writable) return socket2.destroy();
-        if (socket2[kWebSocket]) {
+      completeUpgrade(extensions, key, protocols, req, socket, head, cb) {
+        if (!socket.readable || !socket.writable) return socket.destroy();
+        if (socket[kWebSocket]) {
           throw new Error(
             "server.handleUpgrade() was called more than once with the same socket, possibly due to a misconfiguration"
           );
         }
-        if (this._state > RUNNING) return abortHandshake(socket2, 503);
+        if (this._state > RUNNING) return abortHandshake(socket, 503);
         const digest = createHash("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
@@ -3631,9 +3638,9 @@ var require_websocket_server = __commonJS({
           ws._extensions = extensions;
         }
         this.emit("headers", headers, req);
-        socket2.write(headers.concat("\r\n").join("\r\n"));
-        socket2.removeListener("error", socketOnError);
-        ws.setSocket(socket2, head, {
+        socket.write(headers.concat("\r\n").join("\r\n"));
+        socket.removeListener("error", socketOnError);
+        ws.setSocket(socket, head, {
           allowSynchronousEvents: this.options.allowSynchronousEvents,
           maxBufferedChunks: this.options.maxBufferedChunks,
           maxFragments: this.options.maxFragments,
@@ -3652,23 +3659,23 @@ var require_websocket_server = __commonJS({
         cb(ws, req);
       }
     };
-    module2.exports = WebSocketServer2;
-    function addListeners(server, map) {
-      for (const event of Object.keys(map)) server.on(event, map[event]);
+    module.exports = WebSocketServer2;
+    function addListeners(server2, map) {
+      for (const event of Object.keys(map)) server2.on(event, map[event]);
       return function removeListeners() {
         for (const event of Object.keys(map)) {
-          server.removeListener(event, map[event]);
+          server2.removeListener(event, map[event]);
         }
       };
     }
-    function emitClose(server) {
-      server._state = CLOSED;
-      server.emit("close");
+    function emitClose(server2) {
+      server2._state = CLOSED;
+      server2.emit("close");
     }
     function socketOnError() {
       this.destroy();
     }
-    function abortHandshake(socket2, code, message, headers) {
+    function abortHandshake(socket, code, message, headers) {
       message = message || http.STATUS_CODES[code];
       headers = {
         Connection: "close",
@@ -3676,23 +3683,32 @@ var require_websocket_server = __commonJS({
         "Content-Length": Buffer.byteLength(message),
         ...headers
       };
-      socket2.once("finish", socket2.destroy);
-      socket2.end(
+      socket.once("finish", socket.destroy);
+      socket.end(
         `HTTP/1.1 ${code} ${http.STATUS_CODES[code]}\r
 ` + Object.keys(headers).map((h) => `${h}: ${headers[h]}`).join("\r\n") + "\r\n\r\n" + message
       );
     }
-    function abortHandshakeOrEmitwsClientError(server, req, socket2, code, message, headers) {
-      if (server.listenerCount("wsClientError")) {
+    function abortHandshakeOrEmitwsClientError(server2, req, socket, code, message, headers) {
+      if (server2.listenerCount("wsClientError")) {
         const err = new Error(message);
         Error.captureStackTrace(err, abortHandshakeOrEmitwsClientError);
-        server.emit("wsClientError", err, socket2, req);
+        server2.emit("wsClientError", err, socket, req);
       } else {
-        abortHandshake(socket2, code, message, headers);
+        abortHandshake(socket, code, message, headers);
       }
     }
   }
 });
+
+// ../../src/bridge/server.mjs
+import { createServer } from "node:http";
+import { execFile as execFile2 } from "node:child_process";
+import { promisify as promisify2 } from "node:util";
+
+// ../../src/bridge/codex-cdp.mjs
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 // ../../node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -3705,769 +3721,749 @@ var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
 
-// plugin/app.js
-var import_node_fs2 = require("node:fs");
-var import_node_path2 = require("node:path");
-
-// plugin/bridge-installer.js
-var import_node_fs = require("node:fs");
-var import_promises = require("node:fs/promises");
-var import_node_child_process = require("node:child_process");
-var import_node_util = require("node:util");
-var import_node_os = require("node:os");
-var import_node_path = require("node:path");
-var execFileAsync = (0, import_node_util.promisify)(import_node_child_process.execFile);
-function xml(value) {
-  return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
+// ../../src/bridge/thread-key.mjs
+var UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+var THREAD_KEY_PATTERN = new RegExp(
+  `^(?:${UUID_PATTERN}|client-new-thread:${UUID_PATTERN})$`,
+  "i"
+);
+function validateThreadId(value) {
+  const normalized = String(value ?? "").replace(/^local:/, "");
+  if (!THREAD_KEY_PATTERN.test(normalized)) {
+    throw new Error("Invalid Codex thread id");
+  }
+  return normalized;
 }
-async function exists(path, mode = import_node_fs.constants.F_OK) {
+function decodeThreadPathSegment(segment) {
+  let decoded;
   try {
-    await (0, import_promises.access)(path, mode);
-    return true;
+    decoded = decodeURIComponent(segment);
   } catch {
-    return false;
+    throw new Error("Invalid encoded Codex thread id");
   }
+  return validateThreadId(decoded);
 }
-async function readJson(path) {
-  try {
-    return JSON.parse(await (0, import_promises.readFile)(path, "utf8"));
-  } catch {
-    return null;
-  }
-}
-async function nodeVersion(executable, execute) {
-  try {
-    const { stdout = "" } = await execute(executable, ["--version"]);
-    const match = String(stdout).trim().match(/^v?(\d+)(?:\.(\d+))?/);
-    if (!match) return null;
-    return { text: String(stdout).trim().replace(/^v/, ""), major: Number(match[1]) };
-  } catch {
-    return null;
-  }
-}
-async function selectBridgeNodeRuntime({
-  home = (0, import_node_os.homedir)(),
-  fallbackNodeExecutable = process.execPath,
-  environmentPath = process.env.PATH || "",
-  platform = process.platform,
-  execute = execFileAsync
-} = {}) {
-  const candidates = [];
-  if (platform === "darwin" && await exists("/bin/zsh", import_node_fs.constants.X_OK)) {
-    try {
-      const { stdout = "" } = await execute("/bin/zsh", ["-lic", "node -p process.execPath"]);
-      const discovered = String(stdout).split(/\r?\n/).map((line) => line.trim()).find((line) => line.startsWith("/") && line.split("/").at(-1) === "node");
-      if (discovered) candidates.push(await (0, import_promises.realpath)(discovered));
-    } catch {
-    }
-  }
-  for (const directory of environmentPath.split(import_node_path.delimiter).filter(Boolean)) {
-    candidates.push((0, import_node_path.join)(directory, "node"));
-  }
-  candidates.push(
-    "/opt/homebrew/bin/node",
-    "/usr/local/bin/node",
-    "/usr/bin/node",
-    (0, import_node_path.join)(home, ".local", "bin", "node")
-  );
-  let resolvedFallback = fallbackNodeExecutable;
-  try {
-    resolvedFallback = await (0, import_promises.realpath)(fallbackNodeExecutable);
-  } catch {
-  }
-  for (const executable of [...new Set(candidates)]) {
-    if (!executable.startsWith("/")) continue;
-    if (!await exists(executable, import_node_fs.constants.X_OK)) continue;
-    const resolvedExecutable = await (0, import_promises.realpath)(executable);
-    if (resolvedExecutable === resolvedFallback) continue;
-    const version = await nodeVersion(resolvedExecutable, execute);
-    if (version?.major >= 20) {
-      return { executable: resolvedExecutable, version: version.text, source: "system" };
-    }
-  }
-  if (await exists(resolvedFallback, import_node_fs.constants.X_OK)) {
-    const version = await nodeVersion(resolvedFallback, execute);
-    if (version?.major >= 20) {
-      return { executable: resolvedFallback, version: version.text, source: "ulanzi" };
-    }
-  }
-  throw new Error("No compatible Node.js 20 or later runtime was found.");
-}
-function createBridgeInstaller({
-  pluginRoot,
-  bridgeUrl,
-  version,
-  home = (0, import_node_os.homedir)(),
-  uid = process.getuid?.(),
-  platform = process.platform,
-  nodeExecutable = process.execPath,
-  environmentPath = process.env.PATH || "",
-  execute = execFileAsync
-}) {
-  const appRoot = (0, import_node_path.join)(home, "Library", "Application Support", "OpenCodexMicro");
-  const userApplications = (0, import_node_path.join)(home, "Applications");
-  const bridgeApp = (0, import_node_path.join)(userApplications, "Codex Bridge.app");
-  const bridgeContents = (0, import_node_path.join)(bridgeApp, "Contents");
-  const bridgeMacOS = (0, import_node_path.join)(bridgeContents, "MacOS");
-  const bridgeResources = (0, import_node_path.join)(bridgeContents, "Resources");
-  const bridgeLicenses = (0, import_node_path.join)(bridgeResources, "licenses");
-  const bridgeExecutable = (0, import_node_path.join)(bridgeMacOS, "Codex Bridge");
-  const bridgeIcon = (0, import_node_path.join)(bridgeResources, "CodexBridge.icns");
-  const bridgeRuntime = (0, import_node_path.join)(appRoot, "bridge.mjs");
-  const installMetadata = (0, import_node_path.join)(appRoot, "install.json");
-  const agentsRoot = (0, import_node_path.join)(home, "Library", "LaunchAgents");
-  const bridgeAgent = (0, import_node_path.join)(agentsRoot, "io.opencodexmicro.bridge.plist");
-  const installerRoot = (0, import_node_path.resolve)(pluginRoot, "installer");
-  const bundledRuntime = (0, import_node_path.join)(installerRoot, "bridge.mjs");
-  const bundledIcon = (0, import_node_path.join)(installerRoot, "CodexBridge.png");
-  async function probeBridge() {
-    try {
-      const response = await fetch(`${bridgeUrl}/health`, {
-        signal: AbortSignal.timeout(1200)
-      });
-      const payload = await response.json();
-      if (!response.ok || payload.ok === false) throw new Error(payload.error || `Bridge HTTP ${response.status}`);
-      return { serviceOnline: true, cdpConnected: Boolean(payload.codexConnected), serviceError: null };
-    } catch (error) {
-      return { serviceOnline: false, cdpConnected: false, serviceError: error.message };
-    }
-  }
-  async function status() {
-    const [appInstalled, runtimeInstalled, agentInstalled, metadata, probe] = await Promise.all([
-      exists(bridgeExecutable, import_node_fs.constants.X_OK),
-      exists(bridgeRuntime),
-      exists(bridgeAgent),
-      readJson(installMetadata),
-      probeBridge()
-    ]);
-    const installed = appInstalled && runtimeInstalled && agentInstalled;
-    return {
-      supported: platform === "darwin" && Number.isInteger(uid),
-      installed,
-      appInstalled,
-      serviceInstalled: runtimeInstalled && agentInstalled,
-      installedVersion: metadata?.version || null,
-      bundledVersion: version,
-      needsUpdate: !installed || metadata?.version !== version,
-      appPath: bridgeApp,
-      nodeExecutable: metadata?.nodeExecutable || null,
-      nodeVersion: metadata?.nodeVersion || null,
-      nodeSource: metadata?.nodeSource || null,
-      ...probe
-    };
-  }
-  async function buildIcon() {
-    const iconset = (0, import_node_path.join)(appRoot, "CodexBridge.iconset");
-    await (0, import_promises.rm)(iconset, { recursive: true, force: true });
-    await (0, import_promises.mkdir)(iconset, { recursive: true });
-    try {
-      for (const [name, size] of [
-        ["icon_16x16.png", 16],
-        ["icon_16x16@2x.png", 32],
-        ["icon_32x32.png", 32],
-        ["icon_32x32@2x.png", 64],
-        ["icon_128x128.png", 128],
-        ["icon_128x128@2x.png", 256],
-        ["icon_256x256.png", 256],
-        ["icon_256x256@2x.png", 512],
-        ["icon_512x512.png", 512],
-        ["icon_512x512@2x.png", 1024]
-      ]) {
-        await execute("/usr/bin/sips", [
-          "-z",
-          String(size),
-          String(size),
-          bundledIcon,
-          "--out",
-          (0, import_node_path.join)(iconset, name)
-        ]);
-      }
-      await execute("/usr/bin/iconutil", ["-c", "icns", iconset, "-o", bridgeIcon]);
-    } finally {
-      await (0, import_promises.rm)(iconset, { recursive: true, force: true });
-    }
-  }
-  async function install() {
-    if (platform !== "darwin" || !Number.isInteger(uid)) {
-      throw new Error("Codex Bridge installation is supported on macOS only.");
-    }
-    if (!await exists(bundledRuntime) || !await exists(bundledIcon)) {
-      throw new Error("The plugin does not contain the Codex Bridge installation resources.");
-    }
-    const nodeRuntime = await selectBridgeNodeRuntime({
-      home,
-      fallbackNodeExecutable: nodeExecutable,
-      environmentPath,
-      platform,
-      execute
-    });
-    await (0, import_promises.mkdir)(appRoot, { recursive: true, mode: 448 });
-    await (0, import_promises.chmod)(appRoot, 448);
-    await (0, import_promises.mkdir)(userApplications, { recursive: true });
-    await (0, import_promises.mkdir)(agentsRoot, { recursive: true });
-    await (0, import_promises.copyFile)(bundledRuntime, bridgeRuntime);
-    await (0, import_promises.rm)(bridgeApp, { recursive: true, force: true });
-    await (0, import_promises.mkdir)(bridgeMacOS, { recursive: true });
-    await (0, import_promises.mkdir)(bridgeLicenses, { recursive: true });
-    for (const notice of ["LICENSE", "NOTICE.md", "THIRD_PARTY_NOTICES.md"]) {
-      const source = (0, import_node_path.join)(installerRoot, notice);
-      await (0, import_promises.copyFile)(source, (0, import_node_path.join)(bridgeLicenses, notice));
-      await (0, import_promises.copyFile)(source, (0, import_node_path.join)(appRoot, notice));
-    }
-    await buildIcon();
-    const info = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleDisplayName</key><string>Codex Bridge</string>
-  <key>CFBundleExecutable</key><string>Codex Bridge</string>
-  <key>CFBundleIconFile</key><string>CodexBridge</string>
-  <key>CFBundleIdentifier</key><string>io.opencodexmicro.bridge</string>
-  <key>CFBundleName</key><string>Codex Bridge</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${xml(version)}</string>
-  <key>CFBundleVersion</key><string>${xml(version)}</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>LSUIElement</key><true/>
-  <key>NSHighResolutionCapable</key><true/>
-</dict></plist>
-`;
-    await (0, import_promises.writeFile)((0, import_node_path.join)(bridgeContents, "Info.plist"), info);
-    const launcher = `#!/bin/zsh
-set -u
-unsetopt BG_NICE
-
-codex_binary="/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
-bridge_log="$HOME/Library/Logs/OpenCodexMicro-codex-bridge.log"
-
-if [[ ! -x "$codex_binary" ]]; then
-  /usr/bin/osascript -e 'display alert "Codex Bridge" message "Codex was not found at /Applications/ChatGPT.app." as critical'
-  exit 1
-fi
-
-if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then
-  /usr/bin/osascript -e 'tell application id "com.openai.codex" to quit'
-  for attempt in {1..80}; do
-    /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1 || break
-    /bin/sleep 0.1
-  done
-fi
-
-if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then
-  /usr/bin/osascript -e 'display alert "Codex Bridge" message "Codex did not quit, so bridge parameters could not be applied. Quit Codex and try again." as critical'
-  exit 1
-fi
-
-/usr/bin/nohup "$codex_binary" \\
-  --remote-debugging-address=127.0.0.1 \\
-  --remote-debugging-port=9222 \\
-  --remote-allow-origins=http://127.0.0.1:9222 \\
-  >>"$bridge_log" 2>&1 &
-
-for attempt in {1..300}; do
-  if /usr/bin/curl --noproxy '*' --silent --fail --max-time 0.2 \\
-    http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
-    exit 0
-  fi
-  if ! /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then
-    break
-  fi
-  /bin/sleep 0.1
-done
-
-/usr/bin/osascript -e 'display alert "Codex Bridge" message "Codex started, but the bridge endpoint is unavailable. Quit Codex and launch Codex Bridge again." as critical'
-exit 1
-`;
-    await (0, import_promises.writeFile)(bridgeExecutable, launcher, { mode: 493 });
-    await (0, import_promises.chmod)(bridgeExecutable, 493);
-    await execute("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", bridgeApp]);
-    const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>io.opencodexmicro.bridge</string>
-  <key>ProgramArguments</key><array>
-    <string>${xml(nodeRuntime.executable)}</string>
-    <string>${xml(bridgeRuntime)}</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Background</string>
-  <key>ThrottleInterval</key><integer>2</integer>
-  <key>StandardOutPath</key><string>${xml((0, import_node_path.join)(appRoot, "bridge.log"))}</string>
-  <key>StandardErrorPath</key><string>${xml((0, import_node_path.join)(appRoot, "bridge-error.log"))}</string>
-</dict></plist>
-`;
-    await (0, import_promises.writeFile)(bridgeAgent, plist, { mode: 420 });
-    await (0, import_promises.writeFile)(installMetadata, `${JSON.stringify({
-      version,
-      nodeExecutable: nodeRuntime.executable,
-      nodeVersion: nodeRuntime.version,
-      nodeSource: nodeRuntime.source,
-      installedAt: (/* @__PURE__ */ new Date()).toISOString()
-    }, null, 2)}
-`, { mode: 384 });
-    try {
-      await execute("/bin/launchctl", ["bootout", `gui/${uid}`, bridgeAgent]);
-    } catch {
-    }
-    await execute("/bin/launchctl", ["bootstrap", `gui/${uid}`, bridgeAgent]);
-    return status();
-  }
-  async function launch() {
-    if (!await exists(bridgeExecutable, import_node_fs.constants.X_OK)) {
-      throw new Error("Codex Bridge.app is not installed.");
-    }
-    await execute("/usr/bin/open", [bridgeApp]);
-    return status();
-  }
-  async function uninstall() {
-    if (platform !== "darwin" || !Number.isInteger(uid)) {
-      throw new Error("Codex Bridge uninstallation is supported on macOS only.");
-    }
-    try {
-      await execute("/bin/launchctl", ["bootout", `gui/${uid}`, bridgeAgent]);
-    } catch {
-    }
-    await (0, import_promises.rm)(bridgeAgent, { force: true });
-    await (0, import_promises.rm)(appRoot, { recursive: true, force: true });
-    await (0, import_promises.rm)(bridgeApp, { recursive: true, force: true });
-    return status();
-  }
-  return { status, install, launch, uninstall };
+function localThreadKey(value) {
+  return `local:${validateThreadId(value)}`;
 }
 
-// plugin/app.js
-var PLUGIN_UUID = "com.ulanzi.ulanzistudio.codexmicro";
-var BRIDGE_URL = process.env.CODEX_BRIDGE_URL || "http://127.0.0.1:17373";
-var [address = "127.0.0.1", port = "3906"] = process.argv.slice(2);
-var HOST_URL = `ws://${address}:${port}`;
-var instances = /* @__PURE__ */ new Map();
-var PLUGIN_ROOT = (0, import_node_path2.resolve)((0, import_node_path2.dirname)((0, import_node_path2.resolve)(process.argv[1])), "..");
-var MANIFEST = JSON.parse((0, import_node_fs2.readFileSync)((0, import_node_path2.resolve)(PLUGIN_ROOT, "manifest.json"), "utf8"));
-var bridgeSetup = createBridgeInstaller({
-  pluginRoot: PLUGIN_ROOT,
-  bridgeUrl: BRIDGE_URL,
-  version: MANIFEST.Version
+// ../../src/bridge/codex-cdp.mjs
+var execFileAsync = promisify(execFile);
+var USAGE_REFRESH_MS = Math.max(
+  15e3,
+  Number(process.env.CODEX_KEYBOARD_USAGE_REFRESH_SECONDS || 600) * 1e3
+);
+var DEVICE_STATE = {
+  type: "codex-micro-device-state-changed",
+  state: { status: "connected", error: null, battery: { percentage: 100, isCharging: true } }
+};
+var MICRO_ACTION_KEYS = Object.freeze({
+  fast: "ACT06",
+  approve: "ACT07",
+  reject: "ACT08",
+  fork: "ACT09",
+  mic: "ACT10",
+  submit: "ACT12"
 });
-var USAGE_BASE64 = (0, import_node_fs2.readFileSync)(
-  (0, import_node_path2.resolve)(PLUGIN_ROOT, "assets/icons/usage-base.png")
-).toString("base64");
-var ACTION_LABELS = Object.freeze({
-  fast: "FAST",
-  usage: "USAGE",
-  pin: "PIN",
-  new: "NEW",
-  navigate: "LATEST",
-  fork: "FORK",
-  steer: "STEER",
-  mic: "MIC",
-  submit: "SUBMIT"
-});
-var TASK_ICON_PATHS = Object.freeze({
-  idle: "assets/icons/task-idle.png",
-  working: "assets/icons/task-working.png",
-  complete: "assets/icons/task-complete.png",
-  attention: "assets/icons/task-attention.png",
-  error: "assets/icons/task-error.png"
-});
-var socket;
-var reconnectTimer;
-var pollTimer;
-var pollInFlight = false;
-var latestState = null;
-var setupOperation = null;
-function contextOf(message) {
-  return String(message.actionid || `${message.uuid}___${message.key}`);
-}
-function taskSlot(uuid) {
-  const match = String(uuid || "").match(/\.task([1-5])$/);
-  return match ? Number(match[1]) - 1 : null;
-}
-function actionName(uuid) {
-  const name = String(uuid || "").split(".").at(-1);
-  return Object.hasOwn(ACTION_LABELS, name) ? name : null;
-}
-function usageRemaining(usage) {
-  const windows = Array.isArray(usage?.windows) ? usage.windows : [];
-  const window = windows.find((item) => item?.kind === "weekly") ?? windows[0];
-  const remaining = Number(window?.remainingPercent);
-  return Number.isFinite(remaining) ? Math.max(0, Math.min(100, Math.round(remaining))) : null;
-}
-function usageIconData(usage) {
-  const remaining = usageRemaining(usage);
-  const progress = remaining === null ? "#858c8f" : remaining >= 50 ? "#2fbd7f" : remaining >= 20 ? "#e89b2d" : "#e45861";
-  const circumference = 2 * Math.PI * 57;
-  const filled = circumference * (remaining ?? 0) / 100;
-  const value = remaining === null ? "\u2014" : String(remaining);
-  const percent = remaining === null ? "" : "%";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="196" height="196" viewBox="0 0 196 196">
-    <defs>
-      <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="4.5" result="blur"/>
-        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-    </defs>
-    <image width="196" height="196" href="data:image/png;base64,${USAGE_BASE64}" xlink:href="data:image/png;base64,${USAGE_BASE64}"/>
-    <g fill="none" transform="rotate(-90 98 94)">
-      <circle cx="98" cy="94" r="58.5" stroke="#ffffff" stroke-opacity=".57" stroke-width="2.4"/>
-      <circle cx="98" cy="94" r="57" stroke="#5e6c68" stroke-opacity=".57" stroke-width="16"/>
-      <circle cx="98" cy="94" r="57" stroke="#a0aca9" stroke-width="12"/>
-      <circle cx="98" cy="94" r="57" stroke="#cdd6d3" stroke-width="6"/>
-      ${remaining === null ? "" : `<circle cx="98" cy="94" r="57" stroke="${progress}" stroke-opacity=".5" stroke-width="18" stroke-linecap="butt" stroke-dasharray="${filled} ${circumference - filled}" filter="url(#glow)"/><circle cx="98" cy="94" r="57" stroke="${progress}" stroke-width="10" stroke-linecap="butt" stroke-dasharray="${filled} ${circumference - filled}"/>`}
-    </g>
-    <text x="98" y="105" fill="#303638" font-family="-apple-system,BlinkMacSystemFont,Arial,sans-serif" font-size="36" font-weight="700" text-anchor="middle">${value}${percent ? `<tspan dx="2" dy="-2" font-size="18">${percent}</tspan>` : ""}</text>
-  </svg>`;
-  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
-}
-function send(message) {
-  if (socket?.readyState === wrapper_default.OPEN) {
-    socket.send(JSON.stringify(message));
-  }
-}
-function ack(message) {
-  send({
-    code: 0,
-    cmd: message.cmd,
-    uuid: message.uuid,
-    actionid: message.actionid,
-    key: message.key,
-    active: message.active,
-    param: message.param || {}
-  });
-}
-function sendToInspector(message, payload) {
-  send({
-    cmd: "sendToPropertyInspector",
-    uuid: message.uuid,
-    actionid: message.actionid,
-    key: message.key,
-    payload
-  });
-}
-async function sendBridgeSetupStatus(message, extra = {}) {
-  const status = await bridgeSetup.status();
-  sendToInspector(message, {
-    type: "bridgeSetupStatus",
-    status,
-    busy: Boolean(setupOperation),
-    operation: setupOperation,
-    ...extra
-  });
-}
-async function handleBridgeSetupMessage(message) {
-  const action = message.payload?.action;
-  if (action === "openGuide") {
-    send({
-      cmd: "openurl",
-      url: "https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation",
-      local: false
-    });
-    await sendBridgeSetupStatus(message);
-    return;
-  }
-  if (action === "status" || !action) {
-    await sendBridgeSetupStatus(message);
-    return;
-  }
-  if (!["install", "launch", "uninstall"].includes(action)) {
-    await sendBridgeSetupStatus(message, { error: `Unknown setup action: ${action}` });
-    return;
-  }
-  if (setupOperation) {
-    await sendBridgeSetupStatus(message);
-    return;
-  }
-  setupOperation = action;
-  await sendBridgeSetupStatus(message);
-  let result = null;
-  let failure = null;
-  try {
-    if (action === "install") await bridgeSetup.install();
-    if (action === "launch") await bridgeSetup.launch();
-    if (action === "uninstall") await bridgeSetup.uninstall();
-    result = action;
-  } catch (error) {
-    failure = error.message;
-    send({
-      cmd: "logMessage",
-      uuid: message.uuid,
-      actionid: message.actionid,
-      key: message.key,
-      level: "error",
-      message: `Codex Bridge ${action} failed: ${error.message}`
-    });
-  } finally {
-    setupOperation = null;
-  }
-  await sendBridgeSetupStatus(message, { result, error: failure });
-}
-function taskIconPath(status) {
-  const value = String(status || "").toLowerCase();
-  if (["working", "thinking", "running", "in_progress"].includes(value)) return TASK_ICON_PATHS.working;
-  if (["unread", "complete", "completed", "done", "success"].includes(value)) return TASK_ICON_PATHS.complete;
-  if (["attention", "notification", "input", "approval", "waiting_input", "needs_input"].includes(value)) return TASK_ICON_PATHS.attention;
-  if (["error", "failed", "failure"].includes(value)) return TASK_ICON_PATHS.error;
-  return TASK_ICON_PATHS.idle;
-}
-function shortTitle(value) {
-  const title = String(value || "Untitled").replace(/\s+/g, " ").trim();
-  return title.length > 18 ? `${title.slice(0, 17)}\u2026` : title;
-}
-function setDisplay(instance, state, text) {
-  const digest = `${state}:${text}`;
-  if (!instance.active || instance.lastDisplay === digest) return;
-  instance.lastDisplay = digest;
-  send({
-    cmd: "state",
-    param: {
-      statelist: [{
-        uuid: instance.uuid,
-        actionid: instance.actionid,
-        key: instance.key,
-        type: 0,
-        state,
-        showtext: true,
-        textdata: text
-      }]
-    }
-  });
-}
-function setTaskDisplay(instance, path, text) {
-  const digest = `path:${path}:${text}`;
-  if (!instance.active || instance.lastDisplay === digest) return;
-  instance.lastDisplay = digest;
-  send({
-    cmd: "state",
-    param: {
-      statelist: [{
-        uuid: instance.uuid,
-        actionid: instance.actionid,
-        key: instance.key,
-        type: 2,
-        path,
-        showtext: true,
-        textdata: text
-      }]
-    }
-  });
-}
-function setUsageDisplay(instance, usage) {
-  const remaining = usageRemaining(usage);
-  const digest = `usage:${remaining ?? "unknown"}`;
-  if (!instance.active || instance.lastDisplay === digest) return;
-  instance.lastDisplay = digest;
-  send({
-    cmd: "state",
-    param: {
-      statelist: [{
-        uuid: instance.uuid,
-        actionid: instance.actionid,
-        key: instance.key,
-        type: 1,
-        data: usageIconData(usage),
-        showtext: true,
-        textdata: ACTION_LABELS.usage
-      }]
-    }
-  });
-}
-function renderInstance(instance) {
-  const slot = taskSlot(instance.uuid);
-  if (slot === null) {
-    const action = actionName(instance.uuid);
-    if (!latestState?.connected) {
-      if (action === "navigate") {
-        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Bridge Offline");
+var RENDERER_ACTIONS = /* @__PURE__ */ new Set(["pin", "new"]);
+var PIN_ACTION_LABELS = Object.freeze([
+  "Pin chat",
+  "Unpin chat",
+  "\u7F6E\u9876\u804A\u5929",
+  "\u53D6\u6D88\u7F6E\u9876\u804A\u5929",
+  "\u91D8\u9078\u804A\u5929",
+  "\u53D6\u6D88\u91D8\u9078\u804A\u5929"
+]);
+var NEW_ACTION_LABELS = Object.freeze([
+  "New task",
+  "New chat",
+  "New conversation",
+  "\u65B0\u5BF9\u8BDD",
+  "\u65B0\u5C0D\u8A71",
+  "\u65B0\u5EFA\u4EFB\u52A1",
+  "\u65B0\u5EFA\u804A\u5929",
+  "\u65B0\u589E\u4EFB\u52D9",
+  "\u65B0\u589E\u804A\u5929"
+]);
+var STEER_ACTION_LABELS = Object.freeze([
+  "Steer",
+  "\u8C03\u6574\u65B9\u5411",
+  "\u8ABF\u6574\u65B9\u5411",
+  "\u5F15\u5C0E"
+]);
+function rendererActionExpression(action) {
+  return `(() => {
+    const action = ${JSON.stringify(action)};
+    const visible = (element) => element && element.offsetParent !== null;
+    let target = null;
+    if (action === "pin") {
+      const active = document.querySelector(
+        "[data-app-action-sidebar-thread-active=true]"
+      ) ?? document.querySelector(
+        "[data-app-action-sidebar-thread-id][aria-current=page]"
+      );
+      const labels = new Set(${JSON.stringify(PIN_ACTION_LABELS)});
+      target = active && [...active.querySelectorAll("button")].find(
+        (button) => visible(button) && labels.has(button.getAttribute("aria-label"))
+      );
+    } else if (action === "new") {
+      const sidebarAnchor = document.querySelector(
+        "[data-app-action-sidebar-project-create]"
+      ) ?? document.querySelector("[data-app-action-sidebar-thread-id]");
+      const sidebar = sidebarAnchor?.closest("nav");
+      const structuralCandidates = [...(
+        sidebar?.querySelectorAll(
+          ".sidebar-item.relative > button.sidebar-item"
+        ) ?? []
+      )].filter(visible);
+      if (structuralCandidates.length === 1) {
+        target = structuralCandidates[0];
       } else {
-        setDisplay(instance, 0, "Bridge Offline");
+        const labels = new Set(${JSON.stringify(NEW_ACTION_LABELS)});
+        const buttons = [...document.querySelectorAll("button")].filter(visible);
+        target = buttons.find((button) => [
+          button.getAttribute("aria-label"),
+          button.getAttribute("title"),
+          (button.innerText || "").trim()
+        ].some((label) => labels.has(label)));
       }
-      return;
     }
-    if (action === "usage") {
-      setUsageDisplay(instance, latestState.usage);
-      return;
+    if (!target) return false;
+    target.click();
+    return true;
+  })()`;
+}
+function composerSteerExpression() {
+  return `(() => {
+    const editor = [...document.querySelectorAll('[contenteditable="true"][role="textbox"]')]
+      .find((element) => element.offsetParent !== null);
+    if (!editor) throw new Error("Codex composer is not available");
+    editor.focus();
+    const labels = new Set(${JSON.stringify(STEER_ACTION_LABELS)});
+    const steer = [...document.querySelectorAll('button')]
+      .find((element) =>
+        element.offsetParent !== null && [
+          element.getAttribute("aria-label"),
+          element.getAttribute("title"),
+          (element.innerText || "").trim()
+        ].some((label) => labels.has(label))
+      );
+    if (!steer) return false;
+    steer.click();
+    return true;
+  })()`;
+}
+var ENABLE_EXPRESSION = `(async () => {
+  const gateName = "3207467860";
+  const statsig = globalThis.__STATSIG__;
+  const clients = [...new Set([statsig?.firstInstance, ...Object.values(statsig?.instances ?? {})].filter(Boolean))];
+  for (const client of clients) {
+    if (client.overrideAdapter?.__codexKeyboardGate !== gateName) {
+      const original = client.overrideAdapter ?? {};
+      client.overrideAdapter = new Proxy(original, {
+        get(target, property) {
+          if (property === "__codexKeyboardGate") return gateName;
+          if (property === "getGateOverride") return (gate, user, options) => {
+            if (gate?.name === gateName) return { ...gate, value: true };
+            const fallback = Reflect.get(target, property, target);
+            return typeof fallback === "function" ? fallback.call(target, gate, user, options) : gate;
+          };
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+      });
     }
-    if (action === "navigate") {
-      const task2 = latestState.slots?.[0];
-      if (!task2?.threadKey) {
-        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Latest Task");
-        return;
-      }
-      setTaskDisplay(instance, taskIconPath(task2.status), shortTitle(task2.title));
-      return;
+    client._memoCache = {};
+    client.$emt?.({ name: "values_updated" });
+  }
+  const urls = [...new Set([
+    ...[...document.querySelectorAll("link[href],script[src]")].map((el) => el.href || el.src),
+    ...performance.getEntriesByType("resource").map((entry) => entry.name)
+  ])].filter((url) => url.includes("/assets/") && url.endsWith(".js"));
+  for (const url of urls.filter((url) => /vscode-api|codex-micro|app-initial/.test(url)).slice(0, 120)) {
+    try {
+      const namespace = await import(url);
+      const bus = Object.values(namespace).find((candidate) =>
+        candidate && typeof candidate === "object" &&
+        candidate.handlers instanceof Map &&
+        (typeof candidate.dispatchHostMessage === "function" || typeof candidate.dispatchMessage === "function")
+      );
+      if (!bus) continue;
+      globalThis[Symbol.for("codex-keyboard-micro-bus")] = bus;
+      const dispatch = bus.dispatchHostMessage ?? bus.dispatchMessage;
+      dispatch.call(bus, ${JSON.stringify(DEVICE_STATE)});
+      return { ready: true, clients: clients.length };
+    } catch {}
+  }
+  return { ready: clients.length > 0, clients: clients.length };
+})()`;
+var SNAPSHOT_EXPRESSION = `(async () => {
+  const startedAt = performance.now();
+  const root = document.getElementById("root");
+  const reactKey = root && Object.getOwnPropertyNames(root).find((key) => key.startsWith("__reactContainer$"));
+  if (!root || !reactKey) throw new Error("Codex React root was not found");
+  const sourceKey = Symbol.for("codex-keyboard-micro-snapshot-source");
+  const validSlots = (slots) =>
+    Array.isArray(slots) && slots.length === 6 &&
+    slots.every((slot, index) => slot?.id === index);
+  const readSource = (source) => {
+    if (!source || source.root !== root || !source.node?.store) {
+      throw new Error("Cached Codex Micro source is stale");
     }
-    setDisplay(instance, 0, ACTION_LABELS[action] || "CODEX");
-    return;
-  }
-  if (!latestState?.connected) {
-    setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Bridge Offline");
-    return;
-  }
-  const task = latestState.slots?.[slot];
-  if (!task?.threadKey) {
-    setTaskDisplay(instance, TASK_ICON_PATHS.idle, `Task ${slot + 1}`);
-    return;
-  }
-  setTaskDisplay(instance, taskIconPath(task.status), shortTitle(task.title));
-}
-function renderAll() {
-  for (const instance of instances.values()) renderInstance(instance);
-}
-async function bridgeRequest(path, method = "GET") {
-  const response = await fetch(`${BRIDGE_URL}${path}`, {
-    method,
-    signal: AbortSignal.timeout(1200)
-  });
-  const payload = await response.json();
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || `Bridge HTTP ${response.status}`);
-  }
-  return payload;
-}
-async function openTaskSlot(slot) {
-  const task = latestState?.slots?.[slot];
-  if (!task?.threadKey) throw new Error(`Codex task slot ${slot + 1} is empty`);
-  await bridgeRequest(`/thread/${encodeURIComponent(task.threadKey)}/click?slot=${slot}`, "POST");
-}
-async function pollBridge() {
-  if (pollInFlight) return;
-  pollInFlight = true;
-  try {
-    latestState = await bridgeRequest("/state");
-  } catch (error) {
-    latestState = { connected: false, error: error.message, slots: [] };
-  } finally {
-    pollInFlight = false;
-    renderAll();
-  }
-}
-async function invoke(instance, pressed) {
-  const slot = taskSlot(instance.uuid);
-  try {
-    if (slot !== null) {
-      if (!pressed) return;
-      await openTaskSlot(slot);
-      return;
-    }
-    const action = actionName(instance.uuid);
-    if (!action) throw new Error(`Unknown Codex action: ${instance.uuid}`);
-    if (action === "usage") {
-      if (pressed) await bridgeRequest("/focus", "POST");
-      return;
-    }
-    await bridgeRequest(`/action/${action}/${pressed ? "down" : "up"}`, "POST");
-  } catch (error) {
-    send({ cmd: "logMessage", uuid: instance.uuid, actionid: instance.actionid, key: instance.key, level: "error", message: error.message });
-    send({ cmd: "showAlert", uuid: instance.uuid, actionid: instance.actionid, key: instance.key });
-  }
-}
-async function invokeEncoder(instance, message) {
-  try {
-    if (message.cmd === "dialdown") {
-      await openTaskSlot(0);
-      return;
-    }
-    if (message.cmd !== "dialrotate") return;
-    const keylist = {
-      left: "SCROLL UP",
-      "hold-left": "SCROLL UP",
-      right: "SCROLL DOWN",
-      "hold-right": "SCROLL DOWN"
-    }[message.rotateEvent];
-    if (keylist) send({ cmd: "hotkey", keylist });
-  } catch (error) {
-    send({ cmd: "logMessage", uuid: instance.uuid, actionid: instance.actionid, key: instance.key, level: "error", message: error.message });
-    send({ cmd: "showAlert", uuid: instance.uuid, actionid: instance.actionid, key: instance.key });
-  }
-}
-function addInstance(message) {
-  const context = contextOf(message);
-  const existing = instances.get(context);
-  const instance = existing || {
-    uuid: message.uuid,
-    actionid: message.actionid,
-    key: message.key,
-    active: true,
-    lastDisplay: null
+    const slots = source.node.store.get(
+      source.resolver.resolve(source.node, source.contextMap)
+    );
+    if (!validSlots(slots)) throw new Error("Cached Codex Micro slots are stale");
+    return slots;
   };
-  instance.active = true;
-  instances.set(context, instance);
-  renderInstance(instance);
-  return instance;
+
+  let source = globalThis[sourceKey];
+  let found = null;
+  let queryClients = new Set();
+  let cacheHit = false;
+  if (source) {
+    try {
+      found = readSource(source);
+      queryClients = new Set(source.queryClients ?? []);
+      cacheHit = true;
+    } catch {
+      delete globalThis[sourceKey];
+      source = null;
+    }
+  }
+
+  if (!found) {
+    const urls = [...new Set([
+      ...[...document.querySelectorAll("link[href],script[src]")].map((el) => el.href || el.src),
+      ...performance.getEntriesByType("resource").map((entry) => entry.name)
+    ])].filter((url) => url.includes("/assets/") && url.endsWith(".js"));
+    const slotSignalsUrl = urls.find((url) => url.includes("/assets/codex-micro-slot-signals-"));
+    if (!slotSignalsUrl) throw new Error("Codex Micro slot signals are not loaded");
+
+    const namespaces = [];
+    for (const url of urls) {
+      try { namespaces.push(await import(url)); } catch {}
+    }
+    const exportedValues = namespaces.flatMap((namespace) => Object.values(namespace));
+    const bus = exportedValues.find((candidate) =>
+      candidate && typeof candidate === "object" && candidate.handlers instanceof Map &&
+      (typeof candidate.dispatchHostMessage === "function" || typeof candidate.dispatchMessage === "function")
+    );
+    if (bus) {
+      globalThis[Symbol.for("codex-keyboard-micro-bus")] = bus;
+      if ((bus.handlers.get("codex-micro-hid-event")?.size ?? 0) === 0) {
+        (bus.dispatchHostMessage ?? bus.dispatchMessage).call(bus, ${JSON.stringify(DEVICE_STATE)});
+      }
+    }
+
+    const signals = await import(slotSignalsUrl);
+    const resolvers = Object.values(signals).filter((candidate) =>
+      candidate && typeof candidate === "object" &&
+      typeof candidate.resolve === "function" && typeof candidate.createSubscriberAtom === "function"
+    );
+    const queue = [root[reactKey]];
+    const seen = new Set();
+    queryClients = new Set();
+    while (queue.length && seen.size < 30000 && !found) {
+      const fiber = queue.pop();
+      if (!fiber || seen.has(fiber)) continue;
+      seen.add(fiber);
+      const values = [fiber.memoizedProps?.value];
+      let dependency = fiber.dependencies?.firstContext;
+      while (dependency) { values.push(dependency.memoizedValue); dependency = dependency.next; }
+      for (const value of values) {
+        if (
+          value && typeof value.getQueryCache === "function" &&
+          typeof value.getQueryData === "function"
+        ) queryClients.add(value);
+        if (!(value instanceof Map)) continue;
+        for (const node of value.values()) {
+          if (!node?.store || typeof node.store.get !== "function") continue;
+          for (const resolver of resolvers) {
+            try {
+              const slots = node.store.get(resolver.resolve(node, value));
+              if (validSlots(slots)) {
+                found = slots;
+                source = {
+                  root,
+                  node,
+                  resolver,
+                  contextMap: value,
+                  queryClients: [...queryClients]
+                };
+                globalThis[sourceKey] = source;
+                break;
+              }
+            } catch {}
+          }
+          if (found) break;
+        }
+        if (found) break;
+      }
+      queue.push(fiber.child, fiber.sibling);
+    }
+    if (!found) throw new Error("Codex Micro slot store was not found");
+  }
+  let usage = null;
+  for (const queryClient of queryClients) {
+    try {
+      const query = queryClient.getQueryCache().getAll().find((candidate) =>
+        JSON.stringify(candidate.queryKey) === '["rate-limit-status"]'
+      );
+      const now = Date.now();
+      const updatedAt = Number(query?.state?.dataUpdatedAt) || 0;
+      const refreshKey = Symbol.for("codex-keyboard-rate-limit-refresh-at");
+      const lastAttempt = Number(globalThis[refreshKey]) || 0;
+      if (
+        query && typeof query.fetch === "function" &&
+        now - updatedAt >= ${USAGE_REFRESH_MS} && now - lastAttempt >= ${USAGE_REFRESH_MS}
+      ) {
+        globalThis[refreshKey] = now;
+        try { Promise.resolve(query.fetch()).catch(() => {}); } catch {}
+      }
+      const data = query?.state?.data;
+      const rateLimit = data?.rate_limit;
+      if (!rateLimit || typeof rateLimit !== "object") continue;
+      const normalizeWindow = (window, role) => {
+        if (!window || typeof window !== "object") return null;
+        const usedPercent = Number(window.used_percent);
+        if (!Number.isFinite(usedPercent)) return null;
+        const seconds = Number(window.limit_window_seconds);
+        const minutes = Number.isFinite(seconds) && seconds > 0 ? seconds / 60 : null;
+        const kind = minutes != null && Math.abs(minutes - 300) <= 1 ? "five-hour"
+          : minutes != null && Math.abs(minutes - 10080) <= 1 ? "weekly"
+            : "other";
+        const used = Math.min(100, Math.max(0, usedPercent));
+        return {
+          id: kind === "other" ? role : kind,
+          kind,
+          usedPercent: used,
+          remainingPercent: 100 - used,
+          resetsAt: Number(window.reset_at) || null
+        };
+      };
+      usage = {
+        windows: [
+          normalizeWindow(rateLimit.primary_window, "primary"),
+          normalizeWindow(rateLimit.secondary_window, "secondary")
+        ].filter(Boolean),
+        observedAt: updatedAt || now
+      };
+      break;
+    } catch {}
+  }
+  const active = document.querySelector("[data-app-action-sidebar-thread-id][data-app-action-sidebar-thread-active=true]")
+    ?? document.querySelector("[data-app-action-sidebar-thread-id][aria-current=page]");
+  const activeThreadKey = document.querySelector("[data-above-composer-conversation-id]")
+    ?.getAttribute("data-above-composer-conversation-id")
+    ?? active?.getAttribute("data-app-action-sidebar-thread-id")
+    ?? null;
+  const normalizeThreadKey = (value) => String(value ?? "").replace(/^local:/, "");
+  return {
+    activeThreadKey,
+    slots: found.map((slot) => ({
+      id: slot.id,
+      threadKey: slot.threadKey ?? null,
+      title: slot.title ?? slot.thread?.title ?? slot.task?.title ?? null,
+      status: slot.status ?? "idle",
+      selected: Boolean(slot.selected) || Boolean(
+        activeThreadKey && normalizeThreadKey(slot.threadKey) === normalizeThreadKey(activeThreadKey)
+      )
+    })),
+    usage,
+    bridgeSnapshot: {
+      source: cacheHit ? "cache" : "discovery",
+      durationMs: performance.now() - startedAt
+    }
+  };
+})()`;
+function selectMainTarget(targets) {
+  const pages = targets.filter(
+    (target) => target.type === "page" && target.webSocketDebuggerUrl && target.url?.startsWith("app://")
+  );
+  return pages.find((target) => {
+    try {
+      return new URL(target.url).pathname === "/index.html" && !new URL(target.url).search;
+    } catch {
+      return false;
+    }
+  }) ?? pages.find((target) => !/avatar-overlay|composition-surface/i.test(target.url || ""));
 }
-function handleMessage(raw) {
-  let message;
+async function fetchJson(url, timeout = 1200) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
+  return response.json();
+}
+async function discoverDebugPort() {
+  const { stdout } = await execFileAsync("/bin/ps", ["-axo", "command="], { timeout: 4e3 });
+  for (const line of stdout.split("\n")) {
+    if (!line.includes("--remote-debugging-address=127.0.0.1")) continue;
+    const port = Number(line.match(/--remote-debugging-port(?:=|\s+)(\d+)/)?.[1]);
+    if (!Number.isInteger(port)) continue;
+    try {
+      await fetchJson(`http://127.0.0.1:${port}/json/version`, 500);
+      return port;
+    } catch {
+    }
+  }
+  throw new Error("Codex is not running with the local debug bridge");
+}
+var CodexCdpClient = class {
+  socket = null;
+  nextId = 0;
+  pending = /* @__PURE__ */ new Map();
+  lastSnapshot = null;
+  async connect() {
+    if (this.socket?.readyState === wrapper_default.OPEN) return;
+    const port = await discoverDebugPort();
+    const target = selectMainTarget(await fetchJson(`http://127.0.0.1:${port}/json/list`));
+    if (!target?.webSocketDebuggerUrl) throw new Error("Codex main renderer was not found");
+    const socket = new wrapper_default(target.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => {
+      const timer2 = setTimeout(() => reject(new Error("Timed out connecting to Codex")), 3e3);
+      socket.once("open", () => {
+        clearTimeout(timer2);
+        resolve();
+      });
+      socket.once("error", reject);
+    });
+    socket.on("message", (raw) => this.handleMessage(String(raw)));
+    socket.on("close", () => this.disconnect());
+    socket.on("error", () => this.disconnect());
+    this.socket = socket;
+    await this.evaluate(ENABLE_EXPRESSION);
+  }
+  async snapshot() {
+    await this.connect();
+    try {
+      this.lastSnapshot = await this.evaluate(SNAPSHOT_EXPRESSION);
+      return this.lastSnapshot;
+    } catch (error) {
+      this.disconnect();
+      throw error;
+    }
+  }
+  async clickAgent(slot) {
+    await this.connect();
+    const snapshot = this.lastSnapshot ?? await this.snapshot();
+    const agent = snapshot.slots[slot];
+    if (!agent?.threadKey) throw new Error(`Agent slot ${slot + 1} is empty`);
+    return this.clickThreadKey(agent.threadKey, slot);
+  }
+  async clickThread(threadId, slot = 0) {
+    await this.connect();
+    return this.clickThreadKey(localThreadKey(threadId), slot);
+  }
+  async clickThreadKey(threadKey, slot) {
+    try {
+      await this.dispatchAgent(slot, threadKey, 1);
+      void (async () => {
+        await new Promise((resolve) => setTimeout(resolve, 35));
+        await this.dispatchAgent(slot, threadKey, 0);
+        await this.activateThread(threadKey);
+      })().catch(() => {
+      });
+    } catch {
+      await this.activateThread(threadKey);
+    }
+  }
+  async dispatchAgent(slot, threadKey, act) {
+    return this.dispatchMicroMessage({
+      type: "codex-micro-hid-event",
+      event: { key: `AG0${slot}`, act, slot, threadKey }
+    }, "codex-micro-hid-event");
+  }
+  async dispatchAction(key, act) {
+    return this.dispatchMicroMessage({
+      type: "codex-micro-hid-event",
+      event: { key, act, slot: null, threadKey: null }
+    }, "codex-micro-hid-event");
+  }
+  async dispatchNamedAction(action, pressed) {
+    const key = MICRO_ACTION_KEYS[action];
+    if (key) return this.dispatchAction(key, pressed ? 1 : 0);
+    if (!RENDERER_ACTIONS.has(action)) {
+      throw new Error(`Unsupported Codex bridge action: ${action}`);
+    }
+    if (!pressed) return true;
+    return this.dispatchRendererAction(action);
+  }
+  async dispatchRendererAction(action) {
+    await this.connect();
+    const invoked = await this.evaluate(rendererActionExpression(action));
+    if (!invoked) throw new Error(`Codex ${action} action is not available`);
+    return true;
+  }
+  async dispatchComposerSteer() {
+    await this.connect();
+    const clicked = await this.evaluate(composerSteerExpression());
+    if (!clicked) throw new Error("Codex Steer action is not available");
+  }
+  async dispatchJoystick(direction, distance) {
+    const angle = { up: 0.75, right: 0, down: 0.25, left: 0.5 }[direction];
+    if (angle === void 0) throw new Error(`Unknown joystick direction: ${direction}`);
+    return this.dispatchMicroMessage({
+      type: "codex-micro-joystick-event",
+      event: { angle, distance }
+    }, "codex-micro-joystick-event");
+  }
+  async dispatchMicroMessage(message, requiredHandler) {
+    return this.evaluate(`(async () => {
+      const cacheKey = Symbol.for("codex-keyboard-micro-bus");
+      const isMicroBus = (candidate) =>
+        candidate && candidate.handlers instanceof Map &&
+        (
+          candidate.handlers.has(${JSON.stringify(requiredHandler)}) ||
+          [...candidate.handlers.keys()].some((key) => String(key).startsWith("codex-micro-"))
+        ) &&
+        (
+          typeof candidate.dispatchHostMessage === "function" ||
+          typeof candidate.dispatchMessage === "function"
+        );
+      let bus = globalThis[cacheKey];
+      if (!isMicroBus(bus)) {
+        const urls = [...new Set([
+          ...[...document.querySelectorAll("link[href],script[src]")].map((element) => element.href || element.src),
+          ...performance.getEntriesByType("resource").map((entry) => entry.name)
+        ])]
+          .filter((url) => url.includes("/assets/") && url.endsWith(".js"));
+        bus = null;
+        for (const url of urls) {
+          try {
+            const namespace = await import(url);
+            bus = Object.values(namespace).find(isMicroBus);
+            if (bus) {
+              globalThis[cacheKey] = bus;
+              break;
+            }
+          } catch {}
+        }
+      }
+      if (!bus) throw new Error("Codex Micro event bus was not found");
+      const dispatch = bus.dispatchHostMessage ?? bus.dispatchMessage;
+      if ((bus.handlers.get(${JSON.stringify(requiredHandler)})?.size ?? 0) === 0) {
+        dispatch.call(bus, ${JSON.stringify(DEVICE_STATE)});
+      }
+      // Never put Micro handler discovery on the physical key hot path. The
+      // native event is dispatched immediately; clickAgent keeps a DOM
+      // activation fallback in the background in case Codex has not installed
+      // its handler yet.
+      dispatch.call(bus, ${JSON.stringify(message)});
+      return true;
+    })()`);
+  }
+  async activateThread(threadKey) {
+    return this.evaluate(`(async () => {
+      const key = ${JSON.stringify(threadKey)};
+      const normalize = (value) => String(value ?? "").replace(/^local:/, "");
+      const current = () => document.querySelector("[data-above-composer-conversation-id]")
+        ?.getAttribute("data-above-composer-conversation-id")
+        ?? document.querySelector("[data-app-action-sidebar-thread-id][data-app-action-sidebar-thread-active=true]")
+          ?.getAttribute("data-app-action-sidebar-thread-id");
+      if (normalize(current()) === normalize(key)) return true;
+      const item = [...document.querySelectorAll("[data-app-action-sidebar-thread-id]")]
+        .find((el) => normalize(el.getAttribute("data-app-action-sidebar-thread-id")) === normalize(key));
+      if (!item) throw new Error("Task is not loaded in the Codex sidebar");
+      (item.querySelector("button,a,[role=button],[role=link]") ?? item).click();
+      return true;
+    })()`);
+  }
+  evaluate(expression) {
+    if (!this.socket || this.socket.readyState !== wrapper_default.OPEN) {
+      return Promise.reject(new Error("Codex bridge is disconnected"));
+    }
+    const id = ++this.nextId;
+    return new Promise((resolve, reject) => {
+      const timer2 = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error("Codex runtime response timed out"));
+      }, 7e3);
+      this.pending.set(id, { resolve, reject, timer: timer2 });
+      this.socket.send(JSON.stringify({
+        id,
+        method: "Runtime.evaluate",
+        params: { expression, awaitPromise: true, returnByValue: true }
+      }));
+    });
+  }
+  handleMessage(raw) {
+    let message;
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    const pending = this.pending.get(message.id);
+    if (!pending) return;
+    this.pending.delete(message.id);
+    clearTimeout(pending.timer);
+    if (message.error) return pending.reject(new Error(message.error.message));
+    if (message.result?.exceptionDetails) {
+      return pending.reject(new Error(
+        message.result.exceptionDetails.exception?.description ?? message.result.exceptionDetails.text ?? "Codex evaluation failed"
+      ));
+    }
+    pending.resolve(message.result?.result?.value);
+  }
+  disconnect() {
+    const socket = this.socket;
+    this.socket = null;
+    if (socket?.readyState === wrapper_default.OPEN) socket.close();
+    for (const { reject, timer: timer2 } of this.pending.values()) {
+      clearTimeout(timer2);
+      reject(new Error("Codex bridge disconnected"));
+    }
+    this.pending.clear();
+  }
+};
+
+// ../../src/bridge/server.mjs
+var execFileAsync2 = promisify2(execFile2);
+var HOST = "127.0.0.1";
+var PORT = Number(process.env.CODEX_KEYBOARD_PORT || 17373);
+var configuredRefreshMs = Number(process.env.CODEX_KEYBOARD_REFRESH_MS || 500);
+var REFRESH_MS = Number.isFinite(configuredRefreshMs) ? Math.max(250, configuredRefreshMs) : 500;
+var client = new CodexCdpClient();
+var cached = {
+  connected: false,
+  slots: Array.from({ length: 6 }, (_, id) => ({
+    id,
+    threadKey: null,
+    title: null,
+    status: "off",
+    selected: false
+  })),
+  error: "Waiting for Codex",
+  updatedAt: Date.now()
+};
+var refreshPromise = null;
+var nextReconnectAt = 0;
+async function focusCodex() {
+  await execFileAsync2("/usr/bin/open", ["-b", "com.openai.codex"], {
+    timeout: 3e3
+  });
+}
+async function refresh(force = false) {
+  if (refreshPromise) return refreshPromise;
+  if (!force && Date.now() < nextReconnectAt) return;
+  refreshPromise = (async () => {
+    try {
+      const snapshot = await client.snapshot();
+      cached = { connected: true, ...snapshot, error: null, updatedAt: Date.now() };
+      nextReconnectAt = 0;
+    } catch (error) {
+      cached = { ...cached, connected: false, error: error.message, updatedAt: Date.now() };
+      nextReconnectAt = Date.now() + 2e3;
+    }
+  })();
   try {
-    message = JSON.parse(String(raw));
-  } catch {
-    return;
-  }
-  if (message.cmd === "add" || message.cmd === "paramfromapp") {
-    addInstance(message);
-    ack(message);
-    return;
-  }
-  if (message.cmd === "setactive") {
-    const instance = instances.get(contextOf(message)) || addInstance(message);
-    instance.active = Boolean(message.active);
-    if (instance.active) {
-      instance.lastDisplay = null;
-      renderInstance(instance);
-    }
-    ack(message);
-    return;
-  }
-  if (message.cmd === "clear") {
-    for (const item of message.param || []) instances.delete(contextOf(item));
-    ack(message);
-    return;
-  }
-  if (message.cmd === "sendToPlugin") {
-    ack(message);
-    if (message.payload?.type === "bridgeSetup") {
-      void handleBridgeSetupMessage(message);
-    }
-    return;
-  }
-  if (message.cmd === "run") {
-    ack(message);
-    return;
-  }
-  if (["dialdown", "dialup", "dialrotate"].includes(message.cmd)) {
-    const instance = instances.get(contextOf(message)) || addInstance(message);
-    if (actionName(instance.uuid) === "navigate") void invokeEncoder(instance, message);
-    ack(message);
-    return;
-  }
-  if (["keydown", "keyup"].includes(message.cmd)) {
-    const instance = instances.get(contextOf(message)) || addInstance(message);
-    void invoke(instance, message.cmd !== "keyup");
-    ack(message);
+    await refreshPromise;
+  } finally {
+    refreshPromise = null;
   }
 }
-function connect() {
-  clearTimeout(reconnectTimer);
-  socket = new wrapper_default(HOST_URL);
-  socket.on("open", () => {
-    send({ code: 0, cmd: "connected", uuid: PLUGIN_UUID });
-    clearInterval(pollTimer);
-    pollTimer = setInterval(() => void pollBridge(), 500);
-    pollTimer.unref();
-    void pollBridge();
+function json(response, status, body) {
+  response.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Access-Control-Allow-Origin": "http://127.0.0.1"
   });
-  socket.on("message", handleMessage);
-  socket.on("close", () => {
-    clearInterval(pollTimer);
-    reconnectTimer = setTimeout(connect, 1e3);
-    reconnectTimer.unref();
-  });
-  socket.on("error", () => socket.close());
+  response.end(`${JSON.stringify(body)}
+`);
 }
-connect();
+var server = createServer(async (request, response) => {
+  const url = new URL(request.url || "/", `http://${HOST}:${PORT}`);
+  if (request.method === "GET" && url.pathname === "/health") {
+    await refresh(true);
+    return json(response, 200, { ok: true, codexConnected: cached.connected, updatedAt: cached.updatedAt });
+  }
+  if (request.method === "GET" && url.pathname === "/state") {
+    return json(response, 200, cached);
+  }
+  if (request.method === "POST" && url.pathname === "/focus") {
+    try {
+      await focusCodex();
+      return json(response, 200, { ok: true });
+    } catch (error) {
+      return json(response, 503, { ok: false, error: error.message });
+    }
+  }
+  const match = request.method === "POST" && url.pathname.match(/^\/agent\/([0-5])\/click$/);
+  if (match) {
+    try {
+      await Promise.all([
+        client.clickAgent(Number(match[1])),
+        focusCodex()
+      ]);
+      return json(response, 200, { ok: true });
+    } catch (error) {
+      return json(response, 503, { ok: false, error: error.message });
+    }
+  }
+  const threadMatch = request.method === "POST" && url.pathname.match(
+    /^\/thread\/([^/]+)\/click$/
+  );
+  if (threadMatch) {
+    try {
+      const threadId = decodeThreadPathSegment(threadMatch[1]);
+      const slot = Number(url.searchParams.get("slot") || 0);
+      if (!Number.isInteger(slot) || slot < 0 || slot > 5) {
+        throw new Error("Invalid Codex Micro slot");
+      }
+      await Promise.all([
+        client.clickThread(threadId, slot),
+        focusCodex()
+      ]);
+      return json(response, 200, { ok: true, bridge: true });
+    } catch (error) {
+      return json(response, 503, {
+        ok: false,
+        bridge: false,
+        error: error.message
+      });
+    }
+  }
+  const action = request.method === "POST" && url.pathname.match(
+    /^\/action\/(fast|approve|reject|pin|new|fork|mic|steer|submit)\/(down|up)$/
+  );
+  if (action) {
+    try {
+      if (action[1] === "steer") {
+        if (action[2] === "down") {
+          await focusCodex();
+          await client.dispatchComposerSteer();
+        }
+        return json(response, 200, { ok: true });
+      }
+      await client.dispatchNamedAction(action[1], action[2] === "down");
+      return json(response, 200, { ok: true, bridge: true });
+    } catch (error) {
+      return json(response, 503, { ok: false, error: error.message });
+    }
+  }
+  const joystick = request.method === "POST" && url.pathname.match(
+    /^\/joystick\/(up|right|down|left)\/(down|up)$/
+  );
+  if (joystick) {
+    try {
+      await client.dispatchJoystick(joystick[1], joystick[2] === "down" ? 1 : 0);
+      return json(response, 200, { ok: true });
+    } catch (error) {
+      return json(response, 503, { ok: false, error: error.message });
+    }
+  }
+  return json(response, 404, { ok: false, error: "Not found" });
+});
+server.listen(PORT, HOST, () => {
+  console.log(`Codex Keyboard bridge listening on http://${HOST}:${PORT}`);
+  void refresh();
+});
+var timer = setInterval(() => void refresh(), REFRESH_MS);
+timer.unref();
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
-    clearTimeout(reconnectTimer);
-    clearInterval(pollTimer);
-    socket?.close();
-    process.exit(0);
+    clearInterval(timer);
+    client.disconnect();
+    server.close(() => process.exit(0));
   });
 }

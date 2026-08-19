@@ -11,13 +11,38 @@ const navigateAction = manifest.Actions.find(action =>
 );
 assert.deepEqual(navigateAction?.Controllers, ["Encoder"]);
 assert.equal(navigateAction?.Encoder?.layout, "$UA1");
-assert.equal(manifest.Version, "0.3.1");
+assert.equal(manifest.Version, "0.4.0");
 assert.equal(manifest.Software?.MinVersion, "3.0.1");
+assert.equal(manifest.OS?.find(item => item.Platform === "mac")?.MinimumVersion, "13.0");
+assert.ok(
+  manifest.Actions.every(action => action.PropertyInspectorPath === "property-inspector/setup.html"),
+  "every action must expose the shared Bridge setup inspector"
+);
+const setupInspector = await readFile(new URL("property-inspector/setup.html", packageRootUrl), "utf8");
+assert.match(setupInspector, /Codex Bridge Setup/);
+assert.match(setupInspector, /Install \/ Repair/);
+assert.match(setupInspector, /bridgeSetup/);
+const setupScript = setupInspector.match(/<script>([\s\S]*)<\/script>/)?.[1];
+assert.ok(setupScript, "setup inspector must contain its client script");
+assert.doesNotThrow(() => new Function(setupScript), "setup inspector script must parse");
+for (const asset of [
+  "installer/bridge.mjs",
+  "installer/CodexBridge.png",
+  "installer/LICENSE",
+  "installer/NOTICE.md",
+  "installer/THIRD_PARTY_NOTICES.md"
+]) {
+  assert.ok((await readFile(new URL(asset, packageRootUrl))).length > 0, `${asset} must be bundled`);
+}
 assert.match(manifest.Overview, /Ulanzi D200 Series/);
 assert.match(manifest.Description, /INSTALLATION ENVIRONMENT/);
 assert.match(manifest.Description, /LLM \/ AGENT INSTALLATION/);
 assert.match(manifest.Description, /MANUAL INSTALLATION/);
 assert.match(manifest.Description, /Latest Task & Scroll Encoder/);
+assert.match(
+  manifest.Description,
+  /Install the Ulanzi Studio plugin for me: \[https:\/\/github\.com\/UlanziTechnology\/OpenCodexMicro#1-llm--agent-installation\]\(https:\/\/github\.com\/UlanziTechnology\/OpenCodexMicro#1-llm--agent-installation\)/
+);
 assert.match(manifest.Description, /always launch Codex through ~\/Applications\/Codex Bridge\.app/i);
 assert.match(manifest.Description, /open ~\/Applications\/Codex\\ Bridge\.app$/);
 
@@ -31,6 +56,21 @@ const localizedActionNames = {
   "pt_PT.json": ["Tarefa Codex 1", "Tarefa recente e deslocamento", "Enviar para o Codex"],
   "es_ES.json": ["Tarea Codex 1", "Tarea reciente y desplazamiento", "Enviar a Codex"]
 };
+
+const localizedInstallPrompts = {
+  "en.json": "Install the Ulanzi Studio plugin for me:",
+  "zh_CN.json": "替我安装一下UlanziStudio插件：",
+  "zh_HK.json": "請替我安裝 Ulanzi Studio 外掛程式：",
+  "ja_JP.json": "Ulanzi Studio プラグインをインストールしてください：",
+  "de_DE.json": "Installiere bitte das Ulanzi-Studio-Plugin für mich:",
+  "ko_KR.json": "Ulanzi Studio 플러그인을 설치해 주세요:",
+  "pt_PT.json": "Instala o plugin do Ulanzi Studio por mim:",
+  "es_ES.json": "Instálame el plugin de Ulanzi Studio:"
+};
+
+const llmInstallationLink =
+  "[https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation]" +
+  "(https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation)";
 
 for (const locale of [
   "en.json",
@@ -49,6 +89,19 @@ for (const locale of [
   assert.match(messages.Description, /npm run install:plugin/);
   assert.match(messages.Description, /npm run setup/);
   assert.match(messages.Description, /Latest Task & Scroll/);
+  assert.ok(messages.Localization?.BridgeSetup?.length > 0, `${locale} must localize the setup page`);
+  assert.ok(messages.Localization?.InstallRepair?.length > 0, `${locale} must localize Bridge installation`);
+  assert.ok(messages.Localization?.UninstallBridge?.length > 0, `${locale} must localize Bridge uninstallation`);
+  assert.ok(messages.Localization?.BridgeAppInfoTitle?.length > 0, `${locale} must explain Codex Bridge.app`);
+  assert.ok(messages.Localization?.BackgroundActivityTitle?.length > 0, `${locale} must explain background activity`);
+  assert.ok(messages.Localization?.NodeSelectionStrategy?.length > 0, `${locale} must explain Node selection`);
+  assert.ok(messages.Localization?.UlanziNodeSignatureNotice?.length > 0, `${locale} must explain the Ulanzi Node signature`);
+  assert.ok(
+    messages.Description.includes(`${localizedInstallPrompts[locale]}${
+      locale.startsWith("zh_") || locale === "ja_JP.json" ? "" : " "
+    }${llmInstallationLink}`),
+    `${locale} must localize the anchored LLM installation prompt`
+  );
   assert.equal(messages.Actions?.length, manifest.Actions.length, `${locale} must localize every action`);
   assert.ok(
     messages.Actions.every(action => action.Name?.length > 0 && action.Tooltip?.length > 0),
@@ -70,6 +123,10 @@ const bridgeRequests = [];
 const bridge = createServer((request, response) => {
   bridgeRequests.push(`${request.method} ${request.url}`);
   response.setHeader("Content-Type", "application/json");
+  if (request.url === "/health") {
+    response.end(JSON.stringify({ ok: true, codexConnected: true, updatedAt: Date.now() }));
+    return;
+  }
   if (request.url === "/state") {
     response.end(JSON.stringify({
       connected: true,
@@ -111,6 +168,23 @@ try {
   client.on("message", raw => messages.push(JSON.parse(String(raw))));
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(messages[0]?.cmd, "connected");
+
+  client.send(JSON.stringify({
+    cmd: "sendToPlugin",
+    uuid: "com.ulanzi.ulanzistudio.codexmicro.task1",
+    actionid: "setup-action",
+    key: "0_0",
+    payload: { type: "bridgeSetup", action: "status" }
+  }));
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const setupStatus = messages.find(message =>
+    message.cmd === "sendToPropertyInspector" &&
+    message.actionid === "setup-action" &&
+    message.payload?.type === "bridgeSetupStatus"
+  );
+  assert.equal(setupStatus?.payload?.status?.serviceOnline, true);
+  assert.equal(setupStatus?.payload?.status?.cdpConnected, true);
+  assert.equal(setupStatus?.payload?.status?.bundledVersion, "0.4.0");
 
   const taskPaths = [
     "assets/icons/task-working.png",

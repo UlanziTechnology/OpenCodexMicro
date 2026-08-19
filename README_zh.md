@@ -38,7 +38,7 @@ Ulanzi 的实现与维护范围仅限
 - Codex Desktop；
 - Ulanzi Studio 3.0.1 或更高版本；
 - 已在 Ulanzi Studio 中连接 Ulanzi D200 Series；
-- Node.js 20 或更高版本。
+- 仅使用仓库手动安装时需要 Node.js 20 或更高版本。
 
 ### 1. LLM / Agent 安装
 
@@ -58,7 +58,20 @@ LLM 或代码 Agent 必须按以下步骤执行：
 5. 分别报告插件安装状态和 Bridge 连接状态。除非用户要求更新或修复，否则不要重复
    安装有效插件。
 
-### 2. 手动安装
+### 2. 在 Ulanzi Studio 中安装 Bridge
+
+安装 Codex Micro 插件后，把任意 Codex Micro Action 拖到按键并选中。所有 Action
+共用的 **Codex Bridge 设置**页可以：
+
+- 显示 `Codex Bridge.app`、Bridge 后台服务和 CDP 的状态；
+- 使用插件内置资源安装或修复 Bridge，不需要仓库目录或 npm 项目目录；
+- 启动 `~/Applications/Codex Bridge.app`；
+- 重新检测连接或打开完整安装说明。
+
+安装器只写入当前用户的 Applications、Application Support 和 LaunchAgents 目录，
+不需要 `sudo`。
+
+### 3. 手动安装
 
 ```bash
 git clone https://github.com/UlanziTechnology/OpenCodexMicro.git
@@ -97,6 +110,9 @@ curl http://127.0.0.1:17373/state
 实体布局完全由 Ulanzi Studio 管理。插件提供 Codex Task 1–5、Fast、Usage、Pin、
 New、Fork、Steer、Mic、Submit 和 Latest Task & Scroll 旋钮 Action，不需要额外的
 设备 daemon 或快捷键映射。
+
+选中任意已配置的 Action，即可打开共用的 **Codex Bridge 设置**页。该页面显示
+Bridge 安装、后台服务和 CDP 状态，并提供“安装 / 修复”和“启动”操作。
 
 在 macOS 中，请在“系统设置 > 隐私与安全性 > 辅助功能”中允许 Ulanzi Studio，
 否则旋钮无法发送鼠标滚轮事件。

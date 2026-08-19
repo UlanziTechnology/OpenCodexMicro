@@ -54,6 +54,22 @@ if (manifest.UUID !== "com.ulanzi.ulanzistudio.codexmicro") {
 if (!manifest.CodePath || !await exists(join(source, manifest.CodePath))) {
   throw new Error(`Plugin CodePath is missing: ${manifest.CodePath || "unset"}`);
 }
+for (const action of manifest.Actions || []) {
+  if (action.PropertyInspectorPath && !await exists(join(source, action.PropertyInspectorPath))) {
+    throw new Error(`Action PropertyInspectorPath is missing: ${action.PropertyInspectorPath}`);
+  }
+}
+for (const relative of [
+  "installer/bridge.mjs",
+  "installer/CodexBridge.png",
+  "installer/LICENSE",
+  "installer/NOTICE.md",
+  "installer/THIRD_PARTY_NOTICES.md"
+]) {
+  if (!await exists(join(source, relative))) {
+    throw new Error(`Bundled Bridge resource is missing: ${relative}`);
+  }
+}
 for (const locale of localizationFiles) {
   const messages = JSON.parse(await readFile(join(source, locale), "utf8"));
   for (const field of ["Name", "Overview", "Description"]) {
@@ -72,7 +88,9 @@ for (const relative of [
   "manifest.json",
   ...localizationFiles,
   "assets/icons",
-  "dist"
+  "dist",
+  "installer",
+  "property-inspector"
 ]) {
   const from = join(source, relative);
   const to = join(staging, relative);
