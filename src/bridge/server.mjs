@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { CodexCdpClient } from "./codex-cdp.mjs";
 import { bridgeRequestAuthorized } from "./auth.mjs";
 import { focusCodex } from "./platform.mjs";
+import { navigateAndFocus } from "./navigation.mjs";
 import { decodeThreadPathSegment } from "./thread-key.mjs";
 
 const HOST = "127.0.0.1";
@@ -20,6 +21,9 @@ const RUNTIME_HASH = (() => {
     return null;
   }
 })();
+const NATIVE_RUNTIME_HASH = /^[a-f0-9]{64}$/.test(String(process.env.CODEX_BRIDGE_NATIVE_HASH || ""))
+  ? process.env.CODEX_BRIDGE_NATIVE_HASH
+  : null;
 const configuredRefreshMs = Number(process.env.CODEX_KEYBOARD_REFRESH_MS || 500);
 const REFRESH_MS = Number.isFinite(configuredRefreshMs)
   ? Math.max(250, configuredRefreshMs)
@@ -127,18 +131,33 @@ function traceSnapshot(traceId) {
 
 async function focusCodexDesktop(trace = null) {
   const startedAt = performance.now();
-  const path = process.platform === "win32" ? "cdp" : "platform-adapter";
+  const path = process.platform === "win32" ? "win32-native" : "platform-adapter";
   trace?.record("focus.start", { platform: process.platform, path });
   try {
-    if (process.platform !== "win32") await focusCodex();
-    else await client.focusWindow(trace);
+    let identity = null;
+    if (process.platform === "win32") {
+      const connection = client.socket?.readyState === 1 ? "reused" : "open";
+      await client.connect();
+      identity = client.connectionIdentity;
+      trace?.record("focus.target", {
+        connection,
+        channel: identity?.channel || "unknown",
+        outcome: "succeeded"
+      });
+    }
+    const result = await focusCodex({ processId: identity?.processId ?? null });
+    trace?.record("focus.native", {
+      outcome: "succeeded",
+      channel: identity?.channel || "unknown",
+      reused: Boolean(result?.alreadyForeground && result?.alreadyMaximized)
+    });
     trace?.record("focus.complete", {
       platform: process.platform,
       path,
       outcome: "succeeded",
       durationMs: Math.round(performance.now() - startedAt)
     });
-    console.log("Codex Desktop window maximized and focused through the local CDP bridge");
+    console.log("Codex Desktop window maximized and focused through the native desktop adapter");
   } catch (error) {
     trace?.record("focus.complete", {
       platform: process.platform,
@@ -198,6 +217,7 @@ const server = createServer(async (request, response) => {
       ok: true,
       bridgeVersion: BRIDGE_VERSION,
       runtimeHash: RUNTIME_HASH,
+      nativeRuntimeHash: NATIVE_RUNTIME_HASH,
       codexConnected: cached.connected,
       updatedAt: cached.updatedAt
     });
@@ -223,11 +243,11 @@ const server = createServer(async (request, response) => {
   const match = request.method === "POST" && url.pathname.match(/^\/agent\/([0-5])\/click$/);
   if (match) {
     try {
-      await Promise.all([
-        client.clickAgent(Number(match[1])),
-        focusCodexDesktop()
-      ]);
-      return json(response, 200, { ok: true });
+      const result = await navigateAndFocus(
+        () => client.clickAgent(Number(match[1])),
+        () => focusCodexDesktop()
+      );
+      return json(response, 200, { ok: true, ...result });
     } catch (error) {
       return json(response, 503, { ok: false, error: error.message });
     }
@@ -244,12 +264,16 @@ const server = createServer(async (request, response) => {
         throw new Error("Invalid Codex Micro slot");
       }
       trace = startTrace(request, "thread-click", { slot: slot + 1 });
-      await Promise.all([
-        client.clickThread(threadId, slot, trace),
-        focusCodexDesktop(trace)
-      ]);
-      trace?.record("server.response", { outcome: "succeeded", route: "thread-click" });
-      return json(response, 200, { ok: true, bridge: true });
+      const result = await navigateAndFocus(
+        () => client.clickThread(threadId, slot, trace),
+        () => focusCodexDesktop(trace)
+      );
+      trace?.record("server.response", {
+        outcome: "succeeded",
+        route: "thread-click",
+        focusOk: result.focusOk
+      });
+      return json(response, 200, { ok: true, bridge: true, ...result });
     } catch (error) {
       trace?.record("server.response", {
         outcome: "failed",

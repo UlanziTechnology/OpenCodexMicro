@@ -2,8 +2,6 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-let windowsFocusPid = null;
-let windowsFocusPromise = null;
 
 export const CDP_HOST = "127.0.0.1";
 export const DEFAULT_CDP_PORT = 9222;
@@ -15,9 +13,23 @@ export const CDP_ARGUMENTS = Object.freeze([
 
 const WINDOWS_PROCESS_COMMAND = String.raw`
 $ErrorActionPreference = 'Stop'
-Get-CimInstance Win32_Process |
+$listenerOwners = @{}
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
+  ForEach-Object { $listenerOwners[('{0}:{1}' -f $_.LocalPort, $_.OwningProcess)] = $true }
+$rows = Get-CimInstance Win32_Process |
   Where-Object { $_.CommandLine -like '*--remote-debugging-address=127.0.0.1*' } |
-  ForEach-Object { $_.CommandLine }
+  ForEach-Object {
+    $portMatch = [regex]::Match([string]$_.CommandLine, '--remote-debugging-port(?:=|\s+)(\d+)')
+    $debugPort = if ($portMatch.Success) { [int]$portMatch.Groups[1].Value } else { 0 }
+    [pscustomobject]@{
+      processId = [int]$_.ProcessId
+      executable = [string]$_.ExecutablePath
+      commandLine = [string]$_.CommandLine
+      ownsDebugPort = $debugPort -gt 0 -and $listenerOwners.ContainsKey(('{0}:{1}' -f $debugPort, $_.ProcessId))
+    }
+  }
+@($rows) | ConvertTo-Json -Compress
 `;
 
 const WINDOWS_PACKAGE_COMMAND = String.raw`
@@ -45,39 +57,6 @@ $rows = foreach ($name in @('OpenAI.Codex', 'OpenAI.CodexBeta')) {
   }
 }
 @($rows) | ConvertTo-Json -Compress
-`;
-
-const WINDOWS_FOCUS_COMMAND = String.raw`
-$ErrorActionPreference = 'Stop'
-$preferredPid = 0
-$hasPreferredPid = [int]::TryParse($env:CODEX_BRIDGE_FOCUS_PID, [ref]$preferredPid)
-$candidate = if ($hasPreferredPid -and $preferredPid -gt 0) {
-  Get-Process -Id $preferredPid -ErrorAction SilentlyContinue |
-    Where-Object { $_.MainWindowHandle -ne 0 }
-} else { $null }
-if (-not $candidate) {
-  $debugPids = @(Get-CimInstance Win32_Process |
-    Where-Object { $_.CommandLine -like '*--remote-debugging-address=127.0.0.1*' -and $_.CommandLine -notlike '*--type=*' } |
-    Select-Object -ExpandProperty ProcessId)
-  $candidate = Get-Process |
-    Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like 'ChatGPT*' -or $_.ProcessName -like 'Codex*') } |
-    Sort-Object @{ Expression = { if ($debugPids -contains $_.Id) { 0 } else { 1 } } }, StartTime |
-    Select-Object -First 1
-}
-if (-not $candidate) { throw 'A Codex Desktop window was not found.' }
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public static class CodexWindow {
-  [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-}
-'@
-[CodexWindow]::ShowWindowAsync($candidate.MainWindowHandle, 3) | Out-Null
-if (-not [CodexWindow]::SetForegroundWindow($candidate.MainWindowHandle)) {
-  throw 'Windows did not allow Codex Desktop to receive focus.'
-}
-$candidate.Id
 `;
 
 const WINDOWS_STOP_EXECUTABLE_COMMAND = String.raw`
@@ -111,13 +90,42 @@ function powershellOptions(options = {}) {
 }
 
 export function debugPortsFromCommandLines(text) {
-  const ports = [];
-  for (const line of String(text || "").split(/\r?\n/)) {
-    if (!line.includes("--remote-debugging-address=127.0.0.1")) continue;
-    const port = Number(line.match(/--remote-debugging-port(?:=|\s+)(\d+)/)?.[1]);
-    if (Number.isInteger(port) && port > 0 && port <= 65535) ports.push(port);
+  return [...new Set(debugProcessesFromCommandLines(text).map(item => item.port))];
+}
+
+function processChannel(executable, commandLine) {
+  const identity = `${executable || ""} ${commandLine || ""}`.toLowerCase();
+  return /codexbeta|chatgpt\s*\(beta\)|codex\s*\(beta\)/.test(identity) ? "beta" : "stable";
+}
+
+export function debugProcessesFromCommandLines(text) {
+  const source = String(text || "").trim();
+  let rows = [];
+  if (source.startsWith("[") || source.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(source);
+      rows = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {}
   }
-  return [...new Set(ports)];
+  if (rows.length === 0) {
+    rows = source.split(/\r?\n/).filter(Boolean).map(commandLine => ({ commandLine }));
+  }
+  return rows.flatMap(row => {
+    const commandLine = String(row?.commandLine || "");
+    if (!commandLine.includes("--remote-debugging-address=127.0.0.1")) return [];
+    if (commandLine.includes("--type=")) return [];
+    const port = Number(commandLine.match(/--remote-debugging-port(?:=|\s+)(\d+)/)?.[1]);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) return [];
+    const processId = Number(row?.processId);
+    const executable = typeof row?.executable === "string" ? row.executable : null;
+    return [{
+      port,
+      processId: Number.isInteger(processId) && processId > 0 ? processId : null,
+      executable,
+      channel: processChannel(executable, commandLine),
+      ownsDebugPort: row?.ownsDebugPort === true
+    }];
+  });
 }
 
 export async function fetchJson(url, timeout = 1200, fetchImpl = fetch) {
@@ -140,29 +148,37 @@ async function processCommandLines(platform, execute) {
   return "";
 }
 
-export async function discoverDebugPort({
+export async function discoverDebugEndpoint({
   platform = process.platform,
   execute = execFileAsync,
   fetchImpl = fetch,
   preferredPort = DEFAULT_CDP_PORT
 } = {}) {
+  let processes = [];
   try {
-    await fetchJson(`http://${CDP_HOST}:${preferredPort}/json/version`, 500, fetchImpl);
-    return preferredPort;
-  } catch {}
-  const candidates = [];
-  try {
-    candidates.push(...debugPortsFromCommandLines(await processCommandLines(platform, execute)));
+    processes = debugProcessesFromCommandLines(await processCommandLines(platform, execute));
   } catch {
     // Direct loopback probing remains available when process inspection is denied.
   }
-  for (const port of [...new Set(candidates)].filter((port) => port !== preferredPort)) {
+  const candidates = [preferredPort, ...processes.map(item => item.port)];
+  for (const port of [...new Set(candidates)]) {
     try {
       await fetchJson(`http://${CDP_HOST}:${port}/json/version`, 500, fetchImpl);
-      return port;
+      const process = processes.find(item => item.port === port && item.ownsDebugPort)
+        ?? processes.find(item => item.port === port);
+      return {
+        port,
+        processId: process?.processId ?? null,
+        executable: process?.executable ?? null,
+        channel: process?.channel ?? null
+      };
     } catch {}
   }
   throw new Error("Codex is not running with the local debug bridge");
+}
+
+export async function discoverDebugPort(options = {}) {
+  return (await discoverDebugEndpoint(options)).port;
 }
 
 export async function discoverWindowsCodexExecutables({ execute = execFileAsync } = {}) {
@@ -180,35 +196,16 @@ export async function discoverWindowsCodexExecutables({ execute = execFileAsync 
   );
 }
 
-export async function focusCodex({ platform = process.platform, execute = execFileAsync } = {}) {
+export async function focusCodex({
+  platform = process.platform,
+  execute = execFileAsync,
+  processId = null,
+  activateWindows = null
+} = {}) {
   if (platform === "win32") {
-    if (windowsFocusPromise) return windowsFocusPromise;
-    const operation = (async () => {
-      try {
-        const { stdout = "" } = await execute(
-          "powershell.exe",
-          powershellArgs(WINDOWS_FOCUS_COMMAND),
-          powershellOptions({
-            timeout: 5000,
-            env: {
-              ...process.env,
-              ...(windowsFocusPid ? { CODEX_BRIDGE_FOCUS_PID: String(windowsFocusPid) } : {})
-            }
-          })
-        );
-        const focusedPid = Number(String(stdout).trim().split(/\r?\n/).at(-1));
-        windowsFocusPid = Number.isInteger(focusedPid) && focusedPid > 0 ? focusedPid : null;
-      } catch (error) {
-        windowsFocusPid = null;
-        throw error;
-      }
-    })();
-    windowsFocusPromise = operation;
-    try {
-      return await operation;
-    } finally {
-      if (windowsFocusPromise === operation) windowsFocusPromise = null;
-    }
+    const activate = activateWindows
+      ?? (await import("./windows-focus.mjs")).activateWindowsProcess;
+    return activate(processId);
   }
   if (platform === "darwin") {
     await execute("/usr/bin/open", ["-b", "com.openai.codex"], { timeout: 3000 });

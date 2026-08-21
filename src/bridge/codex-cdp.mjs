@@ -1,4 +1,4 @@
-import { discoverDebugPort, fetchJson } from "./platform.mjs";
+import { discoverDebugEndpoint, fetchJson } from "./platform.mjs";
 import WebSocket from "ws";
 import { localThreadKey } from "./thread-key.mjs";
 
@@ -397,9 +397,12 @@ export class CodexCdpClient {
   nextId = 0;
   pending = new Map();
   lastSnapshot = null;
+  connectionIdentity = null;
+  modelActionQueue = Promise.resolve();
+  modelPickerLayout = null;
 
   constructor({
-    discoverPort = discoverDebugPort,
+    discoverPort = discoverDebugEndpoint,
     fetchTargets = fetchJson,
     createSocket = url => new WebSocket(url)
   } = {}) {
@@ -422,12 +425,25 @@ export class CodexCdpClient {
   }
 
   async openConnection(generation) {
-    const port = await this.discoverPort();
+    const discovery = await this.discoverPort();
+    const identity = Number.isInteger(discovery)
+      ? { port: discovery, processId: null, executable: null, channel: null }
+      : discovery;
+    const port = Number(identity?.port);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      throw new Error("Codex debug endpoint identity was invalid");
+    }
     const target = selectMainTarget(await this.fetchTargets(`http://127.0.0.1:${port}/json/list`));
     if (!target?.webSocketDebuggerUrl) throw new Error("Codex main renderer was not found");
     if (generation !== this.connectionGeneration) throw new Error("Codex bridge connection was cancelled");
     const socket = this.createSocket(target.webSocketDebuggerUrl);
     this.socket = socket;
+    this.connectionIdentity = {
+      port,
+      processId: Number.isInteger(identity?.processId) ? identity.processId : null,
+      executable: typeof identity?.executable === "string" ? identity.executable : null,
+      channel: ["stable", "beta"].includes(identity?.channel) ? identity.channel : null
+    };
     try {
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -470,25 +486,6 @@ export class CodexCdpClient {
       this.disconnect();
       throw error;
     }
-  }
-
-  async focusWindow(trace = null) {
-    await runTraceStage(trace, "focus.connect", () => this.connect(), {
-      connection: this.socket?.readyState === WebSocket.OPEN ? "reused" : "open"
-    });
-    const { windowId } = await runTraceStage(
-      trace,
-      "focus.get-window",
-      () => this.sendCommand("Browser.getWindowForTarget", {})
-    );
-    if (!Number.isInteger(windowId)) {
-      throw new Error("Codex Desktop window handle was not available");
-    }
-    await runTraceStage(trace, "focus.maximize", () => this.sendCommand("Browser.setWindowBounds", {
-      windowId,
-      bounds: { windowState: "maximized" }
-    }));
-    await runTraceStage(trace, "focus.bring-to-front", () => this.sendCommand("Page.bringToFront", {}));
   }
 
   async clickAgent(slot) {
@@ -579,11 +576,16 @@ export class CodexCdpClient {
   }
 
   async dispatchRendererAction(action, trace = null) {
-    await runTraceStage(trace, "model.connect", () => this.connect(), { action });
     if (MODEL_PRESETS[action]) {
-      await this.dispatchModelPreset(action, trace);
+      const operation = this.modelActionQueue.then(async () => {
+        await runTraceStage(trace, "model.connect", () => this.connect(), { action });
+        return this.dispatchModelPreset(action, trace);
+      });
+      this.modelActionQueue = operation.catch(() => {});
+      await operation;
       return true;
     }
+    await runTraceStage(trace, "model.connect", () => this.connect(), { action });
     const invoked = await this.evaluate(rendererActionExpression(action));
     if (!invoked) throw new Error(`Codex ${action} action is not available`);
     return true;
@@ -685,6 +687,12 @@ export class CodexCdpClient {
           trace,
           "model.open-picker-view"
         );
+        await this.waitForRenderer(`(() => {
+          const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+            (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+          );
+          return menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length === 2;
+        })()`, "expanded Codex model picker", trace, "model.wait-picker-view");
       }
     };
     const rowExpression = (rowIndex) => `(() => {
@@ -708,6 +716,15 @@ export class CodexCdpClient {
       }));
     })()`, "Codex model picker submenu", trace, `model.wait-submenu-${rowIndex + 1}`);
     const identifyRows = async () => {
+      if (this.modelPickerLayout?.connectionGeneration === this.connectionGeneration) {
+        trace?.record("model.rows-identified", {
+          rowCount: 2,
+          source: "cache",
+          outcome: "succeeded"
+        });
+        return this.modelPickerLayout;
+      }
+      this.modelPickerLayout = null;
       const rowCount = await runTraceStage(trace, "model.read-row-count", () => this.evaluate(`(() => {
         const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
           (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
@@ -731,9 +748,15 @@ export class CodexCdpClient {
         await this.pressRendererEscape(trace, `model.close-row-${rowIndex + 1}`);
       }
       if (modelRowIndex < 0) throw new Error(`Codex model ${preset.displayName} is not available`);
-      const result = { modelRowIndex, effortRowIndex: modelRowIndex === 0 ? 1 : 0 };
+      const result = {
+        connectionGeneration: this.connectionGeneration,
+        modelRowIndex,
+        effortRowIndex: modelRowIndex === 0 ? 1 : 0
+      };
+      this.modelPickerLayout = result;
       trace?.record("model.rows-identified", {
         rowCount,
+        source: "probe",
         outcome: "succeeded"
       });
       return result;
@@ -836,9 +859,8 @@ export class CodexCdpClient {
     };
 
     try {
-      await runTraceStage(trace, "model.select-effort-1", selectEffort, { targetEffort: preset.effort });
       await runTraceStage(trace, "model.select-model", selectModel, { action });
-      await runTraceStage(trace, "model.select-effort-2", selectEffort, { targetEffort: preset.effort });
+      await runTraceStage(trace, "model.select-effort", selectEffort, { targetEffort: preset.effort });
       const selected = await runTraceStage(trace, "model.validate", readState, { action });
       if (!selected.text.includes(preset.displayName) || selected.effort !== preset.effort) {
         throw new Error(`Codex did not select ${preset.displayName} / ${preset.effort}`);
@@ -853,6 +875,7 @@ export class CodexCdpClient {
       });
       return { model: preset.model, effort: preset.effort };
     } catch (error) {
+      this.modelPickerLayout = null;
       trace?.record("model.preset", {
         action,
         stage: "complete",
@@ -993,7 +1016,6 @@ export class CodexCdpClient {
       }
       return true;
     })()`));
-    await new Promise((resolve) => setTimeout(resolve, 80));
   }
 
   async pressRendererEscape(trace = null, stage = "renderer.escape") {
@@ -1054,6 +1076,8 @@ export class CodexCdpClient {
   disconnect() {
     this.connectionGeneration += 1;
     this.connectPromise = null;
+    this.modelPickerLayout = null;
+    this.connectionIdentity = null;
     const socket = this.socket;
     this.socket = null;
     if (socket && socket.readyState !== WebSocket.CLOSED) {

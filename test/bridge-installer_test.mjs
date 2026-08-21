@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,10 @@ const pluginRoot = fileURLToPath(new URL(
 ));
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const execFileAsync = promisify(execFile);
+const bundledNativeRuntimeHash = JSON.parse(await readFile(
+  join(pluginRoot, "installer", "native-runtime", "native-runtime.json"),
+  "utf8"
+)).runtimeHash;
 
 async function sha256(path) {
   return createHash("sha256").update(await readFile(path)).digest("hex");
@@ -222,6 +226,7 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
   let serviceOnline = false;
   let runningVersion = "9.8.7";
   let runningRuntimeHash = bundledRuntimeHash;
+  let runningNativeRuntimeHash = bundledNativeRuntimeHash;
   const execute = async (command, args, options) => {
     commands.push([command, args, options]);
     if (args[0] === "--version") return { stdout: "v22.14.0\n", stderr: "" };
@@ -247,6 +252,7 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
       serviceOnline = true;
       runningVersion = "9.8.7";
       runningRuntimeHash = bundledRuntimeHash;
+      runningNativeRuntimeHash = bundledNativeRuntimeHash;
     }
     return { pid: 1000 + children.length, unref() {} };
   };
@@ -270,6 +276,7 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
               ok: true,
               bridgeVersion: runningVersion,
               runtimeHash: runningRuntimeHash,
+              nativeRuntimeHash: runningNativeRuntimeHash,
               codexConnected: false
             };
           }
@@ -300,6 +307,7 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
     assert.equal(await readFile(join(dataRoot, "bridge.pid"), "utf8"), "1001\n");
     const metadata = JSON.parse(await readFile(join(dataRoot, "install.json"), "utf8"));
     assert.equal(metadata.runtimeHash, bundledRuntimeHash);
+    assert.equal(metadata.nativeRuntimeHash, bundledNativeRuntimeHash);
 
     runningVersion = "0.5.0";
     runningRuntimeHash = "stale-runtime";
@@ -359,6 +367,7 @@ test("a failed Windows Bridge restart restores the previous runtime and metadata
   let serviceOnline = true;
   let runningVersion = "1.0.0";
   let runningRuntimeHash = oldRuntimeHash;
+  let runningNativeRuntimeHash = null;
   let bridgeStarts = 0;
 
   await mkdir(join(home, "bin"), { recursive: true });
@@ -402,9 +411,11 @@ test("a failed Windows Bridge restart restores the previous runtime and metadata
         if (bridgeStarts === 1) {
           runningVersion = "9.8.7";
           runningRuntimeHash = "unexpected-runtime";
+          runningNativeRuntimeHash = bundledNativeRuntimeHash;
         } else {
           runningVersion = "1.0.0";
           runningRuntimeHash = oldRuntimeHash;
+          runningNativeRuntimeHash = null;
         }
       }
       return { pid: 2000 + bridgeStarts, unref() {} };
@@ -418,6 +429,7 @@ test("a failed Windows Bridge restart restores the previous runtime and metadata
               ok: true,
               bridgeVersion: runningVersion,
               runtimeHash: runningRuntimeHash,
+              nativeRuntimeHash: runningNativeRuntimeHash,
               codexConnected: false
             };
           }
@@ -455,6 +467,7 @@ test("separate installer instances serialize the same Windows Bridge update", as
   let serviceOnline = true;
   let runningVersion = "1.0.0";
   let runningRuntimeHash = oldRuntimeHash;
+  let runningNativeRuntimeHash = null;
   let bridgeStarts = 0;
 
   await mkdir(join(home, "bin"), { recursive: true });
@@ -495,6 +508,7 @@ test("separate installer instances serialize the same Windows Bridge update", as
       serviceOnline = true;
       runningVersion = "9.8.7";
       runningRuntimeHash = bundledRuntimeHash;
+      runningNativeRuntimeHash = bundledNativeRuntimeHash;
       return { pid: 3000 + bridgeStarts, unref() {} };
     },
     fetchImpl: async url => {
@@ -506,6 +520,7 @@ test("separate installer instances serialize the same Windows Bridge update", as
               ok: true,
               bridgeVersion: runningVersion,
               runtimeHash: runningRuntimeHash,
+              nativeRuntimeHash: runningNativeRuntimeHash,
               codexConnected: false
             };
           }
@@ -549,15 +564,17 @@ test("an interrupted Windows update restores both backups when the new runtime c
   let serviceOnline = false;
   let runningVersion = null;
   let runningRuntimeHash = null;
+  let runningNativeRuntimeHash = null;
   let bridgeStarts = 0;
 
   await mkdir(join(home, "bin"), { recursive: true });
   await mkdir(dataRoot, { recursive: true });
   await writeFile(systemNode, "fake node");
   const resolvedNode = await realpath(systemNode);
-  const metadata = (version, runtimeHash) => ({
+  const metadata = (version, runtimeHash, nativeRuntimeHash = null) => ({
     version,
     runtimeHash,
+    nativeRuntimeHash,
     platform: "win32",
     codexChannel: "stable",
     nodeExecutable: resolvedNode,
@@ -566,8 +583,16 @@ test("an interrupted Windows update restores both backups when the new runtime c
     installedAt: "2026-01-01T00:00:00.000Z"
   });
   const oldMetadata = metadata("1.0.0", oldRuntimeHash);
+  await cp(
+    join(pluginRoot, "installer", "native-runtime"),
+    join(dataRoot, "native-runtimes", bundledNativeRuntimeHash),
+    { recursive: true }
+  );
   await writeFile(bridgeRuntime, bundledRuntime);
-  await writeFile(installMetadata, `${JSON.stringify(metadata("9.8.7", bundledRuntimeHash), null, 2)}\n`);
+  await writeFile(
+    installMetadata,
+    `${JSON.stringify(metadata("9.8.7", bundledRuntimeHash, bundledNativeRuntimeHash), null, 2)}\n`
+  );
   await writeFile(join(dataRoot, ".bridge.mjs.previous"), oldRuntime);
   await writeFile(join(dataRoot, ".install.json.previous"), `${JSON.stringify(oldMetadata, null, 2)}\n`);
   await writeFile(join(dataRoot, "bridge-token"), "synthetic-test-token\n");
@@ -594,12 +619,15 @@ test("an interrupted Windows update restores both backups when the new runtime c
       if (bridgeStarts === 1) {
         runningVersion = "9.8.7";
         runningRuntimeHash = "failed-new-runtime";
+        runningNativeRuntimeHash = bundledNativeRuntimeHash;
       } else if (bridgeStarts === 2) {
         runningVersion = "1.0.0";
         runningRuntimeHash = oldRuntimeHash;
+        runningNativeRuntimeHash = null;
       } else {
         runningVersion = "9.8.7";
         runningRuntimeHash = bundledRuntimeHash;
+        runningNativeRuntimeHash = bundledNativeRuntimeHash;
       }
       return { pid: 4000 + bridgeStarts, unref() {} };
     },
@@ -612,6 +640,7 @@ test("an interrupted Windows update restores both backups when the new runtime c
               ok: true,
               bridgeVersion: runningVersion,
               runtimeHash: runningRuntimeHash,
+              nativeRuntimeHash: runningNativeRuntimeHash,
               codexConnected: false
             };
           }

@@ -68,7 +68,9 @@ for (const relative of [
   "installer/CodexBridge.png",
   "installer/LICENSE",
   "installer/NOTICE.md",
-  "installer/THIRD_PARTY_NOTICES.md"
+  "installer/THIRD_PARTY_NOTICES.md",
+  "installer/native-runtime/native-runtime.json",
+  "installer/native-runtime/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node"
 ]) {
   if (!await exists(join(source, relative))) {
     throw new Error(`Bundled Bridge resource is missing: ${relative}`);

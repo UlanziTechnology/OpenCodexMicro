@@ -12,6 +12,10 @@ const bundledBridgeSource = await readFile(new URL("installer/bridge.mjs", packa
 const bundledBridgeHash = createHash("sha256")
   .update(bundledBridgeSource)
   .digest("hex");
+const nativeRuntimeManifest = JSON.parse(await readFile(
+  new URL("installer/native-runtime/native-runtime.json", packageRootUrl),
+  "utf8"
+));
 const navigateAction = manifest.Actions.find(action =>
   action.UUID === "com.ulanzi.ulanzistudio.codexmicro.navigate"
 );
@@ -62,7 +66,9 @@ for (const asset of [
   "installer/CodexBridge.png",
   "installer/LICENSE",
   "installer/NOTICE.md",
-  "installer/THIRD_PARTY_NOTICES.md"
+  "installer/THIRD_PARTY_NOTICES.md",
+  "installer/native-runtime/native-runtime.json",
+  "installer/native-runtime/node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node"
 ]) {
   assert.ok((await readFile(new URL(asset, packageRootUrl))).length > 0, `${asset} must be bundled`);
 }
@@ -153,6 +159,7 @@ const bridge = createServer((request, response) => {
       ok: true,
       bridgeVersion: manifest.Version,
       runtimeHash: bundledBridgeHash,
+      nativeRuntimeHash: nativeRuntimeManifest.runtimeHash,
       codexConnected: true,
       updatedAt: Date.now()
     }));
@@ -182,7 +189,7 @@ const bridge = createServer((request, response) => {
         events: route === "thread-click"
           ? [
               { event: "server.request", offsetMs: 0, route, slot: 1 },
-              { event: "cdp.stage", offsetMs: 12, stage: "focus.bring-to-front", outcome: "succeeded", durationMs: 4 },
+              { event: "focus.native", offsetMs: 12, outcome: "succeeded", channel: "beta", reused: false },
               { event: "cdp.stage", offsetMs: 51, stage: "task.dom-activate", outcome: "succeeded", durationMs: 9, background: true }
             ]
           : [
@@ -436,8 +443,8 @@ try {
   );
   assert.match(failedPresetLog?.message || "", /category=bridge-rejected/);
   const serializedLogs = JSON.stringify(messages.filter(message => message.cmd === "logMessage"));
-  assert.match(serializedLogs, /bridgeEvent=cdp\.stage/);
-  assert.match(serializedLogs, /stage=focus\.bring-to-front/);
+  assert.match(serializedLogs, /bridgeEvent=focus\.native/);
+  assert.match(serializedLogs, /channel=beta/);
   assert.match(serializedLogs, /stage=task\.dom-activate/);
   assert.match(serializedLogs, /bridgeEvent=renderer\.poll/);
   assert.match(serializedLogs, /stage=model\.wait-main-menu/);

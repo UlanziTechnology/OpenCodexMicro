@@ -2,6 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import {
   access,
   chmod,
+  cp,
   copyFile,
   mkdir,
   readFile,
@@ -17,8 +18,7 @@ import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
-  discoverDebugPort,
-  focusCodex,
+  discoverDebugEndpoint,
   launchWindowsCodex
 } from "../../../src/bridge/platform.mjs";
 
@@ -56,6 +56,29 @@ async function fileSha256(path) {
   } catch {
     return null;
   }
+}
+
+async function verifiedNativeRuntimeHash(root) {
+  const manifest = await readJson(join(root, "native-runtime.json"));
+  if (
+    manifest?.version !== 1 ||
+    !/^[a-f0-9]{64}$/.test(String(manifest?.runtimeHash || "")) ||
+    !Array.isArray(manifest?.files)
+  ) {
+    return null;
+  }
+  const verified = [];
+  for (const file of manifest.files) {
+    const relative = String(file?.path || "").replaceAll("\\", "/");
+    if (!relative || relative.startsWith("/") || relative.split("/").includes("..")) return null;
+    const sha256 = await fileSha256(join(root, ...relative.split("/")));
+    if (!sha256 || sha256 !== file.sha256) return null;
+    verified.push({ path: relative, sha256 });
+  }
+  const computed = createHash("sha256")
+    .update(verified.map(file => `${file.path}:${file.sha256}`).join("\n"))
+    .digest("hex");
+  return computed === manifest.runtimeHash ? computed : null;
 }
 
 function processIsAlive(pid) {
@@ -221,6 +244,8 @@ export function createBridgeInstaller({
   const installerRoot = resolve(pluginRoot, "installer");
   const bundledRuntime = join(installerRoot, "bridge.mjs");
   const bundledIcon = join(installerRoot, "CodexBridge.png");
+  const bundledNativeRuntime = join(installerRoot, "native-runtime");
+  const nativeRuntimesRoot = join(appRoot, "native-runtimes");
   const runtimeBackup = join(appRoot, ".bridge.mjs.previous");
   const metadataBackup = join(appRoot, ".install.json.previous");
 
@@ -281,6 +306,7 @@ export function createBridgeInstaller({
         cdpConnected: Boolean(payload.codexConnected),
         serviceVersion: typeof payload.bridgeVersion === "string" ? payload.bridgeVersion : null,
         serviceRuntimeHash: typeof payload.runtimeHash === "string" ? payload.runtimeHash : null,
+        serviceNativeRuntimeHash: typeof payload.nativeRuntimeHash === "string" ? payload.nativeRuntimeHash : null,
         serviceError: null
       };
     } catch (error) {
@@ -289,6 +315,7 @@ export function createBridgeInstaller({
         cdpConnected: false,
         serviceVersion: null,
         serviceRuntimeHash: null,
+        serviceNativeRuntimeHash: null,
         serviceError: error.message
       };
     }
@@ -303,11 +330,22 @@ export function createBridgeInstaller({
       fileSha256(bundledRuntime),
       fileSha256(bridgeRuntime)
     ]);
+    const bundledNativeRuntimeHash = platform === "win32"
+      ? await verifiedNativeRuntimeHash(bundledNativeRuntime)
+      : null;
+    const installedNativeRuntimeHash = platform === "win32" && metadata?.nativeRuntimeHash
+      ? await verifiedNativeRuntimeHash(join(nativeRuntimesRoot, metadata.nativeRuntimeHash))
+      : null;
+    const nativeRuntimeInstalled = platform !== "win32" || Boolean(
+      bundledNativeRuntimeHash &&
+      installedNativeRuntimeHash === bundledNativeRuntimeHash &&
+      metadata?.nativeRuntimeHash === bundledNativeRuntimeHash
+    );
     const macAppInstalled = platform === "darwin"
       ? await exists(bridgeExecutable, fsConstants.X_OK)
       : runtimeInstalled;
     const agentInstalled = platform === "darwin" ? await exists(bridgeAgent) : true;
-    const installed = macAppInstalled && runtimeInstalled && tokenInstalled && agentInstalled;
+    const installed = macAppInstalled && runtimeInstalled && tokenInstalled && agentInstalled && nativeRuntimeInstalled;
     const installationDetected = Boolean(
       runtimeInstalled || tokenInstalled || metadata || probe.serviceOnline ||
       (platform === "darwin" && (macAppInstalled || agentInstalled))
@@ -317,11 +355,13 @@ export function createBridgeInstaller({
       metadata?.version === version &&
       metadata?.runtimeHash === bundledRuntimeHash &&
       installedRuntimeHash === bundledRuntimeHash
+      && nativeRuntimeInstalled
     );
     const runningMatchesBundle = !probe.serviceOnline || Boolean(
       bundledRuntimeHash &&
       probe.serviceVersion === version &&
-      probe.serviceRuntimeHash === bundledRuntimeHash
+      probe.serviceRuntimeHash === bundledRuntimeHash &&
+      (platform !== "win32" || probe.serviceNativeRuntimeHash === bundledNativeRuntimeHash)
     );
     return {
       supported: platform === "win32" || (platform === "darwin" && Number.isInteger(uid)),
@@ -334,6 +374,8 @@ export function createBridgeInstaller({
       bundledVersion: version,
       bundledRuntimeHash,
       installedRuntimeHash,
+      bundledNativeRuntimeHash,
+      installedNativeRuntimeHash,
       needsUpdate: !installed || !metadataMatchesBundle || !runningMatchesBundle,
       appPath: platform === "darwin" ? bridgeApp : appRoot,
       nodeExecutable: metadata?.nodeExecutable || null,
@@ -593,7 +635,11 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
     return true;
   }
 
-  async function waitForExpectedService(expectedRuntimeHash, expectedVersion = version) {
+  async function waitForExpectedService(
+    expectedRuntimeHash,
+    expectedVersion = version,
+    expectedNativeRuntimeHash = null
+  ) {
     const deadline = Date.now() + serviceStartTimeoutMs;
     let lastProbe = null;
     do {
@@ -601,7 +647,8 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       if (
         lastProbe.serviceOnline &&
         lastProbe.serviceVersion === expectedVersion &&
-        lastProbe.serviceRuntimeHash === expectedRuntimeHash
+        lastProbe.serviceRuntimeHash === expectedRuntimeHash &&
+        (platform !== "win32" || lastProbe.serviceNativeRuntimeHash === expectedNativeRuntimeHash)
       ) {
         return lastProbe;
       }
@@ -617,7 +664,11 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
     if (!(platform === "win32" || (platform === "darwin" && Number.isInteger(uid)))) {
       throw new Error("Codex Bridge installation is supported on Windows and macOS only.");
     }
-    if (!await exists(bundledRuntime) || !await exists(bundledIcon)) {
+    if (
+      !await exists(bundledRuntime) ||
+      !await exists(bundledIcon) ||
+      (platform === "win32" && !await verifiedNativeRuntimeHash(bundledNativeRuntime))
+    ) {
       throw new Error("The plugin does not contain the Codex Bridge installation resources.");
     }
     const nodeRuntime = await selectBridgeNodeRuntime({
@@ -634,6 +685,22 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       : null;
     const previousMetadataText = await readFile(installMetadata, "utf8").catch(() => null);
     const previousMetadata = await readJson(installMetadata);
+    const nativeRuntimeHash = platform === "win32" ? previousStatus.bundledNativeRuntimeHash : null;
+    const nativeRuntime = nativeRuntimeHash ? join(nativeRuntimesRoot, nativeRuntimeHash) : null;
+    let createdNativeRuntime = false;
+    if (nativeRuntimeHash && await verifiedNativeRuntimeHash(nativeRuntime) !== nativeRuntimeHash) {
+      const stagedNativeRuntime = join(appRoot, `.native-runtime.installing-${process.pid}`);
+      await rm(stagedNativeRuntime, { recursive: true, force: true });
+      await cp(bundledNativeRuntime, stagedNativeRuntime, { recursive: true });
+      if (await verifiedNativeRuntimeHash(stagedNativeRuntime) !== nativeRuntimeHash) {
+        await rm(stagedNativeRuntime, { recursive: true, force: true });
+        throw new Error("The bundled native focus runtime could not be verified.");
+      }
+      await mkdir(nativeRuntimesRoot, { recursive: true });
+      await rm(nativeRuntime, { recursive: true, force: true });
+      await rename(stagedNativeRuntime, nativeRuntime);
+      createdNativeRuntime = true;
+    }
     const stagedRuntime = join(appRoot, `.bridge.mjs.installing-${process.pid}`);
     await mkdir(appRoot, { recursive: true, mode: 0o700 });
     if (platform !== "win32") await chmod(appRoot, 0o700);
@@ -656,6 +723,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       await commitMetadata(`${JSON.stringify({
         version,
         runtimeHash,
+        nativeRuntimeHash,
         platform,
         codexChannel,
         nodeExecutable: nodeRuntime.executable,
@@ -665,7 +733,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       }, null, 2)}\n`);
       if (platform === "darwin") await installMac(nodeRuntime);
       if (platform === "win32") await ensureServiceUnlocked();
-      await waitForExpectedService(runtimeHash);
+      await waitForExpectedService(runtimeHash, version, nativeRuntimeHash);
       const installed = await status();
       if (installed.needsUpdate) throw new Error("The restarted Codex Bridge did not match the bundled runtime.");
       await discardTransactionBackups();
@@ -682,6 +750,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
           const recoveryMetadataText = previousMetadata ? previousMetadataText : `${JSON.stringify({
             version: recoveryVersion,
             runtimeHash: previousRuntimeHash,
+            nativeRuntimeHash: previousMetadata?.nativeRuntimeHash || null,
             platform,
             codexChannel: previousStatus.codexChannel || codexChannel,
             nodeExecutable: nodeRuntime.executable,
@@ -710,6 +779,13 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
           await rm(appRoot, { recursive: true, force: true });
           resetAuthorizationCache();
         }
+        if (
+          createdNativeRuntime &&
+          nativeRuntime &&
+          previousMetadata?.nativeRuntimeHash !== nativeRuntimeHash
+        ) {
+          await rm(nativeRuntime, { recursive: true, force: true });
+        }
       } catch (rollbackFailure) {
         rollbackError = rollbackFailure;
       }
@@ -729,7 +805,14 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
     const probe = await probeBridge();
     if (probe.serviceOnline || Date.now() - lastWindowsServiceStart < 2000) return { ...await status(), ...probe };
     const metadata = await readJson(installMetadata);
-    if (!metadata?.nodeExecutable || !await exists(bridgeRuntime) || !await exists(tokenPath)) {
+    const nativeRuntimeValid = !metadata?.nativeRuntimeHash ||
+      await verifiedNativeRuntimeHash(join(nativeRuntimesRoot, metadata.nativeRuntimeHash)) === metadata.nativeRuntimeHash;
+    if (
+      !metadata?.nodeExecutable ||
+      !await exists(bridgeRuntime) ||
+      !await exists(tokenPath) ||
+      !nativeRuntimeValid
+    ) {
       throw new Error("Codex Bridge is not installed. Use Install / Repair first.");
     }
     const token = (await readFile(tokenPath, "utf8")).trim();
@@ -740,7 +823,11 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       env: {
         ...process.env,
         CODEX_BRIDGE_DATA_ROOT: appRoot,
-        CODEX_BRIDGE_TOKEN: token
+        CODEX_BRIDGE_TOKEN: token,
+        ...(metadata.nativeRuntimeHash ? {
+          CODEX_BRIDGE_NATIVE_ROOT: join(nativeRuntimesRoot, metadata.nativeRuntimeHash),
+          CODEX_BRIDGE_NATIVE_HASH: metadata.nativeRuntimeHash
+        } : {})
       }
     });
     if (Number.isInteger(child.pid) && child.pid > 0) {
@@ -774,7 +861,11 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       if (!current.serviceOnline) {
         try {
           await startInstalledService(await readJson(installMetadata));
-          await waitForExpectedService(current.bundledRuntimeHash);
+          await waitForExpectedService(
+            current.bundledRuntimeHash,
+            version,
+            current.bundledNativeRuntimeHash
+          );
           const ready = await status();
           await discardTransactionBackups();
           return ready;
@@ -801,8 +892,16 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
     if (platform === "win32") {
       await ensureService();
       try {
-        await discoverDebugPort({ platform, execute, fetchImpl });
-        await focusCodex({ platform, execute });
+        await discoverDebugEndpoint({ platform, execute, fetchImpl });
+        const response = await fetchImpl(`${bridgeUrl}/focus`, {
+          method: "POST",
+          headers: await authorizationHeaders(),
+          signal: AbortSignal.timeout(1200)
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.ok !== true) {
+          throw new Error(payload?.error || "Codex focus request failed");
+        }
       } catch (error) {
         if (!/local debug bridge/.test(error.message)) throw error;
         await launchWindowsCodex({ channel: codexChannel, execute, spawnProcess });

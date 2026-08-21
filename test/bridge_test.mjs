@@ -16,10 +16,18 @@ import {
 } from "../src/bridge/codex-cdp.mjs";
 import {
   debugPortsFromCommandLines,
+  debugProcessesFromCommandLines,
+  discoverDebugEndpoint,
   discoverDebugPort,
   discoverWindowsCodexExecutables,
   focusCodex
 } from "../src/bridge/platform.mjs";
+import { navigateAndFocus } from "../src/bridge/navigation.mjs";
+import {
+  activateWindowsProcess,
+  clearWindowsFocusCache,
+  initializeWindowsFocusRuntime
+} from "../src/bridge/windows-focus.mjs";
 import { bridgeRequestAuthorized } from "../src/bridge/auth.mjs";
 
 const UUID = "f6805b8a-332a-43a0-a118-52d3e59542f6";
@@ -51,7 +59,7 @@ test("Bridge write authorization fails closed and accepts only the installed tok
   assert.equal(bridgeRequestAuthorized(token, `Bearer ${token}`), true);
 });
 
-test("CDP discovery probes the fixed loopback port before platform process inspection", async () => {
+test("CDP discovery still probes the fixed loopback port when process identity inspection is denied", async () => {
   const requests = [];
   let processInspections = 0;
   const port = await discoverDebugPort({
@@ -64,7 +72,7 @@ test("CDP discovery probes the fixed loopback port before platform process inspe
   });
   assert.equal(port, 9222);
   assert.deepEqual(requests, ["http://127.0.0.1:9222/json/version"]);
-  assert.equal(processInspections, 0);
+  assert.equal(processInspections, 1);
 });
 
 test("Windows CDP and Appx discovery accept Stable and Beta process shapes", async () => {
@@ -72,6 +80,58 @@ test("Windows CDP and Appx discovery accept Stable and Beta process shapes", asy
     '"ChatGPT.exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222',
     '"ChatGPT (Beta).exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port 9333'
   ].join("\n")), [9222, 9333]);
+  const processRows = JSON.stringify([
+    {
+      processId: 4101,
+      executable: "C:\\WindowsApps\\OpenAI.Codex_Stable\\app\\ChatGPT.exe",
+      commandLine: '"ChatGPT.exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222'
+    },
+    {
+      processId: 4202,
+      executable: "C:\\WindowsApps\\OpenAI.CodexBeta_Beta\\app\\ChatGPT (Beta).exe",
+      commandLine: '"ChatGPT (Beta).exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9333'
+    }
+  ]);
+  assert.deepEqual(
+    debugProcessesFromCommandLines(processRows).map(({ port, processId, channel }) => ({ port, processId, channel })),
+    [
+      { port: 9222, processId: 4101, channel: "stable" },
+      { port: 9333, processId: 4202, channel: "beta" }
+    ]
+  );
+  const selectedBeta = await discoverDebugEndpoint({
+    platform: "win32",
+    preferredPort: 9333,
+    execute: async () => ({ stdout: processRows }),
+    fetchImpl: async (url) => ({ ok: url.includes(":9333/"), json: async () => ({ Browser: "Chrome" }) })
+  });
+  assert.deepEqual(selectedBeta, {
+    port: 9333,
+    processId: 4202,
+    executable: "C:\\WindowsApps\\OpenAI.CodexBeta_Beta\\app\\ChatGPT (Beta).exe",
+    channel: "beta"
+  });
+  const contestedPortRows = JSON.stringify([
+    {
+      processId: 4101,
+      executable: "C:\\WindowsApps\\OpenAI.Codex_Stable\\app\\ChatGPT.exe",
+      commandLine: '"ChatGPT.exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222',
+      ownsDebugPort: false
+    },
+    {
+      processId: 4202,
+      executable: "C:\\WindowsApps\\OpenAI.CodexBeta_Beta\\app\\ChatGPT (Beta).exe",
+      commandLine: '"ChatGPT (Beta).exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222',
+      ownsDebugPort: true
+    }
+  ]);
+  const selectedListener = await discoverDebugEndpoint({
+    platform: "win32",
+    execute: async () => ({ stdout: contestedPortRows }),
+    fetchImpl: async () => ({ ok: true, json: async () => ({ Browser: "Chrome" }) })
+  });
+  assert.equal(selectedListener.processId, 4202);
+  assert.equal(selectedListener.channel, "beta");
   let appxOptions;
   const installs = await discoverWindowsCodexExecutables({
     execute: async (_command, _args, options) => {
@@ -88,66 +148,80 @@ test("Windows CDP and Appx discovery accept Stable and Beta process shapes", asy
   assert.equal(appxOptions.windowsHide, true);
 });
 
-test("Windows background PowerShell calls stay hidden and maximize on fallback focus", async () => {
+test("Windows native focus maximizes and activates only the connected Stable or Beta process", async () => {
+  clearWindowsFocusCache();
+  const windows = new Map([[4202, 0xBEEFn]]);
+  let foreground = 0xAAAAn;
+  let maximized = false;
   const calls = [];
-  const execute = async (command, args, options) => {
-    calls.push({ command, args, options });
-    if (args.join(" ").includes("CODEX_BRIDGE_FOCUS_PID")) {
-      return { stdout: "4242\n" };
-    }
-    return {
-      stdout: '\"ChatGPT.exe\" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9333\n'
-    };
+  const api = {
+    isWindow: hwnd => hwnd === 0xBEEFn,
+    processIdForWindow: hwnd => hwnd === 0xBEEFn ? 4202 : 0,
+    findWindowForProcess: processId => windows.get(processId) ?? null,
+    getForegroundWindow: () => foreground,
+    isZoomed: () => maximized,
+    maximize: hwnd => { calls.push(["maximize", hwnd]); maximized = true; return true; },
+    foreground: hwnd => { calls.push(["foreground", hwnd]); foreground = hwnd; return true; },
+    flash: hwnd => calls.push(["flash", hwnd])
   };
-  await discoverDebugPort({
+  const result = await activateWindowsProcess(4202, { api, wait: async () => {} });
+  assert.equal(result.processId, 4202);
+  assert.equal(result.maximized, true);
+  assert.deepEqual(calls, [["maximize", 0xBEEFn], ["foreground", 0xBEEFn]]);
+
+  let powershellCalls = 0;
+  const focused = await focusCodex({
     platform: "win32",
-    execute,
-    fetchImpl: async (url) => {
-      if (url.includes(":9333/")) return { ok: true, json: async () => ({ Browser: "Chrome" }) };
-      throw new Error("offline fixture");
-    }
+    processId: 4202,
+    execute: async () => { powershellCalls += 1; },
+    activateWindows: async processId => ({ processId, alreadyForeground: true, alreadyMaximized: true })
   });
-  await focusCodex({ platform: "win32", execute });
-  await focusCodex({ platform: "win32", execute });
-  assert.equal(calls.length, 3);
-  assert.ok(calls.every(({ command, args, options }) =>
-    command === "powershell.exe" &&
-    options?.windowsHide === true &&
-    args.includes("-WindowStyle") &&
-    args.includes("Hidden")
-  ));
-  const focusCalls = calls.slice(1);
-  assert.ok(focusCalls.every(({ args, options }) =>
-    args.join(" ").includes("ShowWindowAsync($candidate.MainWindowHandle, 3)") &&
-    args.join(" ").includes("SetForegroundWindow") &&
-    options.timeout === 5000
-  ));
-  assert.equal(focusCalls[1].options.env.CODEX_BRIDGE_FOCUS_PID, "4242");
+  assert.equal(focused.processId, 4202);
+  assert.equal(powershellCalls, 0, "the key hot path must not spawn PowerShell");
 });
 
-test("CDP focus maximizes the Codex window before bringing it to the foreground", async () => {
-  const client = new CodexCdpClient();
+test("Windows native focus runtime loads the User32 bindings", {
+  skip: process.platform !== "win32"
+}, async () => {
+  assert.equal(await initializeWindowsFocusRuntime(), true);
+});
+
+test("Windows native focus uses the bounded attached-input fallback only after foreground denial", async () => {
+  clearWindowsFocusCache();
+  let foreground = 0x1111n;
   const calls = [];
-  const trace = createTraceFixture();
-  client.connect = async () => {};
-  client.sendCommand = async (method, params) => {
-    calls.push({ method, params });
-    return method === "Browser.getWindowForTarget" ? { windowId: 42 } : {};
+  const api = {
+    isWindow: () => true,
+    processIdForWindow: () => 4203,
+    findWindowForProcess: () => 0x2222n,
+    getForegroundWindow: () => foreground,
+    isZoomed: () => true,
+    foreground: hwnd => { calls.push(["foreground", hwnd]); return false; },
+    forceForeground: hwnd => { calls.push(["forceForeground", hwnd]); foreground = hwnd; },
+    flash: hwnd => calls.push(["flash", hwnd])
   };
+  const waits = [];
+  const result = await activateWindowsProcess(4203, {
+    api,
+    wait: async milliseconds => waits.push(milliseconds)
+  });
+  assert.equal(result.alreadyMaximized, true);
+  assert.deepEqual(calls, [["foreground", 0x2222n], ["forceForeground", 0x2222n]]);
+  assert.deepEqual(waits, [25, 25]);
+});
 
-  await client.focusWindow(trace);
-
-  assert.deepEqual(calls, [
-    { method: "Browser.getWindowForTarget", params: {} },
-    {
-      method: "Browser.setWindowBounds",
-      params: { windowId: 42, bounds: { windowState: "maximized" } }
-    },
-    { method: "Page.bringToFront", params: {} }
-  ]);
-  assert.deepEqual(
-    trace.events.filter(event => event.outcome === "succeeded").map(event => event.stage),
-    ["focus.connect", "focus.get-window", "focus.maximize", "focus.bring-to-front"]
+test("Task navigation success is not converted into failure when native focus is denied", async () => {
+  const result = await navigateAndFocus(
+    async () => "navigated",
+    async () => { throw new Error("foreground denied"); }
+  );
+  assert.deepEqual(result, { focusOk: false });
+  await assert.rejects(
+    navigateAndFocus(
+      async () => { throw new Error("navigation failed"); },
+      async () => true
+    ),
+    /navigation failed/
   );
 });
 
@@ -297,6 +371,109 @@ test("model presets freeze the requested model and effort", () => {
     assert.deepEqual(modelPreset(action), { model, displayName, effort });
   }
   assert.throws(() => modelPreset("unknown"), /Unknown Codex model preset/);
+});
+
+test("model renderer actions are serialized before they touch the shared menu", async () => {
+  const client = new CodexCdpClient();
+  const calls = [];
+  let active = 0;
+  let maxActive = 0;
+  let releaseFirst;
+  let markFirstStarted;
+  const firstStarted = new Promise(resolve => { markFirstStarted = resolve; });
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  client.connect = async () => {};
+  client.dispatchModelPreset = async (action) => {
+    calls.push(action);
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    if (calls.length === 1) {
+      markFirstStarted();
+      await firstGate;
+    }
+    active -= 1;
+  };
+
+  const first = client.dispatchRendererAction("model-sol-high");
+  await firstStarted;
+  const second = client.dispatchRendererAction("model-sol-medium");
+  await Promise.resolve();
+
+  assert.deepEqual(calls, ["model-sol-high"]);
+  assert.equal(maxActive, 1);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(calls, ["model-sol-high", "model-sol-medium"]);
+  assert.equal(maxActive, 1);
+});
+
+test("model presets identify picker rows once per renderer connection", async () => {
+  const client = new CodexCdpClient();
+  const clickStages = [];
+  const effortOrder = ["low", "medium", "high", "xhigh", "max"];
+  let currentModel = "5.6 Sol";
+  let currentEffort = "medium";
+  let expanded = false;
+
+  client.evaluate = async (expression) => {
+    if (expression.includes('const triggers = [...document.querySelectorAll("[data-codex-intelligence-trigger]")].filter(visible)')) {
+      return { text: currentModel, effort: currentEffort, expanded };
+    }
+    if (expression.includes("rowCount: menus[0]?.querySelectorAll")) {
+      return { count: 0, expanded: true, rowCount: 2 };
+    }
+    if (expression.includes("return menu?.querySelectorAll") && expression.includes("length ?? 0")) {
+      return 2;
+    }
+    throw new Error(`Unexpected model fixture expression: ${expression.slice(0, 80)}`);
+  };
+  client.waitForRenderer = async (_expression, description, _trace, stage) => {
+    if (description === "Codex model picker submenu") {
+      if (stage === "model.wait-submenu-1") {
+        return ["5.6 Sol", "5.6 Luna"].map(text => ({ text, checked: text === currentModel }));
+      }
+      return effortOrder.map(text => ({ text, checked: text === currentEffort }));
+    }
+    return true;
+  };
+  client.clickRendererCandidates = async (_expression, description, _trace, stage) => {
+    clickStages.push(stage);
+    if (stage === "model.open-trigger") expanded = true;
+    if (stage === "model.select-model-option") {
+      currentModel = description.includes("Luna") ? "5.6 Luna" : "5.6 Sol";
+    }
+    if (stage === "model.select-effort-option") {
+      currentEffort = description.split(" ").at(-1);
+    }
+  };
+  client.pressRendererEscape = async (_trace, stage) => {
+    clickStages.push(stage);
+    expanded = false;
+  };
+
+  const firstTrace = createTraceFixture();
+  await client.dispatchModelPreset("model-luna-max", firstTrace);
+  assert.equal(clickStages.filter(stage => stage === "model.open-row-1").length, 1);
+  assert.equal(clickStages.filter(stage => stage === "model.open-row-2").length, 1);
+  const selectionStages = firstTrace.events
+    .filter(event => event.event === "cdp.stage" && event.outcome === "started")
+    .map(event => event.stage);
+  assert.ok(selectionStages.indexOf("model.select-model") < selectionStages.indexOf("model.select-effort"));
+  assert.equal(selectionStages.includes("model.select-effort-1"), false);
+  assert.equal(selectionStages.includes("model.select-effort-2"), false);
+
+  const cachedTrace = createTraceFixture();
+  await client.dispatchModelPreset("model-sol-high", cachedTrace);
+  assert.equal(clickStages.filter(stage => stage === "model.open-row-1").length, 1);
+  assert.equal(clickStages.filter(stage => stage === "model.open-row-2").length, 1);
+  assert.ok(cachedTrace.events.some(event =>
+    event.event === "model.rows-identified" && event.source === "cache"
+  ));
+
+  client.disconnect();
+  await client.dispatchModelPreset("model-luna-max", createTraceFixture());
+  assert.equal(clickStages.filter(stage => stage === "model.open-row-1").length, 2);
+  assert.equal(clickStages.filter(stage => stage === "model.open-row-2").length, 2);
 });
 
 test("new renderer action accepts the current localized New conversation control", () => {

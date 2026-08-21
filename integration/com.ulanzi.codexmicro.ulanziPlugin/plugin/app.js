@@ -302,9 +302,9 @@ function logShortcut(instance, shortcut, level, event, fields = []) {
 
 function safeDiagnosticFields(event) {
   const allowed = new Set([
-    "action", "attempts", "background", "category", "complete", "connection",
+    "action", "attempts", "background", "category", "channel", "complete", "connection",
     "currentEffort", "durationMs", "effortMatched", "modelMatched", "outcome",
-    "path", "phase", "platform", "reused", "route", "rowCount", "slot", "stage",
+    "focusOk", "path", "phase", "platform", "reused", "route", "rowCount", "slot", "stage",
     "targetEffort"
   ]);
   return Object.entries(event || {}).flatMap(([key, value]) => {
