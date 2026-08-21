@@ -1,10 +1,11 @@
-import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { resolve } from "node:path";
 
 const packageRoot = resolve(".");
 const repositoryRoot = resolve(packageRoot, "../..");
 const installerRoot = resolve(packageRoot, "installer");
+const manifest = JSON.parse(await readFile(resolve(packageRoot, "manifest.json"), "utf8"));
 
 await mkdir("dist", { recursive: true });
 await build({
@@ -26,6 +27,9 @@ await build({
   outfile: resolve(installerRoot, "bridge.mjs"),
   platform: "node",
   target: "node20",
+  define: {
+    __CODEX_BRIDGE_VERSION__: JSON.stringify(String(manifest.Version))
+  },
   banner: {
     js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);"
   }

@@ -20,6 +20,15 @@ Bridge Setup** page, choose **Install / Repair**, then **Launch Codex Bridge**.
 The bundled installer requires no repository path, npm directory, administrator
 service, or fixed Codex package version.
 
+Initial Bridge installation remains an explicit setup action. After that, every
+plugin startup compares the bundled version and SHA-256 with both the installed
+runtime and the identity reported by the running Bridge. A mismatch updates only
+the managed Bridge files, restarts that Bridge process, and waits for the new
+process to report the expected build; Codex Desktop is not terminated.
+Interrupted updates restore both runtime and metadata backups and retry once in
+the same lifecycle operation. Other transient startup failures use three bounded
+background retries with backoff while Ulanzi Studio remains open.
+
 Windows installs Bridge data under:
 
 ```text
@@ -51,6 +60,9 @@ npm run setup
 Quit Ulanzi Studio before replacing a loaded plugin. `install:plugin` validates
 the manifest, entry point, Property Inspector, icons, banners, locales, and
 bundled Bridge resources before atomically replacing the installed directory.
+When Bridge is already installed, the same command automatically verifies,
+updates, and safely restarts it. A failed Bridge restart restores the previous
+Bridge runtime and rolls the plugin directory back to its previous installation.
 
 Plugin destinations are:
 
@@ -115,8 +127,10 @@ npm run setup
 npm run install:plugin
 ```
 
-Restart Ulanzi Studio after updating the plugin. Remove Bridge and the installed
-plugin only when explicitly intended:
+`install:plugin` now reconciles an existing Bridge automatically; `setup` remains
+available for first installation or an explicit repair. Restart Ulanzi Studio
+after updating the plugin. Remove Bridge and the installed plugin only when
+explicitly intended:
 
 ```text
 npm run uninstall

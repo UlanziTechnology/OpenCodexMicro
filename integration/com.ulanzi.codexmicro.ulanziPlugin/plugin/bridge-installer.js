@@ -6,14 +6,16 @@ import {
   mkdir,
   readFile,
   realpath,
+  rename,
   rm,
+  stat,
   writeFile
 } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
-import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
   discoverDebugPort,
   focusCodex,
@@ -46,6 +48,70 @@ async function readJson(path) {
   } catch {
     return null;
   }
+}
+
+async function fileSha256(path) {
+  try {
+    return createHash("sha256").update(await readFile(path)).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+export async function acquireFilesystemLock({
+  lockPath,
+  timeoutMs = 15000,
+  staleMs = 300000,
+  wait = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds))
+}) {
+  const ownerToken = randomBytes(24).toString("base64url");
+  await mkdir(dirname(lockPath), { recursive: true });
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await mkdir(lockPath, { mode: 0o700 });
+      await writeFile(join(lockPath, "owner.json"), `${JSON.stringify({
+        pid: process.pid,
+        ownerToken,
+        createdAt: new Date().toISOString()
+      })}\n`);
+      return async () => {
+        const owner = await readJson(join(lockPath, "owner.json"));
+        if (owner?.ownerToken === ownerToken) {
+          await rm(lockPath, { recursive: true, force: true });
+        }
+      };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      const [lockInfo, owner] = await Promise.all([
+        stat(lockPath).catch(() => null),
+        readJson(join(lockPath, "owner.json"))
+      ]);
+      if (lockInfo && Date.now() - lockInfo.mtimeMs > staleMs && !processIsAlive(Number(owner?.pid))) {
+        const abandonedLock = `${lockPath}.abandoned-${process.pid}-${ownerToken}`;
+        try {
+          await rename(lockPath, abandonedLock);
+          await rm(abandonedLock, { recursive: true, force: true });
+        } catch (recoveryError) {
+          if (!await exists(lockPath)) continue;
+          if (!["ENOENT", "EEXIST", "EPERM", "EACCES"].includes(recoveryError?.code)) throw recoveryError;
+        }
+        continue;
+      }
+      await wait(100);
+    }
+  }
+  throw new Error("Another lifecycle operation is still running.");
 }
 
 async function nodeVersion(executable, execute) {
@@ -142,15 +208,21 @@ export function createBridgeInstaller({
   codexChannel = process.env.CODEX_DESKTOP_CHANNEL || "stable",
   execute = execFileAsync,
   spawnProcess = spawn,
-  fetchImpl = fetch
+  fetchImpl = fetch,
+  serviceStartTimeoutMs = 8000,
+  wait = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds))
 }) {
   const appRoot = bridgeDataRoot({ platform, home, localAppData });
   const bridgeRuntime = join(appRoot, "bridge.mjs");
   const tokenPath = join(appRoot, "bridge-token");
+  const pidPath = join(appRoot, "bridge.pid");
   const installMetadata = join(appRoot, "install.json");
+  const lifecycleLock = join(dirname(appRoot), ".OpenCodexMicro.lifecycle.lock");
   const installerRoot = resolve(pluginRoot, "installer");
   const bundledRuntime = join(installerRoot, "bridge.mjs");
   const bundledIcon = join(installerRoot, "CodexBridge.png");
+  const runtimeBackup = join(appRoot, ".bridge.mjs.previous");
+  const metadataBackup = join(appRoot, ".install.json.previous");
 
   const userApplications = join(home, "Applications");
   const bridgeApp = join(userApplications, "Codex Bridge.app");
@@ -166,6 +238,7 @@ export function createBridgeInstaller({
   let authorizationCache = null;
   let authorizationPromise = null;
   let authorizationGeneration = 0;
+  let lifecycleOperation = null;
 
   function resetAuthorizationCache() {
     authorizationGeneration += 1;
@@ -203,33 +276,65 @@ export function createBridgeInstaller({
       });
       const payload = await response.json();
       if (!response.ok || payload.ok === false) throw new Error(payload.error || `Bridge HTTP ${response.status}`);
-      return { serviceOnline: true, cdpConnected: Boolean(payload.codexConnected), serviceError: null };
+      return {
+        serviceOnline: true,
+        cdpConnected: Boolean(payload.codexConnected),
+        serviceVersion: typeof payload.bridgeVersion === "string" ? payload.bridgeVersion : null,
+        serviceRuntimeHash: typeof payload.runtimeHash === "string" ? payload.runtimeHash : null,
+        serviceError: null
+      };
     } catch (error) {
-      return { serviceOnline: false, cdpConnected: false, serviceError: error.message };
+      return {
+        serviceOnline: false,
+        cdpConnected: false,
+        serviceVersion: null,
+        serviceRuntimeHash: null,
+        serviceError: error.message
+      };
     }
   }
 
   async function status() {
-    const [runtimeInstalled, tokenInstalled, metadata, probe] = await Promise.all([
+    const [runtimeInstalled, tokenInstalled, metadata, probe, bundledRuntimeHash, installedRuntimeHash] = await Promise.all([
       exists(bridgeRuntime),
       exists(tokenPath),
       readJson(installMetadata),
-      probeBridge()
+      probeBridge(),
+      fileSha256(bundledRuntime),
+      fileSha256(bridgeRuntime)
     ]);
     const macAppInstalled = platform === "darwin"
       ? await exists(bridgeExecutable, fsConstants.X_OK)
       : runtimeInstalled;
     const agentInstalled = platform === "darwin" ? await exists(bridgeAgent) : true;
     const installed = macAppInstalled && runtimeInstalled && tokenInstalled && agentInstalled;
+    const installationDetected = Boolean(
+      runtimeInstalled || tokenInstalled || metadata || probe.serviceOnline ||
+      (platform === "darwin" && (macAppInstalled || agentInstalled))
+    );
+    const metadataMatchesBundle = Boolean(
+      bundledRuntimeHash &&
+      metadata?.version === version &&
+      metadata?.runtimeHash === bundledRuntimeHash &&
+      installedRuntimeHash === bundledRuntimeHash
+    );
+    const runningMatchesBundle = !probe.serviceOnline || Boolean(
+      bundledRuntimeHash &&
+      probe.serviceVersion === version &&
+      probe.serviceRuntimeHash === bundledRuntimeHash
+    );
     return {
       supported: platform === "win32" || (platform === "darwin" && Number.isInteger(uid)),
       platform,
       installed,
+      installationDetected,
       appInstalled: macAppInstalled,
       serviceInstalled: runtimeInstalled && tokenInstalled && agentInstalled,
       installedVersion: metadata?.version || null,
       bundledVersion: version,
-      needsUpdate: !installed || metadata?.version !== version,
+      bundledRuntimeHash,
+      installedRuntimeHash,
+      needsUpdate: !installed || !metadataMatchesBundle || !runningMatchesBundle,
       appPath: platform === "darwin" ? bridgeApp : appRoot,
       nodeExecutable: metadata?.nodeExecutable || null,
       nodeVersion: metadata?.nodeVersion || null,
@@ -259,7 +364,7 @@ export function createBridgeInstaller({
     }
   }
 
-  async function installMac(nodeRuntime) {
+  async function installMac(nodeRuntime, appVersion = version) {
     await mkdir(userApplications, { recursive: true });
     await mkdir(agentsRoot, { recursive: true });
     await rm(bridgeApp, { recursive: true, force: true });
@@ -278,8 +383,8 @@ export function createBridgeInstaller({
   <key>CFBundleIdentifier</key><string>io.opencodexmicro.bridge</string>
   <key>CFBundleName</key><string>Codex Bridge</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${xml(version)}</string>
-  <key>CFBundleVersion</key><string>${xml(version)}</string>
+  <key>CFBundleShortVersionString</key><string>${xml(appVersion)}</string>
+  <key>CFBundleVersion</key><string>${xml(appVersion)}</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
 </dict></plist>
@@ -304,17 +409,211 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
 <plist version="1.0"><dict>
   <key>Label</key><string>io.opencodexmicro.bridge</string>
   <key>ProgramArguments</key><array><string>${xml(nodeRuntime.executable)}</string><string>${xml(bridgeRuntime)}</string></array>
+  <key>EnvironmentVariables</key><dict>
+    <key>CODEX_BRIDGE_DATA_ROOT</key><string>${xml(appRoot)}</string>
+  </dict>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Background</string><key>ThrottleInterval</key><integer>2</integer>
   <key>StandardOutPath</key><string>${xml(join(appRoot, "bridge.log"))}</string>
   <key>StandardErrorPath</key><string>${xml(join(appRoot, "bridge-error.log"))}</string>
 </dict></plist>
 `, { mode: 0o644 });
-    try { await execute("/bin/launchctl", ["bootout", `gui/${uid}`, bridgeAgent]); } catch {}
     await execute("/bin/launchctl", ["bootstrap", `gui/${uid}`, bridgeAgent]);
   }
 
-  async function install() {
+  async function acquireLifecycleLock() {
+    await mkdir(appRoot, { recursive: true, mode: 0o700 });
+    return acquireFilesystemLock({ lockPath: lifecycleLock, wait });
+  }
+
+  function serializeLifecycle(operation) {
+    if (lifecycleOperation) return lifecycleOperation;
+    const running = (async () => {
+      const release = await acquireLifecycleLock();
+      try {
+        if (!await exists(bridgeRuntime) && await exists(runtimeBackup)) {
+          await rename(runtimeBackup, bridgeRuntime);
+        }
+        if (!await exists(installMetadata) && await exists(metadataBackup)) {
+          await rename(metadataBackup, installMetadata);
+        }
+        return await operation();
+      } finally {
+        await release();
+      }
+    })();
+    lifecycleOperation = running;
+    return running.finally(() => {
+      if (lifecycleOperation === running) lifecycleOperation = null;
+    });
+  }
+
+  async function stopWindowsService() {
+    const recordedPid = Number((await readFile(pidPath, "utf8").catch(() => "")).trim());
+    const stopScript = "$target=$env:CODEX_BRIDGE_TARGET_RUNTIME; $targetPid=0; [void][int]::TryParse($env:CODEX_BRIDGE_TARGET_PID, [ref]$targetPid); $candidates=@(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.Name -like 'node*' -and $_.CommandLine -and ($_.CommandLine.TrimEnd().EndsWith($target, [System.StringComparison]::OrdinalIgnoreCase) -or $_.CommandLine.TrimEnd().EndsWith(('\"' + $target + '\"'), [System.StringComparison]::OrdinalIgnoreCase)) }); $processes=if ($targetPid -gt 0) { @($candidates | Where-Object { $_.ProcessId -eq $targetPid }) } else { $candidates }; $processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; $processes | ForEach-Object { try { Wait-Process -Id $_.ProcessId -Timeout 5 -ErrorAction Stop } catch {} }";
+    await execute("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", stopScript], {
+      timeout: 7000,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        CODEX_BRIDGE_TARGET_RUNTIME: bridgeRuntime,
+        CODEX_BRIDGE_TARGET_PID: Number.isInteger(recordedPid) && recordedPid > 0 ? String(recordedPid) : ""
+      }
+    });
+    await rm(pidPath, { force: true });
+    lastWindowsServiceStart = 0;
+  }
+
+  async function waitForServiceOffline() {
+    const deadline = Date.now() + Math.min(serviceStartTimeoutMs, 5000);
+    do {
+      if (!(await probeBridge()).serviceOnline) return;
+      await wait(100);
+    } while (Date.now() < deadline);
+    throw new Error("The managed Codex Bridge process did not stop before replacement.");
+  }
+
+  async function stopService() {
+    if (platform === "darwin") {
+      const wasOnline = (await probeBridge()).serviceOnline;
+      if (await exists(bridgeAgent)) {
+        try {
+          await execute("/bin/launchctl", ["bootout", `gui/${uid}`, bridgeAgent]);
+        } catch (error) {
+          if (wasOnline) throw new Error(`Codex Bridge LaunchAgent could not be stopped: ${error.message}`);
+        }
+      }
+      if (wasOnline) await waitForServiceOffline();
+      return;
+    }
+    if (platform === "win32") await stopWindowsService();
+  }
+
+  async function commitRuntime(stagedRuntime) {
+    await rm(runtimeBackup, { force: true });
+    if (await exists(bridgeRuntime)) await rename(bridgeRuntime, runtimeBackup);
+    try {
+      await rename(stagedRuntime, bridgeRuntime);
+    } catch (error) {
+      if (!await exists(bridgeRuntime) && await exists(runtimeBackup)) {
+        await rename(runtimeBackup, bridgeRuntime);
+      }
+      throw error;
+    }
+  }
+
+  async function restorePreviousRuntime(previousRuntime) {
+    await rm(bridgeRuntime, { force: true });
+    if (await exists(runtimeBackup)) {
+      await rename(runtimeBackup, bridgeRuntime);
+      return;
+    }
+    if (previousRuntime) {
+      const rollbackRuntime = join(appRoot, `.bridge.mjs.rollback-${process.pid}`);
+      await writeFile(rollbackRuntime, previousRuntime);
+      await rename(rollbackRuntime, bridgeRuntime);
+    }
+  }
+
+  async function commitMetadata(metadataText) {
+    const stagedMetadata = join(appRoot, `.install.json.installing-${process.pid}`);
+    await writeFile(stagedMetadata, metadataText, { mode: 0o600 });
+    await rm(metadataBackup, { force: true });
+    if (await exists(installMetadata)) await rename(installMetadata, metadataBackup);
+    try {
+      await rename(stagedMetadata, installMetadata);
+    } catch (error) {
+      if (!await exists(installMetadata) && await exists(metadataBackup)) {
+        await rename(metadataBackup, installMetadata);
+      }
+      throw error;
+    }
+  }
+
+  async function restorePreviousMetadata(previousMetadataText, useBackup = true) {
+    await rm(installMetadata, { force: true });
+    if (useBackup && await exists(metadataBackup)) {
+      await rename(metadataBackup, installMetadata);
+      return;
+    }
+    await rm(metadataBackup, { force: true });
+    if (previousMetadataText) {
+      await writeFile(installMetadata, previousMetadataText, { mode: 0o600 });
+    }
+  }
+
+  async function discardTransactionBackups() {
+    await Promise.all([
+      rm(runtimeBackup, { force: true }),
+      rm(metadataBackup, { force: true })
+    ]);
+  }
+
+  async function startInstalledService(metadata) {
+    if (!metadata?.nodeExecutable) {
+      throw new Error("Codex Bridge runtime metadata is missing its Node.js executable.");
+    }
+    if (platform === "darwin") {
+      await installMac({
+        executable: metadata.nodeExecutable,
+        version: metadata.nodeVersion || "unknown",
+        source: metadata.nodeSource || "unknown"
+      }, metadata.version || "0.0.0");
+    }
+    if (platform === "win32") await ensureServiceUnlocked();
+  }
+
+  async function waitForAnyService() {
+    const deadline = Date.now() + serviceStartTimeoutMs;
+    do {
+      const probe = await probeBridge();
+      if (probe.serviceOnline) return probe;
+      await wait(100);
+    } while (Date.now() < deadline);
+    throw new Error("The restored Codex Bridge service did not become reachable.");
+  }
+
+  async function rollbackInterruptedUpdate() {
+    const hasRuntimeBackup = await exists(runtimeBackup);
+    const hasMetadataBackup = await exists(metadataBackup);
+    if (!hasRuntimeBackup && !hasMetadataBackup) return false;
+    await stopService();
+    if (hasRuntimeBackup) {
+      await rm(bridgeRuntime, { force: true });
+      await rename(runtimeBackup, bridgeRuntime);
+    }
+    if (hasMetadataBackup) {
+      await rm(installMetadata, { force: true });
+      await rename(metadataBackup, installMetadata);
+    }
+    resetAuthorizationCache();
+    const restoredMetadata = await readJson(installMetadata);
+    await startInstalledService(restoredMetadata);
+    await waitForAnyService();
+    return true;
+  }
+
+  async function waitForExpectedService(expectedRuntimeHash, expectedVersion = version) {
+    const deadline = Date.now() + serviceStartTimeoutMs;
+    let lastProbe = null;
+    do {
+      lastProbe = await probeBridge();
+      if (
+        lastProbe.serviceOnline &&
+        lastProbe.serviceVersion === expectedVersion &&
+        lastProbe.serviceRuntimeHash === expectedRuntimeHash
+      ) {
+        return lastProbe;
+      }
+      await wait(100);
+    } while (Date.now() < deadline);
+    const detail = lastProbe?.serviceOnline
+      ? "the running process reported a different build"
+      : "the restarted service did not become reachable";
+    throw new Error(`Codex Bridge ${expectedVersion} restart failed: ${detail}.`);
+  }
+
+  async function installUnlocked() {
     if (!(platform === "win32" || (platform === "darwin" && Number.isInteger(uid)))) {
       throw new Error("Codex Bridge installation is supported on Windows and macOS only.");
     }
@@ -328,31 +627,104 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       platform,
       execute
     });
+    const previousStatus = await status();
+    const previousRuntime = await readFile(bridgeRuntime).catch(() => null);
+    const previousRuntimeHash = previousRuntime
+      ? createHash("sha256").update(previousRuntime).digest("hex")
+      : null;
+    const previousMetadataText = await readFile(installMetadata, "utf8").catch(() => null);
+    const previousMetadata = await readJson(installMetadata);
+    const stagedRuntime = join(appRoot, `.bridge.mjs.installing-${process.pid}`);
     await mkdir(appRoot, { recursive: true, mode: 0o700 });
     if (platform !== "win32") await chmod(appRoot, 0o700);
-    await copyFile(bundledRuntime, bridgeRuntime);
-    for (const notice of ["LICENSE", "NOTICE.md", "THIRD_PARTY_NOTICES.md"]) {
-      await copyFile(join(installerRoot, notice), join(appRoot, notice));
+    await rm(stagedRuntime, { force: true });
+    await copyFile(bundledRuntime, stagedRuntime);
+    const runtimeHash = await fileSha256(stagedRuntime);
+    if (!runtimeHash) throw new Error("The bundled Codex Bridge runtime could not be verified.");
+
+    console.log(`[Codex Bridge] ${previousStatus.installed ? "Updating" : "Installing"} ${version}; stopping only the managed Bridge process.`);
+    try {
+      await stopService();
+      await commitRuntime(stagedRuntime);
+      for (const notice of ["LICENSE", "NOTICE.md", "THIRD_PARTY_NOTICES.md"]) {
+        await copyFile(join(installerRoot, notice), join(appRoot, notice));
+      }
+      if (!await exists(tokenPath)) {
+        await writeFile(tokenPath, `${randomBytes(32).toString("base64url")}\n`, { mode: 0o600 });
+      }
+      resetAuthorizationCache();
+      await commitMetadata(`${JSON.stringify({
+        version,
+        runtimeHash,
+        platform,
+        codexChannel,
+        nodeExecutable: nodeRuntime.executable,
+        nodeVersion: nodeRuntime.version,
+        nodeSource: nodeRuntime.source,
+        installedAt: new Date().toISOString()
+      }, null, 2)}\n`);
+      if (platform === "darwin") await installMac(nodeRuntime);
+      if (platform === "win32") await ensureServiceUnlocked();
+      await waitForExpectedService(runtimeHash);
+      const installed = await status();
+      if (installed.needsUpdate) throw new Error("The restarted Codex Bridge did not match the bundled runtime.");
+      await discardTransactionBackups();
+      console.log(`[Codex Bridge] ${version} is installed and the restarted process reported the expected build.`);
+      return installed;
+    } catch (error) {
+      console.error(`[Codex Bridge] ${version} update failed; restoring the previous managed runtime.`);
+      let rollbackError = null;
+      try {
+        await stopService();
+        if (previousRuntime) {
+          await restorePreviousRuntime(previousRuntime);
+          const recoveryVersion = previousMetadata?.version || previousStatus.serviceVersion || "0.0.0";
+          const recoveryMetadataText = previousMetadata ? previousMetadataText : `${JSON.stringify({
+            version: recoveryVersion,
+            runtimeHash: previousRuntimeHash,
+            platform,
+            codexChannel: previousStatus.codexChannel || codexChannel,
+            nodeExecutable: nodeRuntime.executable,
+            nodeVersion: nodeRuntime.version,
+            nodeSource: nodeRuntime.source,
+            installedAt: new Date().toISOString(),
+            recovered: true
+          }, null, 2)}\n`;
+          await restorePreviousMetadata(recoveryMetadataText, Boolean(previousMetadata));
+          resetAuthorizationCache();
+          const restoredMetadata = await readJson(installMetadata);
+          if (restoredMetadata?.nodeExecutable) {
+            const previousNodeRuntime = {
+              executable: restoredMetadata.nodeExecutable,
+              version: restoredMetadata.nodeVersion || "unknown",
+              source: restoredMetadata.nodeSource || "unknown"
+            };
+            if (platform === "darwin") await installMac(previousNodeRuntime, restoredMetadata.version || "0.0.0");
+            if (platform === "win32") await ensureServiceUnlocked();
+          }
+        } else {
+          if (platform === "darwin") {
+            await rm(bridgeAgent, { force: true });
+            await rm(bridgeApp, { recursive: true, force: true });
+          }
+          await rm(appRoot, { recursive: true, force: true });
+          resetAuthorizationCache();
+        }
+      } catch (rollbackFailure) {
+        rollbackError = rollbackFailure;
+      }
+      const rollbackDetail = rollbackError ? ` Rollback also failed: ${rollbackError.message}` : " Previous runtime restored.";
+      throw new Error(`Codex Bridge installation failed: ${error.message}${rollbackDetail}`);
+    } finally {
+      await rm(stagedRuntime, { force: true });
     }
-    if (!await exists(tokenPath)) {
-      await writeFile(tokenPath, `${randomBytes(32).toString("base64url")}\n`, { mode: 0o600 });
-    }
-    resetAuthorizationCache();
-    await writeFile(installMetadata, `${JSON.stringify({
-      version,
-      platform,
-      codexChannel,
-      nodeExecutable: nodeRuntime.executable,
-      nodeVersion: nodeRuntime.version,
-      nodeSource: nodeRuntime.source,
-      installedAt: new Date().toISOString()
-    }, null, 2)}\n`, { mode: 0o600 });
-    if (platform === "darwin") await installMac(nodeRuntime);
-    if (platform === "win32") await ensureService();
-    return status();
   }
 
-  async function ensureService() {
+  async function install() {
+    return serializeLifecycle(installUnlocked);
+  }
+
+  async function ensureServiceUnlocked() {
     if (platform !== "win32") return status();
     const probe = await probeBridge();
     if (probe.serviceOnline || Date.now() - lastWindowsServiceStart < 2000) return { ...await status(), ...probe };
@@ -371,13 +743,56 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
         CODEX_BRIDGE_TOKEN: token
       }
     });
+    if (Number.isInteger(child.pid) && child.pid > 0) {
+      await writeFile(pidPath, `${child.pid}\n`, { mode: 0o600 });
+    } else {
+      await rm(pidPath, { force: true });
+    }
     child.unref?.();
     lastWindowsServiceStart = Date.now();
     return status();
   }
 
+  async function ensureService() {
+    return serializeLifecycle(ensureServiceUnlocked);
+  }
+
+  async function ensureCurrent() {
+    return serializeLifecycle(async () => {
+      const current = await status();
+      if (!current.installationDetected) return current;
+      const interruptedUpdate = await exists(runtimeBackup) || await exists(metadataBackup);
+      if (interruptedUpdate && current.needsUpdate) {
+        await rollbackInterruptedUpdate();
+        console.log("[Codex Bridge] Interrupted update rolled back; retrying the bundled update in the same lifecycle operation.");
+        return installUnlocked();
+      }
+      if (!current.installed || current.needsUpdate) {
+        console.log(`[Codex Bridge] Installed or running build differs from bundled ${version}; starting automatic update.`);
+        return installUnlocked();
+      }
+      if (!current.serviceOnline) {
+        try {
+          await startInstalledService(await readJson(installMetadata));
+          await waitForExpectedService(current.bundledRuntimeHash);
+          const ready = await status();
+          await discardTransactionBackups();
+          return ready;
+        } catch (error) {
+          if (interruptedUpdate && await rollbackInterruptedUpdate()) {
+            console.log("[Codex Bridge] Interrupted restart rolled back; retrying the bundled update once.");
+            return installUnlocked();
+          }
+          throw error;
+        }
+      }
+      await discardTransactionBackups();
+      return current;
+    });
+  }
+
   async function launch() {
-    const current = await status();
+    const current = await ensureCurrent();
     if (!current.installed) throw new Error("Codex Bridge is not installed. Use Install / Repair first.");
     if (platform === "darwin") {
       await execute("/usr/bin/open", [bridgeApp]);
@@ -397,28 +812,25 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
     throw new Error(`Codex Bridge launch is not supported on ${platform}.`);
   }
 
-  async function uninstall() {
+  async function uninstallUnlocked() {
     if (!(platform === "win32" || (platform === "darwin" && Number.isInteger(uid)))) {
       throw new Error("Codex Bridge uninstallation is supported on Windows and macOS only.");
     }
     if (platform === "darwin") {
-      try { await execute("/bin/launchctl", ["bootout", `gui/${uid}`, bridgeAgent]); } catch {}
+      await stopService();
       await rm(bridgeAgent, { force: true });
       await rm(bridgeApp, { recursive: true, force: true });
     } else {
-      const stopScript = "$target=$env:CODEX_BRIDGE_TARGET_RUNTIME; Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.Name -like 'node*' -and $_.CommandLine -like ('*' + $target + '*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
-      try {
-        await execute("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", stopScript], {
-          timeout: 5000,
-          windowsHide: true,
-          env: { ...process.env, CODEX_BRIDGE_TARGET_RUNTIME: bridgeRuntime }
-        });
-      } catch {}
+      try { await stopService(); } catch {}
     }
     await rm(appRoot, { recursive: true, force: true });
     resetAuthorizationCache();
     return status();
   }
 
-  return { status, install, launch, uninstall, ensureService, authorizationHeaders };
+  async function uninstall() {
+    return serializeLifecycle(uninstallUnlocked);
+  }
+
+  return { status, install, launch, uninstall, ensureService, ensureCurrent, authorizationHeaders };
 }

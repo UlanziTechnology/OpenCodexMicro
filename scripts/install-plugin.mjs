@@ -8,6 +8,10 @@ import {
 } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import {
+  acquireFilesystemLock,
+  createBridgeInstaller
+} from "../integration/com.ulanzi.codexmicro.ulanziPlugin/plugin/bridge-installer.js";
 
 const source = resolve(
   "integration/com.ulanzi.codexmicro.ulanziPlugin"
@@ -80,6 +84,10 @@ for (const locale of localizationFiles) {
 }
 
 await mkdir(pluginsRoot, { recursive: true });
+const releaseInstallLock = await acquireFilesystemLock({
+  lockPath: join(pluginsRoot, `.${pluginName}.install.lock`)
+});
+try {
 await rm(staging, { recursive: true, force: true });
 await rm(backup, { recursive: true, force: true });
 await mkdir(staging, { recursive: true });
@@ -101,16 +109,38 @@ for (const relative of [
 
 const hadPreviousInstall = await exists(destination);
 if (hadPreviousInstall) await rename(destination, backup);
+let destinationReplaced = false;
 try {
   await rename(staging, destination);
+  destinationReplaced = true;
+  const bridgeSetup = createBridgeInstaller({
+    pluginRoot: destination,
+    bridgeUrl: process.env.CODEX_BRIDGE_URL || "http://127.0.0.1:17373",
+    version: String(manifest.Version)
+  });
+  const before = await bridgeSetup.status();
+  if (before.installationDetected) {
+    if (before.needsUpdate) {
+      console.log(`Installed Bridge ${before.installedVersion || "unknown"} differs from plugin ${before.bundledVersion}; updating and restarting it.`);
+    }
+    const after = await bridgeSetup.ensureCurrent();
+    if (after.needsUpdate) throw new Error("Codex Bridge did not report the bundled runtime after restart.");
+    console.log(`Codex Bridge ${after.installedVersion} is current and online: ${after.serviceOnline}.`);
+  } else {
+    console.log("Codex Bridge is not installed; use any Action setup page for the initial installation.");
+  }
 } catch (error) {
   await rm(staging, { recursive: true, force: true });
+  if (destinationReplaced) await rm(destination, { recursive: true, force: true });
   if (hadPreviousInstall && await exists(backup)) {
     await rename(backup, destination);
   }
   throw error;
 }
 await rm(backup, { recursive: true, force: true });
+} finally {
+  await releaseInstallLock();
+}
 
 console.log(`Ulanzi Studio plugin installed at: ${destination}`);
 console.log("Restart Ulanzi Studio to load the updated Codex Micro plugin.");

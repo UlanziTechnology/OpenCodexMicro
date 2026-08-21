@@ -27,9 +27,11 @@ No repository or npm working directory is required for this flow.
 | Luna Max | Switch the visible task to GPT-5.6 Luna with maximum reasoning effort |
 | Sol Medium | Switch the visible task to GPT-5.6 Sol with medium reasoning effort |
 
-Task actions render a compact 196×196 SVG at runtime. A flat background color
-identifies idle, working, complete, attention, or error state, while the task
-title is balanced across at most two centered lines in a dark lower panel.
+Task actions render a compact 196×196 SVG at runtime. A colored outer frame and
+accent identify idle, blue working, flashing green complete, attention, or error
+state. The high-contrast inner surface reserves most of the key for the task
+title, which Ulanzi Studio overlays in as many as four short lines with safe
+horizontal margins.
 Usage is rendered at runtime from the allowance returned by the Bridge. The
 Encoder action mirrors task 1's current title and status color.
 

@@ -43,9 +43,21 @@ The plugin is a Node.js JavaScript plugin using protocol V3.0.0. It polls the
 Bridge state, keeps each Ulanzi action instance keyed by its context, updates
 task icons and titles, and forwards keydown/keyup events to the Bridge.
 
+The installed Bridge is identified by plugin version plus the SHA-256 of its
+runtime. `/health` reports the running version and runtime hash. Plugin startup
+reconciles an existing Bridge when metadata, the installed file, or the running
+process differs from the bundled runtime; replacement uses a targeted Bridge-only
+stop, a cross-process lifecycle lock, a recoverable runtime swap, restart
+confirmation, and rollback on failure.
+Interrupted transactions restore runtime and metadata together before retrying;
+plugin startup also applies bounded backoff for transient reconciliation errors.
+
 The distributed entry point is the committed CommonJS file `dist/app.js`.
 Build and smoke checks happen during development; `scripts/install-plugin.mjs`
-only validates and atomically copies the prebuilt `.ulanziPlugin` directory.
+validates and atomically copies the prebuilt `.ulanziPlugin` directory, then
+reconciles an already-installed Bridge before discarding the plugin backup.
+Independent `install:plugin` processes share an owner-checked filesystem lock;
+Bridge mutations use a separate owner-checked lifecycle lock.
 
 Ulanzi's implementation and maintenance scope is limited to
 `integration/com.ulanzi.codexmicro.ulanziPlugin/`. The plugin is only the
@@ -57,5 +69,7 @@ development, or maintenance of CDP or Codex's CDP implementation.
 
 - `scripts/install.mjs` installs only the Bridge sidecar and
   its platform-specific user-level launcher/lifecycle files.
-- `scripts/install-plugin.mjs` installs only the Ulanzi Studio plugin directory.
+- `scripts/install-plugin.mjs` atomically installs the Ulanzi Studio plugin
+  directory and reconciles an already-installed Bridge to the bundled runtime.
+  It does not perform the initial Bridge installation.
 - `scripts/uninstall.mjs` removes those two installed components.

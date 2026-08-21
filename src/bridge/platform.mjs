@@ -65,9 +65,7 @@ if (-not $candidate) {
     Select-Object -First 1
 }
 if (-not $candidate) { throw 'A Codex Desktop window was not found.' }
-$shell = New-Object -ComObject WScript.Shell
-if (-not $shell.AppActivate($candidate.Id)) {
-  Add-Type @'
+Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class CodexWindow {
@@ -75,10 +73,9 @@ public static class CodexWindow {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
 }
 '@
-  [CodexWindow]::ShowWindowAsync($candidate.MainWindowHandle, 9) | Out-Null
-  if (-not [CodexWindow]::SetForegroundWindow($candidate.MainWindowHandle)) {
-    throw 'Windows did not allow Codex Desktop to receive focus.'
-  }
+[CodexWindow]::ShowWindowAsync($candidate.MainWindowHandle, 3) | Out-Null
+if (-not [CodexWindow]::SetForegroundWindow($candidate.MainWindowHandle)) {
+  throw 'Windows did not allow Codex Desktop to receive focus.'
 }
 $candidate.Id
 `;
@@ -97,7 +94,16 @@ foreach ($process in $processes) { Wait-Process -Id $process.ProcessId -Timeout 
 `;
 
 function powershellArgs(command, extra = []) {
-  return ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command, ...extra];
+  return [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-WindowStyle",
+    "Hidden",
+    "-Command",
+    command,
+    ...extra
+  ];
 }
 
 function powershellOptions(options = {}) {

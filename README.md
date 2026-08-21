@@ -87,9 +87,10 @@ npm run setup
 ```
 
 Quit Ulanzi Studio before running `npm run install:plugin`. The command
-validates and atomically installs the prebuilt plugin. `npm run setup` builds
-the loopback Bridge sidecar, registers its user LaunchAgent, and installs
-the platform-specific user-level Bridge runtime.
+validates and atomically installs the prebuilt plugin. If Bridge is already
+installed, the command also verifies its version and runtime hash, then safely
+updates and restarts it when needed. `npm run setup` performs the initial Bridge
+installation or an explicit repair.
 
 Reopen Ulanzi Studio and use **Launch Codex Bridge** in any Action setup page,
 or run `npm run bridge:start`. On Windows the launcher discovers the current

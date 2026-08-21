@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createBridgeInstaller } from "./bridge-installer.js";
@@ -15,6 +16,49 @@ const bridgeSetup = createBridgeInstaller({
   bridgeUrl: BRIDGE_URL,
   version: MANIFEST.Version
 });
+let bridgeReconcilePromise = null;
+let bridgeReconcileRetryTimer = null;
+let bridgeReconcileFailures = 0;
+
+function scheduleBridgeReconcileRetry() {
+  if (bridgeReconcileRetryTimer || bridgeReconcileFailures >= 3) return;
+  const delay = Math.min(10000, 2000 * (2 ** bridgeReconcileFailures));
+  bridgeReconcileFailures += 1;
+  bridgeReconcileRetryTimer = setTimeout(() => {
+    bridgeReconcileRetryTimer = null;
+    void ensureBundledBridgeCurrent().catch(error => {
+      console.error(`[Codex Micro] Bridge reconciliation retry failed: ${error.message}`);
+    });
+  }, delay);
+  bridgeReconcileRetryTimer.unref?.();
+}
+
+function ensureBundledBridgeCurrent() {
+  if (!bridgeReconcilePromise) {
+    const running = (async () => {
+      const before = await bridgeSetup.status();
+      if (!before.installationDetected) return before;
+      if (before.needsUpdate) {
+        console.log(`[Codex Micro] Updating the installed Bridge to bundled version ${before.bundledVersion}.`);
+      }
+      const after = await bridgeSetup.ensureCurrent();
+      if (before.needsUpdate) {
+        console.log(`[Codex Micro] Bridge ${after.installedVersion} restarted with the bundled runtime.`);
+      }
+      return after;
+    })();
+    bridgeReconcilePromise = running;
+    void running.then(() => {
+      bridgeReconcileFailures = 0;
+      if (bridgeReconcileRetryTimer) clearTimeout(bridgeReconcileRetryTimer);
+      bridgeReconcileRetryTimer = null;
+    }, () => {
+      if (bridgeReconcilePromise === running) bridgeReconcilePromise = null;
+      scheduleBridgeReconcileRetry();
+    });
+  }
+  return bridgeReconcilePromise;
+}
 const USAGE_BASE64 = readFileSync(
   resolve(PLUGIN_ROOT, "assets/icons/usage-base.png")
 ).toString("base64");
@@ -32,14 +76,21 @@ const ACTION_LABELS = Object.freeze({
   "model-luna-max": "LUNA MAX",
   "model-sol-medium": "SOL MED"
 });
-const TASK_STATUS_COLORS = Object.freeze({
-  idle: "#667085",
-  working: "#2589f5",
-  complete: "#28b875",
-  attention: "#ed9f20",
-  error: "#e34d62"
+const DEBUG_MODEL_PRESETS = Object.freeze({
+  "model-sol-high": Object.freeze({ model: "gpt-5.6-sol", effort: "high" }),
+  "model-luna-max": Object.freeze({ model: "gpt-5.6-luna", effort: "max" }),
+  "model-sol-medium": Object.freeze({ model: "gpt-5.6-sol", effort: "medium" })
 });
-const TASK_TITLE_MAX_UNITS = 14;
+const TASK_STATUS_PALETTES = Object.freeze({
+  idle: { frame: "#475467", accent: "#98a2b3" },
+  working: { frame: "#0b5fcc", accent: "#2589f5" },
+  complete: { frame: "#087443", accent: "#28b875" },
+  attention: { frame: "#9a6700", accent: "#ed9f20" },
+  error: { frame: "#b42318", accent: "#e34d62" }
+});
+const TASK_COMPLETE_FLASH_PALETTE = Object.freeze({ frame: "#12b76a", accent: "#6ce9a6" });
+const TASK_TITLE_MAX_UNITS = 10;
+const TASK_TITLE_MAX_LINES = 4;
 const TASK_TITLE_SEGMENTER = typeof Intl.Segmenter === "function"
   ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
   : null;
@@ -50,6 +101,9 @@ let pollTimer;
 let pollInFlight = false;
 let latestState = null;
 let setupOperation = null;
+let completeFlashOn = false;
+let shortcutInvocationSequence = 0;
+const forwardedTraceEvents = new Map();
 
 function contextOf(message) {
   return String(message.actionid || `${message.uuid}___${message.key}`);
@@ -204,13 +258,98 @@ function taskStatusKind(status) {
   return "idle";
 }
 
-function escapeXml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+function debugShortcut(uuid) {
+  const slot = taskSlot(uuid);
+  if (slot !== null) {
+    return Object.freeze({ name: `task-${slot + 1}`, kind: "task", target: `slot-${slot + 1}` });
+  }
+  const action = actionName(uuid);
+  const preset = DEBUG_MODEL_PRESETS[action];
+  if (!preset) return null;
+  return Object.freeze({
+    name: action,
+    kind: "model-preset",
+    target: `model-${preset.model} effort-${preset.effort}`
+  });
+}
+
+function shortcutErrorCategory(error) {
+  const name = String(error?.name || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  if (name.includes("timeout") || message.includes("timeout")) return "bridge-timeout";
+  if (message.includes("is empty")) return "empty-task-slot";
+  if (message.includes("fetch failed") || message.includes("econnrefused")) return "bridge-unavailable";
+  if (message.includes("authorization") || message.includes("unauthorized") || message.includes("forbidden")) {
+    return "bridge-rejected";
+  }
+  return "bridge-error";
+}
+
+function logShortcut(instance, shortcut, level, event, fields = []) {
+  const message = `[Codex Micro] shortcut event=${event} name=${shortcut.name} kind=${shortcut.kind} ${fields.join(" ")}`.trim();
+  if (level === "error") console.error(message);
+  else if (level === "warn") console.warn(message);
+  else console.log(message);
+  send({
+    cmd: "logMessage",
+    uuid: PLUGIN_UUID,
+    actionid: "",
+    key: "",
+    level,
+    message
+  });
+}
+
+function safeDiagnosticFields(event) {
+  const allowed = new Set([
+    "action", "attempts", "background", "category", "complete", "connection",
+    "currentEffort", "durationMs", "effortMatched", "modelMatched", "outcome",
+    "path", "phase", "platform", "reused", "route", "rowCount", "slot", "stage",
+    "targetEffort"
+  ]);
+  return Object.entries(event || {}).flatMap(([key, value]) => {
+    if (!allowed.has(key)) return [];
+    if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
+      return [`${key}=${value}`];
+    }
+    const normalized = String(value || "");
+    return /^[a-zA-Z0-9_.:-]{1,80}$/.test(normalized) ? [`${key}=${normalized}`] : [];
+  });
+}
+
+async function forwardBridgeDiagnostics(instance, shortcut, traceId) {
+  try {
+    if (forwardedTraceEvents.get(traceId) === Infinity) return true;
+    const payload = await bridgeRequest("/diagnostics/trace", "POST", traceId);
+    const diagnostics = payload?.diagnostics;
+    if (!diagnostics || diagnostics.traceId !== traceId || !Array.isArray(diagnostics.events)) return false;
+    const seen = forwardedTraceEvents.get(traceId) || 0;
+    for (const event of diagnostics.events.slice(seen, 160)) {
+      const eventName = String(event?.event || "");
+      if (!/^[a-z0-9.-]{1,80}$/.test(eventName)) continue;
+      logShortcut(instance, shortcut, event.outcome === "failed" ? "error" : "debug", "bridge-trace", [
+        `trace=${traceId}`,
+        `bridgeEvent=${eventName}`,
+        `offsetMs=${Math.max(0, Math.round(Number(event.offsetMs) || 0))}`,
+        ...safeDiagnosticFields(event)
+      ]);
+    }
+    forwardedTraceEvents.set(traceId, diagnostics.events.length);
+    if (diagnostics.complete) forwardedTraceEvents.set(traceId, Infinity);
+    return Boolean(diagnostics.complete);
+  } catch {
+    return false;
+  }
+}
+
+function collectBridgeDiagnostics(instance, shortcut, traceId) {
+  const delays = [0, 400, 1200, 2600, 5200];
+  for (const delay of delays) {
+    const timer = setTimeout(() => void forwardBridgeDiagnostics(instance, shortcut, traceId), delay);
+    timer.unref?.();
+  }
+  const cleanup = setTimeout(() => forwardedTraceEvents.delete(traceId), 10000);
+  cleanup.unref?.();
 }
 
 function titleGraphemes(value) {
@@ -241,9 +380,7 @@ function trimLine(values) {
 
 function taskTitleLines(value) {
   let graphemes = titleGraphemes(value);
-  if (lineUnits(graphemes) <= TASK_TITLE_MAX_UNITS) return [graphemes.join("")];
-
-  const maxTotalUnits = TASK_TITLE_MAX_UNITS * 2;
+  const maxTotalUnits = TASK_TITLE_MAX_UNITS * TASK_TITLE_MAX_LINES;
   if (lineUnits(graphemes) > maxTotalUnits) {
     const ellipsisUnits = graphemeUnits("…");
     const clipped = [];
@@ -258,37 +395,37 @@ function taskTitleLines(value) {
     graphemes.push("…");
   }
 
-  let best = null;
-  for (let index = 1; index < graphemes.length; index += 1) {
-    const first = trimLine(graphemes.slice(0, index));
-    const second = trimLine(graphemes.slice(index));
-    if (!first.length || !second.length) continue;
-    const firstUnits = lineUnits(first);
-    const secondUnits = lineUnits(second);
-    if (firstUnits > TASK_TITLE_MAX_UNITS || secondUnits > TASK_TITLE_MAX_UNITS) continue;
-    const breaksAtSpace = graphemes[index - 1] === " " || graphemes[index] === " ";
-    const score = Math.abs(firstUnits - secondUnits) + (breaksAtSpace ? 0 : 0.4);
-    if (!best || score < best.score) best = { first, second, score };
+  const lines = [];
+  while (graphemes.length && lines.length < TASK_TITLE_MAX_LINES) {
+    const line = [];
+    while (graphemes.length && lineUnits([...line, graphemes[0]]) <= TASK_TITLE_MAX_UNITS) {
+      line.push(graphemes.shift());
+    }
+    if (!line.length) line.push(graphemes.shift());
+    const trimmed = trimLine(line);
+    if (trimmed.length) lines.push(trimmed.join(""));
+    while (graphemes[0] === " ") graphemes.shift();
   }
-
-  if (best) return [best.first.join(""), best.second.join("")];
-
-  const first = [];
-  while (graphemes.length && lineUnits([...first, graphemes[0]]) <= TASK_TITLE_MAX_UNITS) {
-    first.push(graphemes.shift());
+  if (graphemes.length && lines.length === TASK_TITLE_MAX_LINES && !lines.at(-1).endsWith("…")) {
+    const lastLine = titleGraphemes(lines.at(-1));
+    while (lastLine.length && lineUnits([...lastLine, "…"]) > TASK_TITLE_MAX_UNITS) lastLine.pop();
+    lines[lines.length - 1] = `${trimLine(lastLine).join("")}…`;
   }
-  return [trimLine(first).join(""), trimLine(graphemes).join("")].filter(Boolean);
+  return lines;
 }
 
-function taskIconData(kind, lines) {
-  const color = TASK_STATUS_COLORS[kind];
-  const fontSize = lines.length === 1 ? 25 : 22;
-  const lineY = lines.length === 1 ? [151] : [132, 162];
-  const text = lines.map((line, index) => `<tspan x="98" y="${lineY[index]}">${escapeXml(line)}</tspan>`).join("");
+function taskIconData(kind, flashOn = false) {
+  const palette = kind === "complete" && flashOn
+    ? TASK_COMPLETE_FLASH_PALETTE
+    : TASK_STATUS_PALETTES[kind];
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="196" height="196" viewBox="0 0 196 196">
-    <rect width="196" height="196" rx="27" fill="${color}"/>
-    <rect x="10" y="103" width="176" height="83" rx="17" fill="#111820" fill-opacity=".9"/>
-    <text fill="#ffffff" font-family="Arial,'Microsoft YaHei','Noto Sans CJK SC',sans-serif" font-size="${fontSize}" font-weight="700" text-anchor="middle">${text}</text>
+    <rect width="196" height="196" rx="30" fill="#07111f"/>
+    <rect x="5" y="5" width="186" height="186" rx="27" fill="${palette.frame}"/>
+    <rect data-role="title-surface" x="12" y="12" width="172" height="172" rx="22" fill="#0b1220" fill-opacity=".94"/>
+    <rect x="12" y="12" width="172" height="9" rx="4.5" fill="${palette.accent}"/>
+    <circle cx="170" cy="33" r="5" fill="${palette.accent}"/>
+    <circle cx="154" cy="33" r="3" fill="${palette.accent}" fill-opacity=".35"/>
+    <path d="M28 168H168" stroke="${palette.accent}" stroke-opacity=".45" stroke-width="3" stroke-linecap="round"/>
   </svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
@@ -316,7 +453,9 @@ function setDisplay(instance, state, text) {
 function setTaskDisplay(instance, status, title) {
   const kind = taskStatusKind(status);
   const lines = taskTitleLines(title);
-  const digest = `task:${kind}:${lines.join("\n")}`;
+  const displayTitle = lines.join("\n");
+  const flashOn = kind === "complete" && completeFlashOn;
+  const digest = `task:${kind}:${flashOn}:${displayTitle}`;
   if (!instance.active || instance.lastDisplay === digest) return;
   instance.lastDisplay = digest;
   send({
@@ -327,9 +466,10 @@ function setTaskDisplay(instance, status, title) {
         actionid: instance.actionid,
         key: instance.key,
         type: 1,
-        data: taskIconData(kind, lines),
-        showtext: false,
-        textdata: ""
+        data: taskIconData(kind, flashOn),
+        showtext: true,
+        textData: displayTitle,
+        textdata: displayTitle
       }]
     }
   });
@@ -400,10 +540,12 @@ function renderAll() {
   for (const instance of instances.values()) renderInstance(instance);
 }
 
-async function bridgeRequest(path, method = "GET") {
+async function bridgeRequest(path, method = "GET", traceId = null) {
+  const headers = { ...await bridgeSetup.authorizationHeaders() };
+  if (traceId) headers["X-Codex-Trace-Id"] = traceId;
   const response = await fetch(`${BRIDGE_URL}${path}`, {
     method,
-    headers: await bridgeSetup.authorizationHeaders(),
+    headers,
     signal: AbortSignal.timeout(1200)
   });
   const payload = await response.json();
@@ -413,10 +555,10 @@ async function bridgeRequest(path, method = "GET") {
   return payload;
 }
 
-async function openTaskSlot(slot) {
+async function openTaskSlot(slot, traceId) {
   const task = latestState?.slots?.[slot];
   if (!task?.threadKey) throw new Error(`Codex task slot ${slot + 1} is empty`);
-  await bridgeRequest(`/thread/${encodeURIComponent(task.threadKey)}/click?slot=${slot}`, "POST");
+  await bridgeRequest(`/thread/${encodeURIComponent(task.threadKey)}/click?slot=${slot}`, "POST", traceId);
 }
 
 async function pollBridge() {
@@ -428,16 +570,53 @@ async function pollBridge() {
     latestState = { connected: false, error: error.message, slots: [] };
   } finally {
     pollInFlight = false;
+    completeFlashOn = !completeFlashOn;
     renderAll();
   }
 }
 
 async function invoke(instance, pressed) {
   const slot = taskSlot(instance.uuid);
+  const shortcut = debugShortcut(instance.uuid);
+  const invocation = shortcut ? ++shortcutInvocationSequence : null;
+  const traceId = shortcut ? randomUUID() : null;
+  const phase = pressed ? "down" : "up";
+  const startedAt = Date.now();
+  if (shortcut) {
+    logShortcut(instance, shortcut, "debug", "received", [
+      `invocation=${invocation}`,
+      `trace=${traceId}`,
+      `phase=${phase}`,
+      `target=${shortcut.target}`
+    ]);
+  }
   try {
     if (slot !== null) {
-      if (!pressed) return;
-      await openTaskSlot(slot);
+      if (!pressed) {
+        if (shortcut) {
+          logShortcut(instance, shortcut, "debug", "ignored", [
+            `invocation=${invocation}`,
+            `phase=${phase}`,
+            "reason=keydown-only"
+          ]);
+        }
+        return;
+      }
+      if (shortcut) {
+        logShortcut(instance, shortcut, "debug", "dispatching", [
+          `invocation=${invocation}`,
+          `phase=${phase}`,
+          "transport=bridge-http"
+        ]);
+      }
+      await openTaskSlot(slot, traceId);
+      if (shortcut) {
+        logShortcut(instance, shortcut, "info", "succeeded", [
+          `invocation=${invocation}`,
+          `phase=${phase}`,
+          `durationMs=${Date.now() - startedAt}`
+        ]);
+      }
       return;
     }
     const action = actionName(instance.uuid);
@@ -446,10 +625,42 @@ async function invoke(instance, pressed) {
       if (pressed) await bridgeRequest("/focus", "POST");
       return;
     }
-    await bridgeRequest(`/action/${action}/${pressed ? "down" : "up"}`, "POST");
+    if (shortcut) {
+      logShortcut(instance, shortcut, "debug", "dispatching", [
+        `invocation=${invocation}`,
+        `phase=${phase}`,
+        "transport=bridge-http"
+      ]);
+    }
+    await bridgeRequest(`/action/${action}/${pressed ? "down" : "up"}`, "POST", traceId);
+    if (shortcut) {
+      logShortcut(instance, shortcut, "info", "succeeded", [
+        `invocation=${invocation}`,
+        `phase=${phase}`,
+        `durationMs=${Date.now() - startedAt}`
+      ]);
+    }
   } catch (error) {
-    send({ cmd: "logMessage", uuid: instance.uuid, actionid: instance.actionid, key: instance.key, level: "error", message: error.message });
+    if (shortcut) {
+      logShortcut(instance, shortcut, "error", "failed", [
+        `invocation=${invocation}`,
+        `phase=${phase}`,
+        `durationMs=${Date.now() - startedAt}`,
+        `category=${shortcutErrorCategory(error)}`
+      ]);
+    } else {
+      send({
+        cmd: "logMessage",
+        uuid: instance.uuid,
+        actionid: instance.actionid,
+        key: instance.key,
+        level: "error",
+        message: `[Codex Micro] action failed category=${shortcutErrorCategory(error)}`
+      });
+    }
     send({ cmd: "showAlert", uuid: instance.uuid, actionid: instance.actionid, key: instance.key });
+  } finally {
+    if (shortcut && pressed) collectBridgeDiagnostics(instance, shortcut, traceId);
   }
 }
 
@@ -546,7 +757,9 @@ function connect() {
   socket.on("open", () => {
     send({ code: 0, cmd: "connected", uuid: PLUGIN_UUID });
     if (process.env.CODEX_BRIDGE_AUTOSTART !== "0") {
-      void bridgeSetup.ensureService().catch(() => {});
+      void ensureBundledBridgeCurrent().catch(error => {
+        console.error(`[Codex Micro] Automatic Bridge reconciliation failed: ${error.message}`);
+      });
     }
     clearInterval(pollTimer);
     pollTimer = setInterval(() => void pollBridge(), 500);

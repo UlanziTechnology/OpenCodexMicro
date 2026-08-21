@@ -24,6 +24,25 @@ import { bridgeRequestAuthorized } from "../src/bridge/auth.mjs";
 
 const UUID = "f6805b8a-332a-43a0-a118-52d3e59542f6";
 
+function createTraceFixture() {
+  const events = [];
+  let pending = 0;
+  return {
+    events,
+    get pending() { return pending; },
+    record(event, fields = {}) { events.push({ event, ...fields }); },
+    defer() {
+      pending += 1;
+      let settled = false;
+      return () => {
+        if (settled) return;
+        settled = true;
+        pending -= 1;
+      };
+    }
+  };
+}
+
 test("Bridge write authorization fails closed and accepts only the installed token", () => {
   const token = "fixture-local-capability-token";
   assert.equal(bridgeRequestAuthorized("", `Bearer ${token}`), false);
@@ -69,7 +88,7 @@ test("Windows CDP and Appx discovery accept Stable and Beta process shapes", asy
   assert.equal(appxOptions.windowsHide, true);
 });
 
-test("Windows background PowerShell calls hide their console windows", async () => {
+test("Windows background PowerShell calls stay hidden and maximize on fallback focus", async () => {
   const calls = [];
   const execute = async (command, args, options) => {
     calls.push({ command, args, options });
@@ -91,16 +110,78 @@ test("Windows background PowerShell calls hide their console windows", async () 
   await focusCodex({ platform: "win32", execute });
   await focusCodex({ platform: "win32", execute });
   assert.equal(calls.length, 3);
-  assert.ok(calls.every(({ command, options }) =>
-    command === "powershell.exe" && options?.windowsHide === true
+  assert.ok(calls.every(({ command, args, options }) =>
+    command === "powershell.exe" &&
+    options?.windowsHide === true &&
+    args.includes("-WindowStyle") &&
+    args.includes("Hidden")
   ));
   const focusCalls = calls.slice(1);
   assert.ok(focusCalls.every(({ args, options }) =>
-    args.join(" ").includes("AppActivate") &&
+    args.join(" ").includes("ShowWindowAsync($candidate.MainWindowHandle, 3)") &&
     args.join(" ").includes("SetForegroundWindow") &&
     options.timeout === 5000
   ));
   assert.equal(focusCalls[1].options.env.CODEX_BRIDGE_FOCUS_PID, "4242");
+});
+
+test("CDP focus maximizes the Codex window before bringing it to the foreground", async () => {
+  const client = new CodexCdpClient();
+  const calls = [];
+  const trace = createTraceFixture();
+  client.connect = async () => {};
+  client.sendCommand = async (method, params) => {
+    calls.push({ method, params });
+    return method === "Browser.getWindowForTarget" ? { windowId: 42 } : {};
+  };
+
+  await client.focusWindow(trace);
+
+  assert.deepEqual(calls, [
+    { method: "Browser.getWindowForTarget", params: {} },
+    {
+      method: "Browser.setWindowBounds",
+      params: { windowId: 42, bounds: { windowState: "maximized" } }
+    },
+    { method: "Page.bringToFront", params: {} }
+  ]);
+  assert.deepEqual(
+    trace.events.filter(event => event.outcome === "succeeded").map(event => event.stage),
+    ["focus.connect", "focus.get-window", "focus.maximize", "focus.bring-to-front"]
+  );
+});
+
+test("task tracing covers native press, detached release, and DOM activation without thread data", async () => {
+  const client = new CodexCdpClient();
+  const trace = createTraceFixture();
+  const calls = [];
+  client.dispatchAgent = async (slot, _threadKey, act) => calls.push(["agent", slot, act]);
+  client.activateThread = async () => calls.push(["activate"]);
+
+  await client.clickThreadKey("local:private-thread-fixture", 2, trace);
+  await new Promise(resolve => setTimeout(resolve, 70));
+
+  assert.deepEqual(calls, [["agent", 2, 1], ["agent", 2, 0], ["activate"]]);
+  assert.equal(trace.pending, 0);
+  assert.ok(trace.events.some(event => event.stage === "task.native-act1" && event.outcome === "succeeded"));
+  assert.ok(trace.events.some(event => event.stage === "task.native-act0" && event.background === true));
+  assert.ok(trace.events.some(event => event.stage === "task.dom-activate" && event.background === true));
+  assert.doesNotMatch(JSON.stringify(trace.events), /private-thread-fixture/);
+});
+
+test("renderer polling traces attempt count and elapsed stage without expression text", async () => {
+  const client = new CodexCdpClient();
+  const trace = createTraceFixture();
+  const results = [false, false, true];
+  client.evaluate = async () => results.shift();
+
+  await client.waitForRenderer("private-renderer-expression", "fixture menu", trace, "model.wait-fixture");
+
+  const poll = trace.events.find(event => event.event === "renderer.poll");
+  assert.equal(poll?.stage, "model.wait-fixture");
+  assert.equal(poll?.attempts, 3);
+  assert.equal(poll?.outcome, "succeeded");
+  assert.doesNotMatch(JSON.stringify(trace.events), /private-renderer-expression/);
 });
 
 test("concurrent CDP connects share one socket and ignore stale socket events", async () => {

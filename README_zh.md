@@ -82,7 +82,8 @@ npm run setup
 ```
 
 运行 `npm run install:plugin` 前请退出 Ulanzi Studio。该命令会校验并原子安装仓库
-中的预构建插件；`npm run setup` 会构建并安装当前平台的用户级 Bridge sidecar。
+中的预构建插件；若 Bridge 已安装，还会校验其版本与 runtime hash，并在需要时安全
+更新和重启。`npm run setup` 用于首次安装 Bridge 或显式修复。
 
 重新打开 Ulanzi Studio，在任意 Action 设置页点击“启动 Codex Bridge”，或运行
 `npm run bridge:start`。Windows 会从 Appx 包元数据动态发现 Stable 或 Beta，
