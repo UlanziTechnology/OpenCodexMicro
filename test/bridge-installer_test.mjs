@@ -194,6 +194,9 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
     const uninstalled = await installer.uninstall();
     assert.equal(uninstalled.installed, false);
     await assert.rejects(access(dataRoot));
+    const powershellCommands = commands.filter(([command]) => command === "powershell.exe");
+    assert.ok(powershellCommands.length >= 4);
+    assert.ok(powershellCommands.every(([, , options]) => options?.windowsHide === true));
   } finally {
     await rm(home, { recursive: true, force: true });
   }

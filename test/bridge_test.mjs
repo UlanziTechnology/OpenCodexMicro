@@ -15,7 +15,8 @@ import {
 import {
   debugPortsFromCommandLines,
   discoverDebugPort,
-  discoverWindowsCodexExecutables
+  discoverWindowsCodexExecutables,
+  focusCodex
 } from "../src/bridge/platform.mjs";
 import { bridgeRequestAuthorized } from "../src/bridge/auth.mjs";
 
@@ -50,15 +51,43 @@ test("Windows CDP and Appx discovery accept Stable and Beta process shapes", asy
     '"ChatGPT.exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222',
     '"ChatGPT (Beta).exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port 9333'
   ].join("\n")), [9222, 9333]);
+  let appxOptions;
   const installs = await discoverWindowsCodexExecutables({
-    execute: async () => ({
-      stdout: JSON.stringify([
-        { channel: "stable", packageName: "OpenAI.Codex", executable: "C:\\WindowsApps\\Stable\\app\\ChatGPT.exe" },
-        { channel: "beta", packageName: "OpenAI.CodexBeta", executable: "C:\\WindowsApps\\Beta\\app\\ChatGPT (Beta).exe" }
-      ])
-    })
+    execute: async (_command, _args, options) => {
+      appxOptions = options;
+      return {
+        stdout: JSON.stringify([
+          { channel: "stable", packageName: "OpenAI.Codex", executable: "C:\\WindowsApps\\Stable\\app\\ChatGPT.exe" },
+          { channel: "beta", packageName: "OpenAI.CodexBeta", executable: "C:\\WindowsApps\\Beta\\app\\ChatGPT (Beta).exe" }
+        ])
+      };
+    }
   });
   assert.deepEqual(installs.map((item) => item.channel), ["stable", "beta"]);
+  assert.equal(appxOptions.windowsHide, true);
+});
+
+test("Windows background PowerShell calls hide their console windows", async () => {
+  const calls = [];
+  const execute = async (command, args, options) => {
+    calls.push({ command, args, options });
+    return {
+      stdout: '\"ChatGPT.exe\" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9333\n'
+    };
+  };
+  await discoverDebugPort({
+    platform: "win32",
+    execute,
+    fetchImpl: async (url) => {
+      if (url.includes(":9333/")) return { ok: true, json: async () => ({ Browser: "Chrome" }) };
+      throw new Error("offline fixture");
+    }
+  });
+  await focusCodex({ platform: "win32", execute });
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every(({ command, options }) =>
+    command === "powershell.exe" && options?.windowsHide === true
+  ));
 });
 
 test("accepts formal and explicit temporary Codex thread ids", () => {

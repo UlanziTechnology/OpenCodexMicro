@@ -387,6 +387,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       try {
         await execute("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", stopScript], {
           timeout: 5000,
+          windowsHide: true,
           env: { ...process.env, CODEX_BRIDGE_TARGET_RUNTIME: bridgeRuntime }
         });
       } catch {}

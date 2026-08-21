@@ -89,6 +89,10 @@ function powershellArgs(command, extra = []) {
   return ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command, ...extra];
 }
 
+function powershellOptions(options = {}) {
+  return { ...options, windowsHide: true };
+}
+
 export function debugPortsFromCommandLines(text) {
   const ports = [];
   for (const line of String(text || "").split(/\r?\n/)) {
@@ -107,7 +111,11 @@ export async function fetchJson(url, timeout = 1200, fetchImpl = fetch) {
 
 async function processCommandLines(platform, execute) {
   if (platform === "win32") {
-    return (await execute("powershell.exe", powershellArgs(WINDOWS_PROCESS_COMMAND), { timeout: 4000 })).stdout;
+    return (await execute(
+      "powershell.exe",
+      powershellArgs(WINDOWS_PROCESS_COMMAND),
+      powershellOptions({ timeout: 4000 })
+    )).stdout;
   }
   if (platform === "darwin") {
     return (await execute("/bin/ps", ["-axo", "command="], { timeout: 4000 })).stdout;
@@ -144,7 +152,7 @@ export async function discoverWindowsCodexExecutables({ execute = execFileAsync 
   const { stdout = "" } = await execute(
     "powershell.exe",
     powershellArgs(WINDOWS_PACKAGE_COMMAND),
-    { timeout: 8000 }
+    powershellOptions({ timeout: 8000 })
   );
   if (!String(stdout).trim()) return [];
   const parsed = JSON.parse(String(stdout));
@@ -157,7 +165,11 @@ export async function discoverWindowsCodexExecutables({ execute = execFileAsync 
 
 export async function focusCodex({ platform = process.platform, execute = execFileAsync } = {}) {
   if (platform === "win32") {
-    await execute("powershell.exe", powershellArgs(WINDOWS_FOCUS_COMMAND), { timeout: 5000 });
+    await execute(
+      "powershell.exe",
+      powershellArgs(WINDOWS_FOCUS_COMMAND),
+      powershellOptions({ timeout: 5000 })
+    );
     return;
   }
   if (platform === "darwin") {
@@ -182,10 +194,10 @@ export async function launchWindowsCodex({
   await execute(
     "powershell.exe",
     powershellArgs(WINDOWS_STOP_EXECUTABLE_COMMAND),
-    {
+    powershellOptions({
       timeout: 10000,
       env: { ...process.env, CODEX_BRIDGE_TARGET_EXECUTABLE: selected.executable }
-    }
+    })
   );
   const child = spawnProcess(selected.executable, [...CDP_ARGUMENTS], {
     detached: true,
