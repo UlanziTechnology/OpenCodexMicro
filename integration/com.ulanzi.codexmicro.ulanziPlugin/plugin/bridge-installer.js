@@ -163,13 +163,35 @@ export function createBridgeInstaller({
   const agentsRoot = join(home, "Library", "LaunchAgents");
   const bridgeAgent = join(agentsRoot, "io.opencodexmicro.bridge.plist");
   let lastWindowsServiceStart = 0;
+  let authorizationCache = null;
+  let authorizationPromise = null;
+  let authorizationGeneration = 0;
+
+  function resetAuthorizationCache() {
+    authorizationGeneration += 1;
+    authorizationCache = null;
+    authorizationPromise = null;
+  }
 
   async function authorizationHeaders() {
+    if (authorizationCache) return authorizationCache;
+    if (authorizationPromise) return authorizationPromise;
+    const generation = authorizationGeneration;
+    const operation = (async () => {
+      try {
+        const token = (await readFile(tokenPath, "utf8")).trim();
+        const headers = token ? Object.freeze({ Authorization: `Bearer ${token}` }) : {};
+        if (token && generation === authorizationGeneration) authorizationCache = headers;
+        return headers;
+      } catch {
+        return {};
+      }
+    })();
+    authorizationPromise = operation;
     try {
-      const token = (await readFile(tokenPath, "utf8")).trim();
-      return token ? { Authorization: `Bearer ${token}` } : {};
-    } catch {
-      return {};
+      return await operation;
+    } finally {
+      if (authorizationPromise === operation) authorizationPromise = null;
     }
   }
 
@@ -315,6 +337,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
     if (!await exists(tokenPath)) {
       await writeFile(tokenPath, `${randomBytes(32).toString("base64url")}\n`, { mode: 0o600 });
     }
+    resetAuthorizationCache();
     await writeFile(installMetadata, `${JSON.stringify({
       version,
       platform,
@@ -393,6 +416,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       } catch {}
     }
     await rm(appRoot, { recursive: true, force: true });
+    resetAuthorizationCache();
     return status();
   }
 

@@ -31,6 +31,7 @@ let cached = {
 };
 let refreshPromise = null;
 let nextReconnectAt = 0;
+let hasRefreshed = false;
 
 function authorized(request) {
   return bridgeRequestAuthorized(bridgeToken, request.headers.authorization);
@@ -52,6 +53,7 @@ async function refresh(force = false) {
   try {
     await refreshPromise;
   } finally {
+    hasRefreshed = true;
     refreshPromise = null;
   }
 }
@@ -71,7 +73,9 @@ const server = createServer(async (request, response) => {
     return json(response, 401, { ok: false, error: "Bridge authorization required" });
   }
   if (request.method === "GET" && url.pathname === "/health") {
-    await refresh(true);
+    if (!hasRefreshed || Date.now() - cached.updatedAt >= REFRESH_MS * 2) {
+      await refresh(true);
+    }
     return json(response, 200, { ok: true, codexConnected: cached.connected, updatedAt: cached.updatedAt });
   }
   if (request.method === "GET" && url.pathname === "/state") {

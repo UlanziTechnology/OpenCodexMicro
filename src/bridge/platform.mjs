@@ -2,6 +2,8 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+let windowsFocusPid = null;
+let windowsFocusPromise = null;
 
 export const CDP_HOST = "127.0.0.1";
 export const DEFAULT_CDP_PORT = 9222;
@@ -47,7 +49,25 @@ $rows = foreach ($name in @('OpenAI.Codex', 'OpenAI.CodexBeta')) {
 
 const WINDOWS_FOCUS_COMMAND = String.raw`
 $ErrorActionPreference = 'Stop'
-Add-Type @'
+$preferredPid = 0
+$hasPreferredPid = [int]::TryParse($env:CODEX_BRIDGE_FOCUS_PID, [ref]$preferredPid)
+$candidate = if ($hasPreferredPid -and $preferredPid -gt 0) {
+  Get-Process -Id $preferredPid -ErrorAction SilentlyContinue |
+    Where-Object { $_.MainWindowHandle -ne 0 }
+} else { $null }
+if (-not $candidate) {
+  $debugPids = @(Get-CimInstance Win32_Process |
+    Where-Object { $_.CommandLine -like '*--remote-debugging-address=127.0.0.1*' -and $_.CommandLine -notlike '*--type=*' } |
+    Select-Object -ExpandProperty ProcessId)
+  $candidate = Get-Process |
+    Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like 'ChatGPT*' -or $_.ProcessName -like 'Codex*') } |
+    Sort-Object @{ Expression = { if ($debugPids -contains $_.Id) { 0 } else { 1 } } }, StartTime |
+    Select-Object -First 1
+}
+if (-not $candidate) { throw 'A Codex Desktop window was not found.' }
+$shell = New-Object -ComObject WScript.Shell
+if (-not $shell.AppActivate($candidate.Id)) {
+  Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class CodexWindow {
@@ -55,21 +75,12 @@ public static class CodexWindow {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
 }
 '@
-$debugPids = @(Get-CimInstance Win32_Process |
-  Where-Object { $_.CommandLine -like '*--remote-debugging-address=127.0.0.1*' -and $_.CommandLine -notlike '*--type=*' } |
-  Select-Object -ExpandProperty ProcessId)
-$candidate = Get-Process |
-  Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like 'ChatGPT*' -or $_.ProcessName -like 'Codex*') } |
-  Sort-Object @{ Expression = { if ($debugPids -contains $_.Id) { 0 } else { 1 } } }, StartTime |
-  Select-Object -First 1
-if (-not $candidate) { throw 'A Codex Desktop window was not found.' }
-[CodexWindow]::ShowWindowAsync($candidate.MainWindowHandle, 9) | Out-Null
-if (-not [CodexWindow]::SetForegroundWindow($candidate.MainWindowHandle)) {
-  $shell = New-Object -ComObject WScript.Shell
-  if (-not $shell.AppActivate($candidate.Id)) {
+  [CodexWindow]::ShowWindowAsync($candidate.MainWindowHandle, 9) | Out-Null
+  if (-not [CodexWindow]::SetForegroundWindow($candidate.MainWindowHandle)) {
     throw 'Windows did not allow Codex Desktop to receive focus.'
   }
 }
+$candidate.Id
 `;
 
 const WINDOWS_STOP_EXECUTABLE_COMMAND = String.raw`
@@ -165,12 +176,33 @@ export async function discoverWindowsCodexExecutables({ execute = execFileAsync 
 
 export async function focusCodex({ platform = process.platform, execute = execFileAsync } = {}) {
   if (platform === "win32") {
-    await execute(
-      "powershell.exe",
-      powershellArgs(WINDOWS_FOCUS_COMMAND),
-      powershellOptions({ timeout: 5000 })
-    );
-    return;
+    if (windowsFocusPromise) return windowsFocusPromise;
+    const operation = (async () => {
+      try {
+        const { stdout = "" } = await execute(
+          "powershell.exe",
+          powershellArgs(WINDOWS_FOCUS_COMMAND),
+          powershellOptions({
+            timeout: 5000,
+            env: {
+              ...process.env,
+              ...(windowsFocusPid ? { CODEX_BRIDGE_FOCUS_PID: String(windowsFocusPid) } : {})
+            }
+          })
+        );
+        const focusedPid = Number(String(stdout).trim().split(/\r?\n/).at(-1));
+        windowsFocusPid = Number.isInteger(focusedPid) && focusedPid > 0 ? focusedPid : null;
+      } catch (error) {
+        windowsFocusPid = null;
+        throw error;
+      }
+    })();
+    windowsFocusPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      if (windowsFocusPromise === operation) windowsFocusPromise = null;
+    }
   }
   if (platform === "darwin") {
     await execute("/usr/bin/open", ["-b", "com.openai.codex"], { timeout: 3000 });

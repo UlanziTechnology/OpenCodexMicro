@@ -347,26 +347,73 @@ function selectMainTarget(targets) {
 
 export class CodexCdpClient {
   socket = null;
+  connectPromise = null;
+  connectionGeneration = 0;
   nextId = 0;
   pending = new Map();
   lastSnapshot = null;
 
+  constructor({
+    discoverPort = discoverDebugPort,
+    fetchTargets = fetchJson,
+    createSocket = url => new WebSocket(url)
+  } = {}) {
+    this.discoverPort = discoverPort;
+    this.fetchTargets = fetchTargets;
+    this.createSocket = createSocket;
+  }
+
   async connect() {
     if (this.socket?.readyState === WebSocket.OPEN) return;
-    const port = await discoverDebugPort();
-    const target = selectMainTarget(await fetchJson(`http://127.0.0.1:${port}/json/list`));
+    if (this.connectPromise) return this.connectPromise;
+    const generation = ++this.connectionGeneration;
+    const operation = this.openConnection(generation);
+    this.connectPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      if (this.connectPromise === operation) this.connectPromise = null;
+    }
+  }
+
+  async openConnection(generation) {
+    const port = await this.discoverPort();
+    const target = selectMainTarget(await this.fetchTargets(`http://127.0.0.1:${port}/json/list`));
     if (!target?.webSocketDebuggerUrl) throw new Error("Codex main renderer was not found");
-    const socket = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Timed out connecting to Codex")), 3000);
-      socket.once("open", () => { clearTimeout(timer); resolve(); });
-      socket.once("error", reject);
-    });
-    socket.on("message", (raw) => this.handleMessage(String(raw)));
-    socket.on("close", () => this.disconnect());
-    socket.on("error", () => this.disconnect());
+    if (generation !== this.connectionGeneration) throw new Error("Codex bridge connection was cancelled");
+    const socket = this.createSocket(target.webSocketDebuggerUrl);
     this.socket = socket;
-    await this.evaluate(ENABLE_EXPRESSION);
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error("Timed out connecting to Codex"));
+        }, 3000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off("open", onOpen);
+          socket.off("error", onError);
+        };
+        const onOpen = () => { cleanup(); resolve(); };
+        const onError = error => { cleanup(); reject(error); };
+        socket.once("open", onOpen);
+        socket.once("error", onError);
+      });
+      if (generation !== this.connectionGeneration || this.socket !== socket) {
+        throw new Error("Codex bridge connection was cancelled");
+      }
+      socket.on("message", (raw) => this.handleMessage(String(raw)));
+      socket.on("close", () => {
+        if (this.socket === socket) this.disconnect();
+      });
+      socket.on("error", () => {
+        if (this.socket === socket) this.disconnect();
+      });
+      await this.evaluate(ENABLE_EXPRESSION);
+    } catch (error) {
+      if (this.socket === socket) this.disconnect();
+      throw error;
+    }
   }
 
   async snapshot() {
@@ -555,9 +602,13 @@ export class CodexCdpClient {
   }
 
   disconnect() {
+    this.connectionGeneration += 1;
+    this.connectPromise = null;
     const socket = this.socket;
     this.socket = null;
-    if (socket?.readyState === WebSocket.OPEN) socket.close();
+    if (socket && socket.readyState !== WebSocket.CLOSED) {
+      try { socket.close(); } catch { socket.terminate?.(); }
+    }
     for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
       reject(new Error("Codex bridge disconnected"));

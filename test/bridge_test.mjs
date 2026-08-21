@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
 import vm from "node:vm";
 
@@ -71,6 +72,9 @@ test("Windows background PowerShell calls hide their console windows", async () 
   const calls = [];
   const execute = async (command, args, options) => {
     calls.push({ command, args, options });
+    if (args.join(" ").includes("CODEX_BRIDGE_FOCUS_PID")) {
+      return { stdout: "4242\n" };
+    }
     return {
       stdout: '\"ChatGPT.exe\" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9333\n'
     };
@@ -84,10 +88,72 @@ test("Windows background PowerShell calls hide their console windows", async () 
     }
   });
   await focusCodex({ platform: "win32", execute });
-  assert.equal(calls.length, 2);
+  await focusCodex({ platform: "win32", execute });
+  assert.equal(calls.length, 3);
   assert.ok(calls.every(({ command, options }) =>
     command === "powershell.exe" && options?.windowsHide === true
   ));
+  const focusCalls = calls.slice(1);
+  assert.ok(focusCalls.every(({ args, options }) =>
+    args.join(" ").includes("AppActivate") &&
+    args.join(" ").includes("SetForegroundWindow") &&
+    options.timeout === 5000
+  ));
+  assert.equal(focusCalls[1].options.env.CODEX_BRIDGE_FOCUS_PID, "4242");
+});
+
+test("concurrent CDP connects share one socket and ignore stale socket events", async () => {
+  class FakeSocket extends EventEmitter {
+    readyState = 0;
+
+    constructor() {
+      super();
+      queueMicrotask(() => {
+        this.readyState = 1;
+        this.emit("open");
+      });
+    }
+
+    send(raw) {
+      const { id } = JSON.parse(raw);
+      queueMicrotask(() => this.emit("message", JSON.stringify({
+        id,
+        result: { result: { value: true } }
+      })));
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+  }
+
+  let discoveries = 0;
+  let targetFetches = 0;
+  const sockets = [];
+  const client = new CodexCdpClient({
+    discoverPort: async () => { discoveries += 1; return 9222; },
+    fetchTargets: async () => {
+      targetFetches += 1;
+      return [{ type: "page", url: "app://-/index.html", webSocketDebuggerUrl: "ws://fixture" }];
+    },
+    createSocket: () => {
+      const socket = new FakeSocket();
+      sockets.push(socket);
+      return socket;
+    }
+  });
+
+  await Promise.all([client.connect(), client.connect()]);
+  assert.equal(discoveries, 1);
+  assert.equal(targetFetches, 1);
+  assert.equal(sockets.length, 1);
+
+  const staleSocket = sockets[0];
+  client.disconnect();
+  await client.connect();
+  staleSocket.emit("close");
+  assert.equal(client.socket, sockets[1]);
+  client.disconnect();
 });
 
 test("accepts formal and explicit temporary Codex thread ids", () => {

@@ -158,6 +158,7 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
   });
 
   try {
+    assert.deepEqual(await installer.authorizationHeaders(), {});
     assert.equal(
       bridgeDataRoot({ platform: "win32", home, localAppData }),
       join(localAppData, "OpenCodexMicro")
@@ -169,7 +170,7 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
     await access(join(dataRoot, "bridge.mjs"));
     const token = (await readFile(join(dataRoot, "bridge-token"), "utf8")).trim();
     assert.match(token, /^[A-Za-z0-9_-]{40,}$/);
-    assert.match((await installer.authorizationHeaders()).Authorization, /^Bearer /);
+    assert.deepEqual(await installer.authorizationHeaders(), { Authorization: `Bearer ${token}` });
     assert.equal(children[0].command, await realpath(systemNode));
     assert.equal(children[0].options.windowsHide, true);
     assert.equal(children[0].options.env.CODEX_BRIDGE_TOKEN, token);
@@ -194,9 +195,18 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
     const uninstalled = await installer.uninstall();
     assert.equal(uninstalled.installed, false);
     await assert.rejects(access(dataRoot));
+    assert.deepEqual(await installer.authorizationHeaders(), {});
     const powershellCommands = commands.filter(([command]) => command === "powershell.exe");
     assert.ok(powershellCommands.length >= 4);
     assert.ok(powershellCommands.every(([, , options]) => options?.windowsHide === true));
+
+    await installer.install();
+    const replacementToken = (await readFile(join(dataRoot, "bridge-token"), "utf8")).trim();
+    assert.notEqual(replacementToken, token);
+    assert.deepEqual(await installer.authorizationHeaders(), {
+      Authorization: `Bearer ${replacementToken}`
+    });
+    await installer.uninstall();
   } finally {
     await rm(home, { recursive: true, force: true });
   }
