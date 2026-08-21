@@ -32,13 +32,17 @@ const ACTION_LABELS = Object.freeze({
   "model-luna-max": "LUNA MAX",
   "model-sol-medium": "SOL MED"
 });
-const TASK_ICON_PATHS = Object.freeze({
-  idle: "assets/icons/task-idle.png",
-  working: "assets/icons/task-working.png",
-  complete: "assets/icons/task-complete.gif",
-  attention: "assets/icons/task-attention.png",
-  error: "assets/icons/task-error.png"
+const TASK_STATUS_COLORS = Object.freeze({
+  idle: "#667085",
+  working: "#2589f5",
+  complete: "#28b875",
+  attention: "#ed9f20",
+  error: "#e34d62"
 });
+const TASK_TITLE_MAX_UNITS = 14;
+const TASK_TITLE_SEGMENTER = typeof Intl.Segmenter === "function"
+  ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+  : null;
 
 let socket;
 let reconnectTimer;
@@ -191,18 +195,102 @@ async function handleBridgeSetupMessage(message) {
   await sendBridgeSetupStatus(message, { result, error: failure });
 }
 
-function taskIconPath(status) {
+function taskStatusKind(status) {
   const value = String(status || "").toLowerCase();
-  if (["working", "thinking", "running", "in_progress"].includes(value)) return TASK_ICON_PATHS.working;
-  if (["unread", "complete", "completed", "done", "success"].includes(value)) return TASK_ICON_PATHS.complete;
-  if (["attention", "notification", "input", "approval", "waiting_input", "needs_input"].includes(value)) return TASK_ICON_PATHS.attention;
-  if (["error", "failed", "failure"].includes(value)) return TASK_ICON_PATHS.error;
-  return TASK_ICON_PATHS.idle;
+  if (["working", "thinking", "running", "in_progress"].includes(value)) return "working";
+  if (["unread", "complete", "completed", "done", "success"].includes(value)) return "complete";
+  if (["attention", "notification", "input", "approval", "waiting_input", "needs_input"].includes(value)) return "attention";
+  if (["error", "failed", "failure"].includes(value)) return "error";
+  return "idle";
 }
 
-function shortTitle(value) {
-  const title = String(value || "Untitled").replace(/\s+/g, " ").trim();
-  return title.length > 18 ? `${title.slice(0, 17)}…` : title;
+function escapeXml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function titleGraphemes(value) {
+  const title = String(value || "Untitled").replace(/\s+/g, " ").trim() || "Untitled";
+  if (!TASK_TITLE_SEGMENTER) return Array.from(title);
+  return Array.from(TASK_TITLE_SEGMENTER.segment(title), item => item.segment);
+}
+
+function graphemeUnits(value) {
+  if (/^\s$/u.test(value)) return 0.55;
+  if (/^\p{Mark}+$/u.test(value)) return 0;
+  if (/\p{Extended_Pictographic}/u.test(value) || /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\ufe10-\ufe6f\uff01-\uff60\uffe0-\uffe6]/u.test(value)) return 2;
+  if (/^[ilI1.,'`:;|!\[\](){}]$/u.test(value)) return 0.55;
+  if (/^[mwMW@#%&]$/u.test(value)) return 1.35;
+  return 1;
+}
+
+function lineUnits(values) {
+  return values.reduce((total, value) => total + graphemeUnits(value), 0);
+}
+
+function trimLine(values) {
+  const result = [...values];
+  while (result[0] === " ") result.shift();
+  while (result.at(-1) === " ") result.pop();
+  return result;
+}
+
+function taskTitleLines(value) {
+  let graphemes = titleGraphemes(value);
+  if (lineUnits(graphemes) <= TASK_TITLE_MAX_UNITS) return [graphemes.join("")];
+
+  const maxTotalUnits = TASK_TITLE_MAX_UNITS * 2;
+  if (lineUnits(graphemes) > maxTotalUnits) {
+    const ellipsisUnits = graphemeUnits("…");
+    const clipped = [];
+    let used = 0;
+    for (const grapheme of graphemes) {
+      const units = graphemeUnits(grapheme);
+      if (used + units + ellipsisUnits > maxTotalUnits) break;
+      clipped.push(grapheme);
+      used += units;
+    }
+    graphemes = trimLine(clipped);
+    graphemes.push("…");
+  }
+
+  let best = null;
+  for (let index = 1; index < graphemes.length; index += 1) {
+    const first = trimLine(graphemes.slice(0, index));
+    const second = trimLine(graphemes.slice(index));
+    if (!first.length || !second.length) continue;
+    const firstUnits = lineUnits(first);
+    const secondUnits = lineUnits(second);
+    if (firstUnits > TASK_TITLE_MAX_UNITS || secondUnits > TASK_TITLE_MAX_UNITS) continue;
+    const breaksAtSpace = graphemes[index - 1] === " " || graphemes[index] === " ";
+    const score = Math.abs(firstUnits - secondUnits) + (breaksAtSpace ? 0 : 0.4);
+    if (!best || score < best.score) best = { first, second, score };
+  }
+
+  if (best) return [best.first.join(""), best.second.join("")];
+
+  const first = [];
+  while (graphemes.length && lineUnits([...first, graphemes[0]]) <= TASK_TITLE_MAX_UNITS) {
+    first.push(graphemes.shift());
+  }
+  return [trimLine(first).join(""), trimLine(graphemes).join("")].filter(Boolean);
+}
+
+function taskIconData(kind, lines) {
+  const color = TASK_STATUS_COLORS[kind];
+  const fontSize = lines.length === 1 ? 25 : 22;
+  const lineY = lines.length === 1 ? [151] : [132, 162];
+  const text = lines.map((line, index) => `<tspan x="98" y="${lineY[index]}">${escapeXml(line)}</tspan>`).join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="196" height="196" viewBox="0 0 196 196">
+    <rect width="196" height="196" rx="27" fill="${color}"/>
+    <rect x="10" y="103" width="176" height="83" rx="17" fill="#111820" fill-opacity=".9"/>
+    <text fill="#ffffff" font-family="Arial,'Microsoft YaHei','Noto Sans CJK SC',sans-serif" font-size="${fontSize}" font-weight="700" text-anchor="middle">${text}</text>
+  </svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
 function setDisplay(instance, state, text) {
@@ -225,12 +313,12 @@ function setDisplay(instance, state, text) {
   });
 }
 
-function setTaskDisplay(instance, path, text) {
-  const isGif = path.toLowerCase().endsWith(".gif");
-  const digest = `${isGif ? "gif" : "path"}:${path}:${text}`;
+function setTaskDisplay(instance, status, title) {
+  const kind = taskStatusKind(status);
+  const lines = taskTitleLines(title);
+  const digest = `task:${kind}:${lines.join("\n")}`;
   if (!instance.active || instance.lastDisplay === digest) return;
   instance.lastDisplay = digest;
-  const image = isGif ? { type: 4, gifpath: path } : { type: 2, path };
   send({
     cmd: "state",
     param: {
@@ -238,9 +326,10 @@ function setTaskDisplay(instance, path, text) {
         uuid: instance.uuid,
         actionid: instance.actionid,
         key: instance.key,
-        ...image,
-        showtext: true,
-        textdata: text
+        type: 1,
+        data: taskIconData(kind, lines),
+        showtext: false,
+        textdata: ""
       }]
     }
   });
@@ -273,7 +362,7 @@ function renderInstance(instance) {
     const action = actionName(instance.uuid);
     if (!latestState?.connected) {
       if (action === "navigate") {
-        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Bridge Offline");
+        setTaskDisplay(instance, "idle", "Bridge Offline");
       } else {
         setDisplay(instance, 0, "Bridge Offline");
       }
@@ -286,25 +375,25 @@ function renderInstance(instance) {
     if (action === "navigate") {
       const task = latestState.slots?.[0];
       if (!task?.threadKey) {
-        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Latest Task");
+        setTaskDisplay(instance, "idle", "Latest Task");
         return;
       }
-      setTaskDisplay(instance, taskIconPath(task.status), shortTitle(task.title));
+      setTaskDisplay(instance, task.status, task.title);
       return;
     }
     setDisplay(instance, 0, ACTION_LABELS[action] || "CODEX");
     return;
   }
   if (!latestState?.connected) {
-    setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Bridge Offline");
+    setTaskDisplay(instance, "idle", "Bridge Offline");
     return;
   }
   const task = latestState.slots?.[slot];
   if (!task?.threadKey) {
-    setTaskDisplay(instance, TASK_ICON_PATHS.idle, `Task ${slot + 1}`);
+    setTaskDisplay(instance, "idle", `Task ${slot + 1}`);
     return;
   }
-  setTaskDisplay(instance, taskIconPath(task.status), shortTitle(task.title));
+  setTaskDisplay(instance, task.status, task.title);
 }
 
 function renderAll() {

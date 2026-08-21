@@ -27,10 +27,11 @@ No repository or npm working directory is required for this flow.
 | Luna Max | Switch the visible task to GPT-5.6 Luna with maximum reasoning effort |
 | Sol Medium | Switch the visible task to GPT-5.6 Sol with medium reasoning effort |
 
-Task actions dynamically use the plugin's idle, working, complete, attention,
-error, and offline artwork. Usage is rendered at runtime from the allowance
-returned by the Bridge. The Encoder action mirrors task 1's current title and
-status artwork.
+Task actions render a compact 196×196 SVG at runtime. A flat background color
+identifies idle, working, complete, attention, or error state, while the task
+title is balanced across at most two centered lines in a dark lower panel.
+Usage is rendered at runtime from the allowance returned by the Bridge. The
+Encoder action mirrors task 1's current title and status color.
 
 Model presets operate the visible Codex Desktop intelligence picker. They
 validate the target model, the current reasoning-effort ordering, and the final

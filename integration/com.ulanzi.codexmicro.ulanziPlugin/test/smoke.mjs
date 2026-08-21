@@ -138,8 +138,8 @@ const bridge = createServer((request, response) => {
     response.end(JSON.stringify({
       connected: true,
       slots: [
-        { id: 0, threadKey: "11111111-1111-1111-1111-111111111111", title: "Working task", status: "thinking" },
-        { id: 1, threadKey: "22222222-2222-2222-2222-222222222222", title: "Unread task", status: "unread" },
+        { id: 0, threadKey: "11111111-1111-1111-1111-111111111111", title: "排查 PowerShell 配置与完整路径问题", status: "thinking" },
+        { id: 1, threadKey: "22222222-2222-2222-2222-222222222222", title: "A&B <C> \"D\" 'E'", status: "unread" },
         { id: 2, threadKey: "33333333-3333-3333-3333-333333333333", title: "Input task", status: "input" },
         { id: 3, threadKey: "44444444-4444-4444-4444-444444444444", title: "Failed task", status: "error" },
         { id: 4, threadKey: "55555555-5555-5555-5555-555555555555", title: "Idle task", status: "idle" }
@@ -197,14 +197,14 @@ try {
   assert.equal(setupStatus?.payload?.status?.cdpConnected, true);
   assert.equal(setupStatus?.payload?.status?.bundledVersion, "0.6.0");
 
-  const taskImages = [
-    { type: 2, field: "path", value: "assets/icons/task-working.png" },
-    { type: 4, field: "gifpath", value: "assets/icons/task-complete.gif" },
-    { type: 2, field: "path", value: "assets/icons/task-attention.png" },
-    { type: 2, field: "path", value: "assets/icons/task-error.png" },
-    { type: 2, field: "path", value: "assets/icons/task-idle.png" }
+  const taskColors = [
+    "#2589f5",
+    "#28b875",
+    "#ed9f20",
+    "#e34d62",
+    "#667085"
   ];
-  for (let index = 0; index < taskImages.length; index += 1) {
+  for (let index = 0; index < taskColors.length; index += 1) {
     client.send(JSON.stringify({
       cmd: "add",
       uuid: `com.ulanzi.ulanzistudio.codexmicro.task${index + 1}`,
@@ -214,22 +214,42 @@ try {
     }));
   }
   await new Promise(resolve => setTimeout(resolve, 700));
-  for (let index = 0; index < taskImages.length; index += 1) {
+  const taskSvgs = [];
+  for (let index = 0; index < taskColors.length; index += 1) {
     const taskUuid = `com.ulanzi.ulanzistudio.codexmicro.task${index + 1}`;
     const state = messages.find(message =>
       message.cmd === "state" && message.param?.statelist?.[0]?.uuid === taskUuid
     );
     const item = state?.param?.statelist?.[0];
-    const expected = taskImages[index];
-    assert.equal(item?.type, expected.type);
-    assert.equal(item?.[expected.field], expected.value);
-    assert.equal(item?.showtext, true);
+    assert.equal(item?.type, 1);
+    assert.match(item?.data || "", /^data:image\/svg\+xml;base64,/);
+    assert.equal(item?.showtext, false);
+    assert.equal(item?.textdata, "");
+    assert.equal(Object.hasOwn(item || {}, "path"), false);
+    assert.equal(Object.hasOwn(item || {}, "gifpath"), false);
     assert.equal(Object.hasOwn(item || {}, "state"), false, "task icon update must not send a state index");
+    const svg = Buffer.from(item.data.split(",")[1], "base64").toString();
+    taskSvgs.push(svg);
+    assert.match(svg, new RegExp(taskColors[index]));
+    assert.match(svg, /width="196" height="196"/);
+    assert.match(svg, /text-anchor="middle"/);
   }
-  const task1State = messages.find(message =>
-    message.cmd === "state" && message.param?.statelist?.[0]?.uuid.endsWith(".task1")
+  const balancedLines = Array.from(taskSvgs[0].matchAll(/<tspan[^>]*>(.*?)<\/tspan>/g), match => match[1]);
+  assert.equal(balancedLines.length, 2, "long mixed title must render on exactly two lines");
+  assert.ok(balancedLines.every(line => line.length > 0));
+  const visibleUnits = line => Array.from(line).reduce((total, character) =>
+    total + (/[\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff]/u.test(character) ? 2 : character === " " ? 0.5 : 1), 0
   );
-  assert.equal(task1State?.param?.statelist?.[0]?.textdata, "Working task");
+  assert.ok(
+    Math.abs(visibleUnits(balancedLines[0]) - visibleUnits(balancedLines[1])) <= 3,
+    "mixed-language title lines must have similar visual widths"
+  );
+  assert.match(balancedLines[1], /…$/, "truncated title must add an ellipsis to the second line");
+  assert.match(taskSvgs[1], /A&amp;B/);
+  assert.match(taskSvgs[1], /&lt;C&gt;/);
+  assert.match(taskSvgs[1], /&quot;D&quot;/);
+  assert.match(taskSvgs[1], /&apos;E&apos;/);
+  assert.doesNotMatch(taskSvgs[1], /<C>/);
 
   client.send(JSON.stringify({ cmd: "keydown", uuid: "com.ulanzi.ulanzistudio.codexmicro.task1", actionid: "a1", key: "0_0", param: {} }));
   client.send(JSON.stringify({ cmd: "run", uuid: "com.ulanzi.ulanzistudio.codexmicro.task1", actionid: "a1", key: "0_0", param: {} }));
@@ -263,8 +283,13 @@ try {
     message.cmd === "state" &&
     message.param?.statelist?.[0]?.uuid === navigateEvent.uuid
   );
-  assert.equal(navigateState?.param?.statelist?.[0]?.path, "assets/icons/task-working.png");
-  assert.equal(navigateState?.param?.statelist?.[0]?.textdata, "Working task");
+  const navigateItem = navigateState?.param?.statelist?.[0];
+  assert.equal(navigateItem?.type, 1);
+  assert.equal(navigateItem?.showtext, false);
+  assert.equal(navigateItem?.textdata, "");
+  const navigateSvg = Buffer.from(navigateItem.data.split(",")[1], "base64").toString();
+  assert.match(navigateSvg, /#2589f5/);
+  assert.match(navigateSvg, /排查/);
 
   const actions = [
     "fast", "pin", "new", "fork", "steer", "mic", "submit",

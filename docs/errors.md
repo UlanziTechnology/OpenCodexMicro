@@ -32,7 +32,8 @@
 
 - Keep the last usable display during routine refreshes; use offline artwork
   only when the Bridge is actually unavailable.
-- Task updates use relative-path icons and must not send a state index when the
+- Task updates use self-contained runtime SVG data, draw the title into the
+  image, and must not send either a host title overlay or a state index when the
   manifest disables automatic states.
 - Usage refreshes must not block task input or action dispatch.
 - Runtime assets referenced by the manifest or plugin code must exist in the
