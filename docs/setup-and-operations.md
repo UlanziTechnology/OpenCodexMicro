@@ -49,7 +49,7 @@ macOS keeps the wrapper and LaunchAgent flow:
 
 ## Install from the repository
 
-From `plugins/codex-console`:
+From the `OpenCodexMicro` repository root:
 
 ```text
 npm install

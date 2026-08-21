@@ -301,7 +301,7 @@ var require_permessage_deflate = __commonJS({
       acceptAsServer(offers) {
         const opts = this._options;
         const accepted = offers.find((params) => {
-          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && (typeof params.client_max_window_bits === "number" ? opts.clientMaxWindowBits > params.client_max_window_bits : !params.client_max_window_bits)) {
+          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && !params.client_max_window_bits) {
             return false;
           }
           return true;
@@ -2263,7 +2263,7 @@ var require_websocket = __commonJS({
     var http = require("http");
     var net = require("net");
     var tls = require("tls");
-    var { randomBytes, createHash } = require("crypto");
+    var { randomBytes: randomBytes2, createHash: createHash2 } = require("crypto");
     var { Duplex, Readable } = require("stream");
     var { URL } = require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -2801,7 +2801,7 @@ var require_websocket = __commonJS({
         }
       }
       const defaultPort = isSecure ? 443 : 80;
-      const key = randomBytes(16).toString("base64");
+      const key = randomBytes2(16).toString("base64");
       const request = isSecure ? https.request : http.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
@@ -2931,7 +2931,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket2, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket2, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -3300,7 +3300,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter = require("events");
     var http = require("http");
     var { Duplex } = require("stream");
-    var { createHash } = require("crypto");
+    var { createHash: createHash2 } = require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -3607,7 +3607,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket2, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -3706,17 +3706,224 @@ var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
 
 // plugin/app.js
+var import_node_crypto2 = require("node:crypto");
 var import_node_fs2 = require("node:fs");
 var import_node_path2 = require("node:path");
 
 // plugin/bridge-installer.js
 var import_node_fs = require("node:fs");
 var import_promises = require("node:fs/promises");
-var import_node_child_process = require("node:child_process");
-var import_node_util = require("node:util");
+var import_node_child_process2 = require("node:child_process");
+var import_node_crypto = require("node:crypto");
+var import_node_util2 = require("node:util");
 var import_node_os = require("node:os");
 var import_node_path = require("node:path");
+
+// ../../src/bridge/platform.mjs
+var import_node_child_process = require("node:child_process");
+var import_node_util = require("node:util");
 var execFileAsync = (0, import_node_util.promisify)(import_node_child_process.execFile);
+var CDP_HOST = "127.0.0.1";
+var DEFAULT_CDP_PORT = 9222;
+var CDP_ARGUMENTS = Object.freeze([
+  `--remote-debugging-address=${CDP_HOST}`,
+  `--remote-debugging-port=${DEFAULT_CDP_PORT}`,
+  `--remote-allow-origins=http://${CDP_HOST}:${DEFAULT_CDP_PORT}`
+]);
+var WINDOWS_PROCESS_COMMAND = String.raw`
+$ErrorActionPreference = 'Stop'
+$listenerOwners = @{}
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
+  ForEach-Object { $listenerOwners[('{0}:{1}' -f $_.LocalPort, $_.OwningProcess)] = $true }
+$rows = Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -like '*--remote-debugging-address=127.0.0.1*' } |
+  ForEach-Object {
+    $portMatch = [regex]::Match([string]$_.CommandLine, '--remote-debugging-port(?:=|\s+)(\d+)')
+    $debugPort = if ($portMatch.Success) { [int]$portMatch.Groups[1].Value } else { 0 }
+    [pscustomobject]@{
+      processId = [int]$_.ProcessId
+      executable = [string]$_.ExecutablePath
+      commandLine = [string]$_.CommandLine
+      ownsDebugPort = $debugPort -gt 0 -and $listenerOwners.ContainsKey(('{0}:{1}' -f $debugPort, $_.ProcessId))
+    }
+  }
+@($rows) | ConvertTo-Json -Compress
+`;
+var WINDOWS_PACKAGE_COMMAND = String.raw`
+$ErrorActionPreference = 'Stop'
+$rows = foreach ($name in @('OpenAI.Codex', 'OpenAI.CodexBeta')) {
+  $package = Get-AppxPackage -Name $name | Sort-Object Version -Descending | Select-Object -First 1
+  if (-not $package) { continue }
+  $app = Join-Path $package.InstallLocation 'app'
+  $names = if ($name -eq 'OpenAI.CodexBeta') {
+    @('ChatGPT (Beta).exe', 'Codex (Beta).exe', 'ChatGPT.exe')
+  } else {
+    @('ChatGPT.exe', 'Codex.exe')
+  }
+  foreach ($file in $names) {
+    $candidate = Join-Path $app $file
+    if (Test-Path -LiteralPath $candidate) {
+      [pscustomobject]@{
+        channel = if ($name -eq 'OpenAI.CodexBeta') { 'beta' } else { 'stable' }
+        packageName = $name
+        packageFullName = $package.PackageFullName
+        executable = $candidate
+      }
+      break
+    }
+  }
+}
+@($rows) | ConvertTo-Json -Compress
+`;
+var WINDOWS_STOP_EXECUTABLE_COMMAND = String.raw`
+$ErrorActionPreference = 'Stop'
+$target = $env:CODEX_BRIDGE_TARGET_EXECUTABLE
+$processes = @(Get-CimInstance Win32_Process |
+  Where-Object {
+    $_.ExecutablePath -eq $target -and
+    $_.CommandLine -notlike '*--type=*' -and
+    $_.CommandLine -notlike '*crashpad-handler*'
+  })
+foreach ($process in $processes) { Stop-Process -Id $process.ProcessId -ErrorAction Stop }
+foreach ($process in $processes) { Wait-Process -Id $process.ProcessId -Timeout 8 -ErrorAction SilentlyContinue }
+`;
+function powershellArgs(command, extra = []) {
+  return [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-WindowStyle",
+    "Hidden",
+    "-Command",
+    command,
+    ...extra
+  ];
+}
+function powershellOptions(options = {}) {
+  return { ...options, windowsHide: true };
+}
+function processChannel(executable, commandLine) {
+  const identity = `${executable || ""} ${commandLine || ""}`.toLowerCase();
+  return /codexbeta|chatgpt\s*\(beta\)|codex\s*\(beta\)/.test(identity) ? "beta" : "stable";
+}
+function debugProcessesFromCommandLines(text) {
+  const source = String(text || "").trim();
+  let rows = [];
+  if (source.startsWith("[") || source.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(source);
+      rows = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+    }
+  }
+  if (rows.length === 0) {
+    rows = source.split(/\r?\n/).filter(Boolean).map((commandLine) => ({ commandLine }));
+  }
+  return rows.flatMap((row) => {
+    const commandLine = String(row?.commandLine || "");
+    if (!commandLine.includes("--remote-debugging-address=127.0.0.1")) return [];
+    if (commandLine.includes("--type=")) return [];
+    const port2 = Number(commandLine.match(/--remote-debugging-port(?:=|\s+)(\d+)/)?.[1]);
+    if (!Number.isInteger(port2) || port2 <= 0 || port2 > 65535) return [];
+    const processId = Number(row?.processId);
+    const executable = typeof row?.executable === "string" ? row.executable : null;
+    return [{
+      port: port2,
+      processId: Number.isInteger(processId) && processId > 0 ? processId : null,
+      executable,
+      channel: processChannel(executable, commandLine),
+      ownsDebugPort: row?.ownsDebugPort === true
+    }];
+  });
+}
+async function fetchJson(url, timeout = 1200, fetchImpl = fetch) {
+  const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeout) });
+  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
+  return response.json();
+}
+async function processCommandLines(platform, execute) {
+  if (platform === "win32") {
+    return (await execute(
+      "powershell.exe",
+      powershellArgs(WINDOWS_PROCESS_COMMAND),
+      powershellOptions({ timeout: 4e3 })
+    )).stdout;
+  }
+  if (platform === "darwin") {
+    return (await execute("/bin/ps", ["-axo", "command="], { timeout: 4e3 })).stdout;
+  }
+  return "";
+}
+async function discoverDebugEndpoint({
+  platform = process.platform,
+  execute = execFileAsync,
+  fetchImpl = fetch,
+  preferredPort = DEFAULT_CDP_PORT
+} = {}) {
+  let processes = [];
+  try {
+    processes = debugProcessesFromCommandLines(await processCommandLines(platform, execute));
+  } catch {
+  }
+  const candidates = [preferredPort, ...processes.map((item) => item.port)];
+  for (const port2 of [...new Set(candidates)]) {
+    try {
+      await fetchJson(`http://${CDP_HOST}:${port2}/json/version`, 500, fetchImpl);
+      const process2 = processes.find((item) => item.port === port2 && item.ownsDebugPort) ?? processes.find((item) => item.port === port2);
+      return {
+        port: port2,
+        processId: process2?.processId ?? null,
+        executable: process2?.executable ?? null,
+        channel: process2?.channel ?? null
+      };
+    } catch {
+    }
+  }
+  throw new Error("Codex is not running with the local debug bridge");
+}
+async function discoverWindowsCodexExecutables({ execute = execFileAsync } = {}) {
+  const { stdout = "" } = await execute(
+    "powershell.exe",
+    powershellArgs(WINDOWS_PACKAGE_COMMAND),
+    powershellOptions({ timeout: 8e3 })
+  );
+  if (!String(stdout).trim()) return [];
+  const parsed = JSON.parse(String(stdout));
+  const rows = Array.isArray(parsed) ? parsed : [parsed];
+  return rows.filter(
+    (row) => ["stable", "beta"].includes(row?.channel) && typeof row?.executable === "string" && row.executable.toLowerCase().endsWith(".exe")
+  );
+}
+async function launchWindowsCodex({
+  channel = "stable",
+  execute = execFileAsync,
+  spawnProcess = import_node_child_process.spawn
+} = {}) {
+  const installations = await discoverWindowsCodexExecutables({ execute });
+  const selected = installations.find((item) => item.channel === channel) ?? installations.find((item) => item.channel === "stable") ?? installations[0];
+  if (!selected) {
+    throw new Error("Codex Desktop Stable or Beta was not found in the current Windows account.");
+  }
+  await execute(
+    "powershell.exe",
+    powershellArgs(WINDOWS_STOP_EXECUTABLE_COMMAND),
+    powershellOptions({
+      timeout: 1e4,
+      env: { ...process.env, CODEX_BRIDGE_TARGET_EXECUTABLE: selected.executable }
+    })
+  );
+  const child = spawnProcess(selected.executable, [...CDP_ARGUMENTS], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: false
+  });
+  child.unref?.();
+  return selected;
+}
+
+// plugin/bridge-installer.js
+var execFileAsync2 = (0, import_node_util2.promisify)(import_node_child_process2.execFile);
 function xml(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
@@ -3735,6 +3942,84 @@ async function readJson(path) {
     return null;
   }
 }
+async function fileSha256(path) {
+  try {
+    return (0, import_node_crypto.createHash)("sha256").update(await (0, import_promises.readFile)(path)).digest("hex");
+  } catch {
+    return null;
+  }
+}
+async function verifiedNativeRuntimeHash(root) {
+  const manifest = await readJson((0, import_node_path.join)(root, "native-runtime.json"));
+  if (manifest?.version !== 1 || !/^[a-f0-9]{64}$/.test(String(manifest?.runtimeHash || "")) || !Array.isArray(manifest?.files)) {
+    return null;
+  }
+  const verified = [];
+  for (const file of manifest.files) {
+    const relative = String(file?.path || "").replaceAll("\\", "/");
+    if (!relative || relative.startsWith("/") || relative.split("/").includes("..")) return null;
+    const sha256 = await fileSha256((0, import_node_path.join)(root, ...relative.split("/")));
+    if (!sha256 || sha256 !== file.sha256) return null;
+    verified.push({ path: relative, sha256 });
+  }
+  const computed = (0, import_node_crypto.createHash)("sha256").update(verified.map((file) => `${file.path}:${file.sha256}`).join("\n")).digest("hex");
+  return computed === manifest.runtimeHash ? computed : null;
+}
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+async function acquireFilesystemLock({
+  lockPath,
+  timeoutMs = 15e3,
+  staleMs = 3e5,
+  wait = (milliseconds) => new Promise((resolve3) => setTimeout(resolve3, milliseconds))
+}) {
+  const ownerToken = (0, import_node_crypto.randomBytes)(24).toString("base64url");
+  await (0, import_promises.mkdir)((0, import_node_path.dirname)(lockPath), { recursive: true });
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await (0, import_promises.mkdir)(lockPath, { mode: 448 });
+      await (0, import_promises.writeFile)((0, import_node_path.join)(lockPath, "owner.json"), `${JSON.stringify({
+        pid: process.pid,
+        ownerToken,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      })}
+`);
+      return async () => {
+        const owner = await readJson((0, import_node_path.join)(lockPath, "owner.json"));
+        if (owner?.ownerToken === ownerToken) {
+          await (0, import_promises.rm)(lockPath, { recursive: true, force: true });
+        }
+      };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      const [lockInfo, owner] = await Promise.all([
+        (0, import_promises.stat)(lockPath).catch(() => null),
+        readJson((0, import_node_path.join)(lockPath, "owner.json"))
+      ]);
+      if (lockInfo && Date.now() - lockInfo.mtimeMs > staleMs && !processIsAlive(Number(owner?.pid))) {
+        const abandonedLock = `${lockPath}.abandoned-${process.pid}-${ownerToken}`;
+        try {
+          await (0, import_promises.rename)(lockPath, abandonedLock);
+          await (0, import_promises.rm)(abandonedLock, { recursive: true, force: true });
+        } catch (recoveryError) {
+          if (!await exists(lockPath)) continue;
+          if (!["ENOENT", "EEXIST", "EPERM", "EACCES"].includes(recoveryError?.code)) throw recoveryError;
+        }
+        continue;
+      }
+      await wait(100);
+    }
+  }
+  throw new Error("Another lifecycle operation is still running.");
+}
 async function nodeVersion(executable, execute) {
   try {
     const { stdout = "" } = await execute(executable, ["--version"]);
@@ -3745,12 +4030,22 @@ async function nodeVersion(executable, execute) {
     return null;
   }
 }
+function bridgeDataRoot({
+  platform = process.platform,
+  home = (0, import_node_os.homedir)(),
+  localAppData = process.env.LOCALAPPDATA
+} = {}) {
+  if (platform === "win32") {
+    return (0, import_node_path.join)(localAppData || (0, import_node_path.join)(home, "AppData", "Local"), "OpenCodexMicro");
+  }
+  return (0, import_node_path.join)(home, "Library", "Application Support", "OpenCodexMicro");
+}
 async function selectBridgeNodeRuntime({
   home = (0, import_node_os.homedir)(),
   fallbackNodeExecutable = process.execPath,
   environmentPath = process.env.PATH || "",
   platform = process.platform,
-  execute = execFileAsync
+  execute = execFileAsync2
 } = {}) {
   const candidates = [];
   if (platform === "darwin" && await exists("/bin/zsh", import_node_fs.constants.X_OK)) {
@@ -3761,34 +4056,37 @@ async function selectBridgeNodeRuntime({
     } catch {
     }
   }
+  const nodeName = platform === "win32" ? "node.exe" : "node";
   for (const directory of environmentPath.split(import_node_path.delimiter).filter(Boolean)) {
-    candidates.push((0, import_node_path.join)(directory, "node"));
+    candidates.push((0, import_node_path.join)(directory, nodeName));
   }
-  candidates.push(
-    "/opt/homebrew/bin/node",
-    "/usr/local/bin/node",
-    "/usr/bin/node",
-    (0, import_node_path.join)(home, ".local", "bin", "node")
-  );
+  if (platform === "darwin") {
+    candidates.push(
+      "/opt/homebrew/bin/node",
+      "/usr/local/bin/node",
+      "/usr/bin/node",
+      (0, import_node_path.join)(home, ".local", "bin", "node")
+    );
+  }
   let resolvedFallback = fallbackNodeExecutable;
   try {
     resolvedFallback = await (0, import_promises.realpath)(fallbackNodeExecutable);
   } catch {
   }
   for (const executable of [...new Set(candidates)]) {
-    if (!executable.startsWith("/")) continue;
-    if (!await exists(executable, import_node_fs.constants.X_OK)) continue;
+    if (!(0, import_node_path.isAbsolute)(executable)) continue;
+    if (!await exists(executable, platform === "win32" ? import_node_fs.constants.F_OK : import_node_fs.constants.X_OK)) continue;
     const resolvedExecutable = await (0, import_promises.realpath)(executable);
     if (resolvedExecutable === resolvedFallback) continue;
-    const version = await nodeVersion(resolvedExecutable, execute);
-    if (version?.major >= 20) {
-      return { executable: resolvedExecutable, version: version.text, source: "system" };
+    const candidateVersion = await nodeVersion(resolvedExecutable, execute);
+    if (candidateVersion?.major >= 20) {
+      return { executable: resolvedExecutable, version: candidateVersion.text, source: "system" };
     }
   }
-  if (await exists(resolvedFallback, import_node_fs.constants.X_OK)) {
-    const version = await nodeVersion(resolvedFallback, execute);
-    if (version?.major >= 20) {
-      return { executable: resolvedFallback, version: version.text, source: "ulanzi" };
+  if (await exists(resolvedFallback, platform === "win32" ? import_node_fs.constants.F_OK : import_node_fs.constants.X_OK)) {
+    const fallbackVersion = await nodeVersion(resolvedFallback, execute);
+    if (fallbackVersion?.major >= 20) {
+      return { executable: resolvedFallback, version: fallbackVersion.text, source: "ulanzi" };
     }
   }
   throw new Error("No compatible Node.js 20 or later runtime was found.");
@@ -3798,13 +4096,31 @@ function createBridgeInstaller({
   bridgeUrl,
   version,
   home = (0, import_node_os.homedir)(),
+  localAppData = process.env.LOCALAPPDATA,
   uid = process.getuid?.(),
   platform = process.platform,
   nodeExecutable = process.execPath,
   environmentPath = process.env.PATH || "",
-  execute = execFileAsync
+  codexChannel = process.env.CODEX_DESKTOP_CHANNEL || "stable",
+  execute = execFileAsync2,
+  spawnProcess = import_node_child_process2.spawn,
+  fetchImpl = fetch,
+  serviceStartTimeoutMs = 8e3,
+  wait = (milliseconds) => new Promise((resolve3) => setTimeout(resolve3, milliseconds))
 }) {
-  const appRoot = (0, import_node_path.join)(home, "Library", "Application Support", "OpenCodexMicro");
+  const appRoot = bridgeDataRoot({ platform, home, localAppData });
+  const bridgeRuntime = (0, import_node_path.join)(appRoot, "bridge.mjs");
+  const tokenPath = (0, import_node_path.join)(appRoot, "bridge-token");
+  const pidPath = (0, import_node_path.join)(appRoot, "bridge.pid");
+  const installMetadata = (0, import_node_path.join)(appRoot, "install.json");
+  const lifecycleLock = (0, import_node_path.join)((0, import_node_path.dirname)(appRoot), ".OpenCodexMicro.lifecycle.lock");
+  const installerRoot = (0, import_node_path.resolve)(pluginRoot, "installer");
+  const bundledRuntime = (0, import_node_path.join)(installerRoot, "bridge.mjs");
+  const bundledIcon = (0, import_node_path.join)(installerRoot, "CodexBridge.png");
+  const bundledNativeRuntime = (0, import_node_path.join)(installerRoot, "native-runtime");
+  const nativeRuntimesRoot = (0, import_node_path.join)(appRoot, "native-runtimes");
+  const runtimeBackup = (0, import_node_path.join)(appRoot, ".bridge.mjs.previous");
+  const metadataBackup = (0, import_node_path.join)(appRoot, ".install.json.previous");
   const userApplications = (0, import_node_path.join)(home, "Applications");
   const bridgeApp = (0, import_node_path.join)(userApplications, "Codex Bridge.app");
   const bridgeContents = (0, import_node_path.join)(bridgeApp, "Contents");
@@ -3813,50 +4129,115 @@ function createBridgeInstaller({
   const bridgeLicenses = (0, import_node_path.join)(bridgeResources, "licenses");
   const bridgeExecutable = (0, import_node_path.join)(bridgeMacOS, "Codex Bridge");
   const bridgeIcon = (0, import_node_path.join)(bridgeResources, "CodexBridge.icns");
-  const bridgeRuntime = (0, import_node_path.join)(appRoot, "bridge.mjs");
-  const installMetadata = (0, import_node_path.join)(appRoot, "install.json");
   const agentsRoot = (0, import_node_path.join)(home, "Library", "LaunchAgents");
   const bridgeAgent = (0, import_node_path.join)(agentsRoot, "io.opencodexmicro.bridge.plist");
-  const installerRoot = (0, import_node_path.resolve)(pluginRoot, "installer");
-  const bundledRuntime = (0, import_node_path.join)(installerRoot, "bridge.mjs");
-  const bundledIcon = (0, import_node_path.join)(installerRoot, "CodexBridge.png");
+  let lastWindowsServiceStart = 0;
+  let authorizationCache = null;
+  let authorizationPromise = null;
+  let authorizationGeneration = 0;
+  let lifecycleOperation = null;
+  function resetAuthorizationCache() {
+    authorizationGeneration += 1;
+    authorizationCache = null;
+    authorizationPromise = null;
+  }
+  async function authorizationHeaders() {
+    if (authorizationCache) return authorizationCache;
+    if (authorizationPromise) return authorizationPromise;
+    const generation = authorizationGeneration;
+    const operation = (async () => {
+      try {
+        const token = (await (0, import_promises.readFile)(tokenPath, "utf8")).trim();
+        const headers = token ? Object.freeze({ Authorization: `Bearer ${token}` }) : {};
+        if (token && generation === authorizationGeneration) authorizationCache = headers;
+        return headers;
+      } catch {
+        return {};
+      }
+    })();
+    authorizationPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      if (authorizationPromise === operation) authorizationPromise = null;
+    }
+  }
   async function probeBridge() {
     try {
-      const response = await fetch(`${bridgeUrl}/health`, {
+      const response = await fetchImpl(`${bridgeUrl}/health`, {
+        headers: await authorizationHeaders(),
         signal: AbortSignal.timeout(1200)
       });
       const payload = await response.json();
       if (!response.ok || payload.ok === false) throw new Error(payload.error || `Bridge HTTP ${response.status}`);
-      return { serviceOnline: true, cdpConnected: Boolean(payload.codexConnected), serviceError: null };
+      return {
+        serviceOnline: true,
+        cdpConnected: Boolean(payload.codexConnected),
+        serviceVersion: typeof payload.bridgeVersion === "string" ? payload.bridgeVersion : null,
+        serviceRuntimeHash: typeof payload.runtimeHash === "string" ? payload.runtimeHash : null,
+        serviceNativeRuntimeHash: typeof payload.nativeRuntimeHash === "string" ? payload.nativeRuntimeHash : null,
+        serviceError: null
+      };
     } catch (error) {
-      return { serviceOnline: false, cdpConnected: false, serviceError: error.message };
+      return {
+        serviceOnline: false,
+        cdpConnected: false,
+        serviceVersion: null,
+        serviceRuntimeHash: null,
+        serviceNativeRuntimeHash: null,
+        serviceError: error.message
+      };
     }
   }
   async function status() {
-    const [appInstalled, runtimeInstalled, agentInstalled, metadata, probe] = await Promise.all([
-      exists(bridgeExecutable, import_node_fs.constants.X_OK),
+    const [runtimeInstalled, tokenInstalled, metadata, probe, bundledRuntimeHash, installedRuntimeHash] = await Promise.all([
       exists(bridgeRuntime),
-      exists(bridgeAgent),
+      exists(tokenPath),
       readJson(installMetadata),
-      probeBridge()
+      probeBridge(),
+      fileSha256(bundledRuntime),
+      fileSha256(bridgeRuntime)
     ]);
-    const installed = appInstalled && runtimeInstalled && agentInstalled;
+    const bundledNativeRuntimeHash = platform === "win32" ? await verifiedNativeRuntimeHash(bundledNativeRuntime) : null;
+    const installedNativeRuntimeHash = platform === "win32" && metadata?.nativeRuntimeHash ? await verifiedNativeRuntimeHash((0, import_node_path.join)(nativeRuntimesRoot, metadata.nativeRuntimeHash)) : null;
+    const nativeRuntimeInstalled = platform !== "win32" || Boolean(
+      bundledNativeRuntimeHash && installedNativeRuntimeHash === bundledNativeRuntimeHash && metadata?.nativeRuntimeHash === bundledNativeRuntimeHash
+    );
+    const macAppInstalled = platform === "darwin" ? await exists(bridgeExecutable, import_node_fs.constants.X_OK) : runtimeInstalled;
+    const agentInstalled = platform === "darwin" ? await exists(bridgeAgent) : true;
+    const installed = macAppInstalled && runtimeInstalled && tokenInstalled && agentInstalled && nativeRuntimeInstalled;
+    const installationDetected = Boolean(
+      runtimeInstalled || tokenInstalled || metadata || probe.serviceOnline || platform === "darwin" && (macAppInstalled || agentInstalled)
+    );
+    const metadataMatchesBundle = Boolean(
+      bundledRuntimeHash && metadata?.version === version && metadata?.runtimeHash === bundledRuntimeHash && installedRuntimeHash === bundledRuntimeHash && nativeRuntimeInstalled
+    );
+    const runningMatchesBundle = !probe.serviceOnline || Boolean(
+      bundledRuntimeHash && probe.serviceVersion === version && probe.serviceRuntimeHash === bundledRuntimeHash && (platform !== "win32" || probe.serviceNativeRuntimeHash === bundledNativeRuntimeHash)
+    );
     return {
-      supported: platform === "darwin" && Number.isInteger(uid),
+      supported: platform === "win32" || platform === "darwin" && Number.isInteger(uid),
+      platform,
       installed,
-      appInstalled,
-      serviceInstalled: runtimeInstalled && agentInstalled,
+      installationDetected,
+      appInstalled: macAppInstalled,
+      serviceInstalled: runtimeInstalled && tokenInstalled && agentInstalled,
       installedVersion: metadata?.version || null,
       bundledVersion: version,
-      needsUpdate: !installed || metadata?.version !== version,
-      appPath: bridgeApp,
+      bundledRuntimeHash,
+      installedRuntimeHash,
+      bundledNativeRuntimeHash,
+      installedNativeRuntimeHash,
+      needsUpdate: !installed || !metadataMatchesBundle || !runningMatchesBundle,
+      appPath: platform === "darwin" ? bridgeApp : appRoot,
       nodeExecutable: metadata?.nodeExecutable || null,
       nodeVersion: metadata?.nodeVersion || null,
       nodeSource: metadata?.nodeSource || null,
+      codexChannel: metadata?.codexChannel || codexChannel,
       ...probe
     };
   }
-  async function buildIcon() {
+  async function buildMacIcon() {
     const iconset = (0, import_node_path.join)(appRoot, "CodexBridge.iconset");
     await (0, import_promises.rm)(iconset, { recursive: true, force: true });
     await (0, import_promises.mkdir)(iconset, { recursive: true });
@@ -3873,25 +4254,244 @@ function createBridgeInstaller({
         ["icon_512x512.png", 512],
         ["icon_512x512@2x.png", 1024]
       ]) {
-        await execute("/usr/bin/sips", [
-          "-z",
-          String(size),
-          String(size),
-          bundledIcon,
-          "--out",
-          (0, import_node_path.join)(iconset, name)
-        ]);
+        await execute("/usr/bin/sips", ["-z", String(size), String(size), bundledIcon, "--out", (0, import_node_path.join)(iconset, name)]);
       }
       await execute("/usr/bin/iconutil", ["-c", "icns", iconset, "-o", bridgeIcon]);
     } finally {
       await (0, import_promises.rm)(iconset, { recursive: true, force: true });
     }
   }
-  async function install() {
-    if (platform !== "darwin" || !Number.isInteger(uid)) {
-      throw new Error("Codex Bridge installation is supported on macOS only.");
+  async function installMac(nodeRuntime, appVersion = version) {
+    await (0, import_promises.mkdir)(userApplications, { recursive: true });
+    await (0, import_promises.mkdir)(agentsRoot, { recursive: true });
+    await (0, import_promises.rm)(bridgeApp, { recursive: true, force: true });
+    await (0, import_promises.mkdir)(bridgeMacOS, { recursive: true });
+    await (0, import_promises.mkdir)(bridgeLicenses, { recursive: true });
+    for (const notice of ["LICENSE", "NOTICE.md", "THIRD_PARTY_NOTICES.md"]) {
+      await (0, import_promises.copyFile)((0, import_node_path.join)(installerRoot, notice), (0, import_node_path.join)(bridgeLicenses, notice));
     }
-    if (!await exists(bundledRuntime) || !await exists(bundledIcon)) {
+    await buildMacIcon();
+    await (0, import_promises.writeFile)((0, import_node_path.join)(bridgeContents, "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleDisplayName</key><string>Codex Bridge</string>
+  <key>CFBundleExecutable</key><string>Codex Bridge</string>
+  <key>CFBundleIconFile</key><string>CodexBridge</string>
+  <key>CFBundleIdentifier</key><string>io.opencodexmicro.bridge</string>
+  <key>CFBundleName</key><string>Codex Bridge</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>${xml(appVersion)}</string>
+  <key>CFBundleVersion</key><string>${xml(appVersion)}</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>LSUIElement</key><true/>
+</dict></plist>
+`);
+    await (0, import_promises.writeFile)(bridgeExecutable, `#!/bin/zsh
+set -u
+codex_binary="/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
+if [[ ! -x "$codex_binary" ]]; then exit 1; fi
+if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then
+  /usr/bin/osascript -e 'tell application id "com.openai.codex" to quit'
+  for attempt in {1..80}; do /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1 || break; /bin/sleep 0.1; done
+fi
+if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
+/usr/bin/nohup "$codex_binary" ${["--remote-debugging-address=127.0.0.1", "--remote-debugging-port=9222", "--remote-allow-origins=http://127.0.0.1:9222"].join(" ")} >/dev/null 2>&1 &
+`, { mode: 493 });
+    await (0, import_promises.chmod)(bridgeExecutable, 493);
+    await execute("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", bridgeApp]);
+    await (0, import_promises.writeFile)(bridgeAgent, `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>io.opencodexmicro.bridge</string>
+  <key>ProgramArguments</key><array><string>${xml(nodeRuntime.executable)}</string><string>${xml(bridgeRuntime)}</string></array>
+  <key>EnvironmentVariables</key><dict>
+    <key>CODEX_BRIDGE_DATA_ROOT</key><string>${xml(appRoot)}</string>
+  </dict>
+  <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string><key>ThrottleInterval</key><integer>2</integer>
+  <key>StandardOutPath</key><string>${xml((0, import_node_path.join)(appRoot, "bridge.log"))}</string>
+  <key>StandardErrorPath</key><string>${xml((0, import_node_path.join)(appRoot, "bridge-error.log"))}</string>
+</dict></plist>
+`, { mode: 420 });
+    await execute("/bin/launchctl", ["bootstrap", `gui/${uid}`, bridgeAgent]);
+  }
+  async function acquireLifecycleLock() {
+    await (0, import_promises.mkdir)(appRoot, { recursive: true, mode: 448 });
+    return acquireFilesystemLock({ lockPath: lifecycleLock, wait });
+  }
+  function serializeLifecycle(operation) {
+    if (lifecycleOperation) return lifecycleOperation;
+    const running = (async () => {
+      const release = await acquireLifecycleLock();
+      try {
+        if (!await exists(bridgeRuntime) && await exists(runtimeBackup)) {
+          await (0, import_promises.rename)(runtimeBackup, bridgeRuntime);
+        }
+        if (!await exists(installMetadata) && await exists(metadataBackup)) {
+          await (0, import_promises.rename)(metadataBackup, installMetadata);
+        }
+        return await operation();
+      } finally {
+        await release();
+      }
+    })();
+    lifecycleOperation = running;
+    return running.finally(() => {
+      if (lifecycleOperation === running) lifecycleOperation = null;
+    });
+  }
+  async function stopWindowsService() {
+    const recordedPid = Number((await (0, import_promises.readFile)(pidPath, "utf8").catch(() => "")).trim());
+    const stopScript = `$target=$env:CODEX_BRIDGE_TARGET_RUNTIME; $targetPid=0; [void][int]::TryParse($env:CODEX_BRIDGE_TARGET_PID, [ref]$targetPid); $candidates=@(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.Name -like 'node*' -and $_.CommandLine -and ($_.CommandLine.TrimEnd().EndsWith($target, [System.StringComparison]::OrdinalIgnoreCase) -or $_.CommandLine.TrimEnd().EndsWith(('"' + $target + '"'), [System.StringComparison]::OrdinalIgnoreCase)) }); $processes=if ($targetPid -gt 0) { @($candidates | Where-Object { $_.ProcessId -eq $targetPid }) } else { $candidates }; $processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; $processes | ForEach-Object { try { Wait-Process -Id $_.ProcessId -Timeout 5 -ErrorAction Stop } catch {} }`;
+    await execute("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", stopScript], {
+      timeout: 7e3,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        CODEX_BRIDGE_TARGET_RUNTIME: bridgeRuntime,
+        CODEX_BRIDGE_TARGET_PID: Number.isInteger(recordedPid) && recordedPid > 0 ? String(recordedPid) : ""
+      }
+    });
+    await (0, import_promises.rm)(pidPath, { force: true });
+    lastWindowsServiceStart = 0;
+  }
+  async function waitForServiceOffline() {
+    const deadline = Date.now() + Math.min(serviceStartTimeoutMs, 5e3);
+    do {
+      if (!(await probeBridge()).serviceOnline) return;
+      await wait(100);
+    } while (Date.now() < deadline);
+    throw new Error("The managed Codex Bridge process did not stop before replacement.");
+  }
+  async function stopService() {
+    if (platform === "darwin") {
+      const wasOnline = (await probeBridge()).serviceOnline;
+      if (await exists(bridgeAgent)) {
+        try {
+          await execute("/bin/launchctl", ["bootout", `gui/${uid}`, bridgeAgent]);
+        } catch (error) {
+          if (wasOnline) throw new Error(`Codex Bridge LaunchAgent could not be stopped: ${error.message}`);
+        }
+      }
+      if (wasOnline) await waitForServiceOffline();
+      return;
+    }
+    if (platform === "win32") await stopWindowsService();
+  }
+  async function commitRuntime(stagedRuntime) {
+    await (0, import_promises.rm)(runtimeBackup, { force: true });
+    if (await exists(bridgeRuntime)) await (0, import_promises.rename)(bridgeRuntime, runtimeBackup);
+    try {
+      await (0, import_promises.rename)(stagedRuntime, bridgeRuntime);
+    } catch (error) {
+      if (!await exists(bridgeRuntime) && await exists(runtimeBackup)) {
+        await (0, import_promises.rename)(runtimeBackup, bridgeRuntime);
+      }
+      throw error;
+    }
+  }
+  async function restorePreviousRuntime(previousRuntime) {
+    await (0, import_promises.rm)(bridgeRuntime, { force: true });
+    if (await exists(runtimeBackup)) {
+      await (0, import_promises.rename)(runtimeBackup, bridgeRuntime);
+      return;
+    }
+    if (previousRuntime) {
+      const rollbackRuntime = (0, import_node_path.join)(appRoot, `.bridge.mjs.rollback-${process.pid}`);
+      await (0, import_promises.writeFile)(rollbackRuntime, previousRuntime);
+      await (0, import_promises.rename)(rollbackRuntime, bridgeRuntime);
+    }
+  }
+  async function commitMetadata(metadataText) {
+    const stagedMetadata = (0, import_node_path.join)(appRoot, `.install.json.installing-${process.pid}`);
+    await (0, import_promises.writeFile)(stagedMetadata, metadataText, { mode: 384 });
+    await (0, import_promises.rm)(metadataBackup, { force: true });
+    if (await exists(installMetadata)) await (0, import_promises.rename)(installMetadata, metadataBackup);
+    try {
+      await (0, import_promises.rename)(stagedMetadata, installMetadata);
+    } catch (error) {
+      if (!await exists(installMetadata) && await exists(metadataBackup)) {
+        await (0, import_promises.rename)(metadataBackup, installMetadata);
+      }
+      throw error;
+    }
+  }
+  async function restorePreviousMetadata(previousMetadataText, useBackup = true) {
+    await (0, import_promises.rm)(installMetadata, { force: true });
+    if (useBackup && await exists(metadataBackup)) {
+      await (0, import_promises.rename)(metadataBackup, installMetadata);
+      return;
+    }
+    await (0, import_promises.rm)(metadataBackup, { force: true });
+    if (previousMetadataText) {
+      await (0, import_promises.writeFile)(installMetadata, previousMetadataText, { mode: 384 });
+    }
+  }
+  async function discardTransactionBackups() {
+    await Promise.all([
+      (0, import_promises.rm)(runtimeBackup, { force: true }),
+      (0, import_promises.rm)(metadataBackup, { force: true })
+    ]);
+  }
+  async function startInstalledService(metadata) {
+    if (!metadata?.nodeExecutable) {
+      throw new Error("Codex Bridge runtime metadata is missing its Node.js executable.");
+    }
+    if (platform === "darwin") {
+      await installMac({
+        executable: metadata.nodeExecutable,
+        version: metadata.nodeVersion || "unknown",
+        source: metadata.nodeSource || "unknown"
+      }, metadata.version || "0.0.0");
+    }
+    if (platform === "win32") await ensureServiceUnlocked();
+  }
+  async function waitForAnyService() {
+    const deadline = Date.now() + serviceStartTimeoutMs;
+    do {
+      const probe = await probeBridge();
+      if (probe.serviceOnline) return probe;
+      await wait(100);
+    } while (Date.now() < deadline);
+    throw new Error("The restored Codex Bridge service did not become reachable.");
+  }
+  async function rollbackInterruptedUpdate() {
+    const hasRuntimeBackup = await exists(runtimeBackup);
+    const hasMetadataBackup = await exists(metadataBackup);
+    if (!hasRuntimeBackup && !hasMetadataBackup) return false;
+    await stopService();
+    if (hasRuntimeBackup) {
+      await (0, import_promises.rm)(bridgeRuntime, { force: true });
+      await (0, import_promises.rename)(runtimeBackup, bridgeRuntime);
+    }
+    if (hasMetadataBackup) {
+      await (0, import_promises.rm)(installMetadata, { force: true });
+      await (0, import_promises.rename)(metadataBackup, installMetadata);
+    }
+    resetAuthorizationCache();
+    const restoredMetadata = await readJson(installMetadata);
+    await startInstalledService(restoredMetadata);
+    await waitForAnyService();
+    return true;
+  }
+  async function waitForExpectedService(expectedRuntimeHash, expectedVersion = version, expectedNativeRuntimeHash = null) {
+    const deadline = Date.now() + serviceStartTimeoutMs;
+    let lastProbe = null;
+    do {
+      lastProbe = await probeBridge();
+      if (lastProbe.serviceOnline && lastProbe.serviceVersion === expectedVersion && lastProbe.serviceRuntimeHash === expectedRuntimeHash && (platform !== "win32" || lastProbe.serviceNativeRuntimeHash === expectedNativeRuntimeHash)) {
+        return lastProbe;
+      }
+      await wait(100);
+    } while (Date.now() < deadline);
+    const detail = lastProbe?.serviceOnline ? "the running process reported a different build" : "the restarted service did not become reachable";
+    throw new Error(`Codex Bridge ${expectedVersion} restart failed: ${detail}.`);
+  }
+  async function installUnlocked() {
+    if (!(platform === "win32" || platform === "darwin" && Number.isInteger(uid))) {
+      throw new Error("Codex Bridge installation is supported on Windows and macOS only.");
+    }
+    if (!await exists(bundledRuntime) || !await exists(bundledIcon) || platform === "win32" && !await verifiedNativeRuntimeHash(bundledNativeRuntime)) {
       throw new Error("The plugin does not contain the Codex Bridge installation resources.");
     }
     const nodeRuntime = await selectBridgeNodeRuntime({
@@ -3901,138 +4501,246 @@ function createBridgeInstaller({
       platform,
       execute
     });
+    const previousStatus = await status();
+    const previousRuntime = await (0, import_promises.readFile)(bridgeRuntime).catch(() => null);
+    const previousRuntimeHash = previousRuntime ? (0, import_node_crypto.createHash)("sha256").update(previousRuntime).digest("hex") : null;
+    const previousMetadataText = await (0, import_promises.readFile)(installMetadata, "utf8").catch(() => null);
+    const previousMetadata = await readJson(installMetadata);
+    const nativeRuntimeHash = platform === "win32" ? previousStatus.bundledNativeRuntimeHash : null;
+    const nativeRuntime = nativeRuntimeHash ? (0, import_node_path.join)(nativeRuntimesRoot, nativeRuntimeHash) : null;
+    let createdNativeRuntime = false;
+    if (nativeRuntimeHash && await verifiedNativeRuntimeHash(nativeRuntime) !== nativeRuntimeHash) {
+      const stagedNativeRuntime = (0, import_node_path.join)(appRoot, `.native-runtime.installing-${process.pid}`);
+      await (0, import_promises.rm)(stagedNativeRuntime, { recursive: true, force: true });
+      await (0, import_promises.cp)(bundledNativeRuntime, stagedNativeRuntime, { recursive: true });
+      if (await verifiedNativeRuntimeHash(stagedNativeRuntime) !== nativeRuntimeHash) {
+        await (0, import_promises.rm)(stagedNativeRuntime, { recursive: true, force: true });
+        throw new Error("The bundled native focus runtime could not be verified.");
+      }
+      await (0, import_promises.mkdir)(nativeRuntimesRoot, { recursive: true });
+      await (0, import_promises.rm)(nativeRuntime, { recursive: true, force: true });
+      await (0, import_promises.rename)(stagedNativeRuntime, nativeRuntime);
+      createdNativeRuntime = true;
+    }
+    const stagedRuntime = (0, import_node_path.join)(appRoot, `.bridge.mjs.installing-${process.pid}`);
     await (0, import_promises.mkdir)(appRoot, { recursive: true, mode: 448 });
-    await (0, import_promises.chmod)(appRoot, 448);
-    await (0, import_promises.mkdir)(userApplications, { recursive: true });
-    await (0, import_promises.mkdir)(agentsRoot, { recursive: true });
-    await (0, import_promises.copyFile)(bundledRuntime, bridgeRuntime);
-    await (0, import_promises.rm)(bridgeApp, { recursive: true, force: true });
-    await (0, import_promises.mkdir)(bridgeMacOS, { recursive: true });
-    await (0, import_promises.mkdir)(bridgeLicenses, { recursive: true });
-    for (const notice of ["LICENSE", "NOTICE.md", "THIRD_PARTY_NOTICES.md"]) {
-      const source = (0, import_node_path.join)(installerRoot, notice);
-      await (0, import_promises.copyFile)(source, (0, import_node_path.join)(bridgeLicenses, notice));
-      await (0, import_promises.copyFile)(source, (0, import_node_path.join)(appRoot, notice));
-    }
-    await buildIcon();
-    const info = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleDisplayName</key><string>Codex Bridge</string>
-  <key>CFBundleExecutable</key><string>Codex Bridge</string>
-  <key>CFBundleIconFile</key><string>CodexBridge</string>
-  <key>CFBundleIdentifier</key><string>io.opencodexmicro.bridge</string>
-  <key>CFBundleName</key><string>Codex Bridge</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${xml(version)}</string>
-  <key>CFBundleVersion</key><string>${xml(version)}</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>LSUIElement</key><true/>
-  <key>NSHighResolutionCapable</key><true/>
-</dict></plist>
-`;
-    await (0, import_promises.writeFile)((0, import_node_path.join)(bridgeContents, "Info.plist"), info);
-    const launcher = `#!/bin/zsh
-set -u
-unsetopt BG_NICE
-
-codex_binary="/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
-bridge_log="$HOME/Library/Logs/OpenCodexMicro-codex-bridge.log"
-
-if [[ ! -x "$codex_binary" ]]; then
-  /usr/bin/osascript -e 'display alert "Codex Bridge" message "Codex was not found at /Applications/ChatGPT.app." as critical'
-  exit 1
-fi
-
-if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then
-  /usr/bin/osascript -e 'tell application id "com.openai.codex" to quit'
-  for attempt in {1..80}; do
-    /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1 || break
-    /bin/sleep 0.1
-  done
-fi
-
-if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then
-  /usr/bin/osascript -e 'display alert "Codex Bridge" message "Codex did not quit, so bridge parameters could not be applied. Quit Codex and try again." as critical'
-  exit 1
-fi
-
-/usr/bin/nohup "$codex_binary" \\
-  --remote-debugging-address=127.0.0.1 \\
-  --remote-debugging-port=9222 \\
-  --remote-allow-origins=http://127.0.0.1:9222 \\
-  >>"$bridge_log" 2>&1 &
-
-for attempt in {1..300}; do
-  if /usr/bin/curl --noproxy '*' --silent --fail --max-time 0.2 \\
-    http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
-    exit 0
-  fi
-  if ! /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then
-    break
-  fi
-  /bin/sleep 0.1
-done
-
-/usr/bin/osascript -e 'display alert "Codex Bridge" message "Codex started, but the bridge endpoint is unavailable. Quit Codex and launch Codex Bridge again." as critical'
-exit 1
-`;
-    await (0, import_promises.writeFile)(bridgeExecutable, launcher, { mode: 493 });
-    await (0, import_promises.chmod)(bridgeExecutable, 493);
-    await execute("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", bridgeApp]);
-    const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>io.opencodexmicro.bridge</string>
-  <key>ProgramArguments</key><array>
-    <string>${xml(nodeRuntime.executable)}</string>
-    <string>${xml(bridgeRuntime)}</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Background</string>
-  <key>ThrottleInterval</key><integer>2</integer>
-  <key>StandardOutPath</key><string>${xml((0, import_node_path.join)(appRoot, "bridge.log"))}</string>
-  <key>StandardErrorPath</key><string>${xml((0, import_node_path.join)(appRoot, "bridge-error.log"))}</string>
-</dict></plist>
-`;
-    await (0, import_promises.writeFile)(bridgeAgent, plist, { mode: 420 });
-    await (0, import_promises.writeFile)(installMetadata, `${JSON.stringify({
-      version,
-      nodeExecutable: nodeRuntime.executable,
-      nodeVersion: nodeRuntime.version,
-      nodeSource: nodeRuntime.source,
-      installedAt: (/* @__PURE__ */ new Date()).toISOString()
-    }, null, 2)}
-`, { mode: 384 });
+    if (platform !== "win32") await (0, import_promises.chmod)(appRoot, 448);
+    await (0, import_promises.rm)(stagedRuntime, { force: true });
+    await (0, import_promises.copyFile)(bundledRuntime, stagedRuntime);
+    const runtimeHash = await fileSha256(stagedRuntime);
+    if (!runtimeHash) throw new Error("The bundled Codex Bridge runtime could not be verified.");
+    console.log(`[Codex Bridge] ${previousStatus.installed ? "Updating" : "Installing"} ${version}; stopping only the managed Bridge process.`);
     try {
-      await execute("/bin/launchctl", ["bootout", `gui/${uid}`, bridgeAgent]);
-    } catch {
+      await stopService();
+      await commitRuntime(stagedRuntime);
+      for (const notice of ["LICENSE", "NOTICE.md", "THIRD_PARTY_NOTICES.md"]) {
+        await (0, import_promises.copyFile)((0, import_node_path.join)(installerRoot, notice), (0, import_node_path.join)(appRoot, notice));
+      }
+      if (!await exists(tokenPath)) {
+        await (0, import_promises.writeFile)(tokenPath, `${(0, import_node_crypto.randomBytes)(32).toString("base64url")}
+`, { mode: 384 });
+      }
+      resetAuthorizationCache();
+      await commitMetadata(`${JSON.stringify({
+        version,
+        runtimeHash,
+        nativeRuntimeHash,
+        platform,
+        codexChannel,
+        nodeExecutable: nodeRuntime.executable,
+        nodeVersion: nodeRuntime.version,
+        nodeSource: nodeRuntime.source,
+        installedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }, null, 2)}
+`);
+      if (platform === "darwin") await installMac(nodeRuntime);
+      if (platform === "win32") await ensureServiceUnlocked();
+      await waitForExpectedService(runtimeHash, version, nativeRuntimeHash);
+      const installed = await status();
+      if (installed.needsUpdate) throw new Error("The restarted Codex Bridge did not match the bundled runtime.");
+      await discardTransactionBackups();
+      console.log(`[Codex Bridge] ${version} is installed and the restarted process reported the expected build.`);
+      return installed;
+    } catch (error) {
+      console.error(`[Codex Bridge] ${version} update failed; restoring the previous managed runtime.`);
+      let rollbackError = null;
+      try {
+        await stopService();
+        if (previousRuntime) {
+          await restorePreviousRuntime(previousRuntime);
+          const recoveryVersion = previousMetadata?.version || previousStatus.serviceVersion || "0.0.0";
+          const recoveryMetadataText = previousMetadata ? previousMetadataText : `${JSON.stringify({
+            version: recoveryVersion,
+            runtimeHash: previousRuntimeHash,
+            nativeRuntimeHash: previousMetadata?.nativeRuntimeHash || null,
+            platform,
+            codexChannel: previousStatus.codexChannel || codexChannel,
+            nodeExecutable: nodeRuntime.executable,
+            nodeVersion: nodeRuntime.version,
+            nodeSource: nodeRuntime.source,
+            installedAt: (/* @__PURE__ */ new Date()).toISOString(),
+            recovered: true
+          }, null, 2)}
+`;
+          await restorePreviousMetadata(recoveryMetadataText, Boolean(previousMetadata));
+          resetAuthorizationCache();
+          const restoredMetadata = await readJson(installMetadata);
+          if (restoredMetadata?.nodeExecutable) {
+            const previousNodeRuntime = {
+              executable: restoredMetadata.nodeExecutable,
+              version: restoredMetadata.nodeVersion || "unknown",
+              source: restoredMetadata.nodeSource || "unknown"
+            };
+            if (platform === "darwin") await installMac(previousNodeRuntime, restoredMetadata.version || "0.0.0");
+            if (platform === "win32") await ensureServiceUnlocked();
+          }
+        } else {
+          if (platform === "darwin") {
+            await (0, import_promises.rm)(bridgeAgent, { force: true });
+            await (0, import_promises.rm)(bridgeApp, { recursive: true, force: true });
+          }
+          await (0, import_promises.rm)(appRoot, { recursive: true, force: true });
+          resetAuthorizationCache();
+        }
+        if (createdNativeRuntime && nativeRuntime && previousMetadata?.nativeRuntimeHash !== nativeRuntimeHash) {
+          await (0, import_promises.rm)(nativeRuntime, { recursive: true, force: true });
+        }
+      } catch (rollbackFailure) {
+        rollbackError = rollbackFailure;
+      }
+      const rollbackDetail = rollbackError ? ` Rollback also failed: ${rollbackError.message}` : " Previous runtime restored.";
+      throw new Error(`Codex Bridge installation failed: ${error.message}${rollbackDetail}`);
+    } finally {
+      await (0, import_promises.rm)(stagedRuntime, { force: true });
     }
-    await execute("/bin/launchctl", ["bootstrap", `gui/${uid}`, bridgeAgent]);
+  }
+  async function install() {
+    return serializeLifecycle(installUnlocked);
+  }
+  async function ensureServiceUnlocked() {
+    if (platform !== "win32") return status();
+    const probe = await probeBridge();
+    if (probe.serviceOnline || Date.now() - lastWindowsServiceStart < 2e3) return { ...await status(), ...probe };
+    const metadata = await readJson(installMetadata);
+    const nativeRuntimeValid = !metadata?.nativeRuntimeHash || await verifiedNativeRuntimeHash((0, import_node_path.join)(nativeRuntimesRoot, metadata.nativeRuntimeHash)) === metadata.nativeRuntimeHash;
+    if (!metadata?.nodeExecutable || !await exists(bridgeRuntime) || !await exists(tokenPath) || !nativeRuntimeValid) {
+      throw new Error("Codex Bridge is not installed. Use Install / Repair first.");
+    }
+    const token = (await (0, import_promises.readFile)(tokenPath, "utf8")).trim();
+    const child = spawnProcess(metadata.nodeExecutable, [bridgeRuntime], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      env: {
+        ...process.env,
+        CODEX_BRIDGE_DATA_ROOT: appRoot,
+        CODEX_BRIDGE_TOKEN: token,
+        ...metadata.nativeRuntimeHash ? {
+          CODEX_BRIDGE_NATIVE_ROOT: (0, import_node_path.join)(nativeRuntimesRoot, metadata.nativeRuntimeHash),
+          CODEX_BRIDGE_NATIVE_HASH: metadata.nativeRuntimeHash
+        } : {}
+      }
+    });
+    if (Number.isInteger(child.pid) && child.pid > 0) {
+      await (0, import_promises.writeFile)(pidPath, `${child.pid}
+`, { mode: 384 });
+    } else {
+      await (0, import_promises.rm)(pidPath, { force: true });
+    }
+    child.unref?.();
+    lastWindowsServiceStart = Date.now();
     return status();
   }
+  async function ensureService() {
+    return serializeLifecycle(ensureServiceUnlocked);
+  }
+  async function ensureCurrent() {
+    return serializeLifecycle(async () => {
+      const current = await status();
+      if (!current.installationDetected) return current;
+      const interruptedUpdate = await exists(runtimeBackup) || await exists(metadataBackup);
+      if (interruptedUpdate && current.needsUpdate) {
+        await rollbackInterruptedUpdate();
+        console.log("[Codex Bridge] Interrupted update rolled back; retrying the bundled update in the same lifecycle operation.");
+        return installUnlocked();
+      }
+      if (!current.installed || current.needsUpdate) {
+        console.log(`[Codex Bridge] Installed or running build differs from bundled ${version}; starting automatic update.`);
+        return installUnlocked();
+      }
+      if (!current.serviceOnline) {
+        try {
+          await startInstalledService(await readJson(installMetadata));
+          await waitForExpectedService(
+            current.bundledRuntimeHash,
+            version,
+            current.bundledNativeRuntimeHash
+          );
+          const ready = await status();
+          await discardTransactionBackups();
+          return ready;
+        } catch (error) {
+          if (interruptedUpdate && await rollbackInterruptedUpdate()) {
+            console.log("[Codex Bridge] Interrupted restart rolled back; retrying the bundled update once.");
+            return installUnlocked();
+          }
+          throw error;
+        }
+      }
+      await discardTransactionBackups();
+      return current;
+    });
+  }
   async function launch() {
-    if (!await exists(bridgeExecutable, import_node_fs.constants.X_OK)) {
-      throw new Error("Codex Bridge.app is not installed.");
+    const current = await ensureCurrent();
+    if (!current.installed) throw new Error("Codex Bridge is not installed. Use Install / Repair first.");
+    if (platform === "darwin") {
+      await execute("/usr/bin/open", [bridgeApp]);
+      return status();
     }
-    await execute("/usr/bin/open", [bridgeApp]);
+    if (platform === "win32") {
+      await ensureService();
+      try {
+        await discoverDebugEndpoint({ platform, execute, fetchImpl });
+        const response = await fetchImpl(`${bridgeUrl}/focus`, {
+          method: "POST",
+          headers: await authorizationHeaders(),
+          signal: AbortSignal.timeout(1200)
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.ok !== true) {
+          throw new Error(payload?.error || "Codex focus request failed");
+        }
+      } catch (error) {
+        if (!/local debug bridge/.test(error.message)) throw error;
+        await launchWindowsCodex({ channel: codexChannel, execute, spawnProcess });
+      }
+      return status();
+    }
+    throw new Error(`Codex Bridge launch is not supported on ${platform}.`);
+  }
+  async function uninstallUnlocked() {
+    if (!(platform === "win32" || platform === "darwin" && Number.isInteger(uid))) {
+      throw new Error("Codex Bridge uninstallation is supported on Windows and macOS only.");
+    }
+    if (platform === "darwin") {
+      await stopService();
+      await (0, import_promises.rm)(bridgeAgent, { force: true });
+      await (0, import_promises.rm)(bridgeApp, { recursive: true, force: true });
+    } else {
+      try {
+        await stopService();
+      } catch {
+      }
+    }
+    await (0, import_promises.rm)(appRoot, { recursive: true, force: true });
+    resetAuthorizationCache();
     return status();
   }
   async function uninstall() {
-    if (platform !== "darwin" || !Number.isInteger(uid)) {
-      throw new Error("Codex Bridge uninstallation is supported on macOS only.");
-    }
-    try {
-      await execute("/bin/launchctl", ["bootout", `gui/${uid}`, bridgeAgent]);
-    } catch {
-    }
-    await (0, import_promises.rm)(bridgeAgent, { force: true });
-    await (0, import_promises.rm)(appRoot, { recursive: true, force: true });
-    await (0, import_promises.rm)(bridgeApp, { recursive: true, force: true });
-    return status();
+    return serializeLifecycle(uninstallUnlocked);
   }
-  return { status, install, launch, uninstall };
+  return { status, install, launch, uninstall, ensureService, ensureCurrent, authorizationHeaders };
 }
 
 // plugin/app.js
@@ -4048,6 +4756,47 @@ var bridgeSetup = createBridgeInstaller({
   bridgeUrl: BRIDGE_URL,
   version: MANIFEST.Version
 });
+var bridgeReconcilePromise = null;
+var bridgeReconcileRetryTimer = null;
+var bridgeReconcileFailures = 0;
+function scheduleBridgeReconcileRetry() {
+  if (bridgeReconcileRetryTimer || bridgeReconcileFailures >= 3) return;
+  const delay = Math.min(1e4, 2e3 * 2 ** bridgeReconcileFailures);
+  bridgeReconcileFailures += 1;
+  bridgeReconcileRetryTimer = setTimeout(() => {
+    bridgeReconcileRetryTimer = null;
+    void ensureBundledBridgeCurrent().catch((error) => {
+      console.error(`[Codex Micro] Bridge reconciliation retry failed: ${error.message}`);
+    });
+  }, delay);
+  bridgeReconcileRetryTimer.unref?.();
+}
+function ensureBundledBridgeCurrent() {
+  if (!bridgeReconcilePromise) {
+    const running = (async () => {
+      const before = await bridgeSetup.status();
+      if (!before.installationDetected) return before;
+      if (before.needsUpdate) {
+        console.log(`[Codex Micro] Updating the installed Bridge to bundled version ${before.bundledVersion}.`);
+      }
+      const after = await bridgeSetup.ensureCurrent();
+      if (before.needsUpdate) {
+        console.log(`[Codex Micro] Bridge ${after.installedVersion} restarted with the bundled runtime.`);
+      }
+      return after;
+    })();
+    bridgeReconcilePromise = running;
+    void running.then(() => {
+      bridgeReconcileFailures = 0;
+      if (bridgeReconcileRetryTimer) clearTimeout(bridgeReconcileRetryTimer);
+      bridgeReconcileRetryTimer = null;
+    }, () => {
+      if (bridgeReconcilePromise === running) bridgeReconcilePromise = null;
+      scheduleBridgeReconcileRetry();
+    });
+  }
+  return bridgeReconcilePromise;
+}
 var USAGE_BASE64 = (0, import_node_fs2.readFileSync)(
   (0, import_node_path2.resolve)(PLUGIN_ROOT, "assets/icons/usage-base.png")
 ).toString("base64");
@@ -4060,21 +4809,36 @@ var ACTION_LABELS = Object.freeze({
   fork: "FORK",
   steer: "STEER",
   mic: "MIC",
-  submit: "SUBMIT"
+  submit: "SUBMIT",
+  "model-sol-high": "SOL HIGH",
+  "model-luna-max": "LUNA MAX",
+  "model-sol-medium": "SOL MED"
 });
-var TASK_ICON_PATHS = Object.freeze({
-  idle: "assets/icons/task-idle.png",
-  working: "assets/icons/task-working.png",
-  complete: "assets/icons/task-complete.png",
-  attention: "assets/icons/task-attention.png",
-  error: "assets/icons/task-error.png"
+var DEBUG_MODEL_PRESETS = Object.freeze({
+  "model-sol-high": Object.freeze({ model: "gpt-5.6-sol", effort: "high" }),
+  "model-luna-max": Object.freeze({ model: "gpt-5.6-luna", effort: "max" }),
+  "model-sol-medium": Object.freeze({ model: "gpt-5.6-sol", effort: "medium" })
 });
+var TASK_STATUS_PALETTES = Object.freeze({
+  idle: { frame: "#475467", accent: "#98a2b3" },
+  working: { frame: "#0b5fcc", accent: "#2589f5" },
+  complete: { frame: "#087443", accent: "#28b875" },
+  attention: { frame: "#9a6700", accent: "#ed9f20" },
+  error: { frame: "#b42318", accent: "#e34d62" }
+});
+var TASK_COMPLETE_FLASH_PALETTE = Object.freeze({ frame: "#12b76a", accent: "#6ce9a6" });
+var TASK_TITLE_MAX_UNITS = 10;
+var TASK_TITLE_MAX_LINES = 4;
+var TASK_TITLE_SEGMENTER = typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
 var socket;
 var reconnectTimer;
 var pollTimer;
 var pollInFlight = false;
 var latestState = null;
 var setupOperation = null;
+var completeFlashOn = false;
+var shortcutInvocationSequence = 0;
+var forwardedTraceEvents = /* @__PURE__ */ new Map();
 function contextOf(message) {
   return String(message.actionid || `${message.uuid}___${message.key}`);
 }
@@ -4200,17 +4964,188 @@ async function handleBridgeSetupMessage(message) {
   }
   await sendBridgeSetupStatus(message, { result, error: failure });
 }
-function taskIconPath(status) {
+function taskStatusKind(status) {
   const value = String(status || "").toLowerCase();
-  if (["working", "thinking", "running", "in_progress"].includes(value)) return TASK_ICON_PATHS.working;
-  if (["unread", "complete", "completed", "done", "success"].includes(value)) return TASK_ICON_PATHS.complete;
-  if (["attention", "notification", "input", "approval", "waiting_input", "needs_input"].includes(value)) return TASK_ICON_PATHS.attention;
-  if (["error", "failed", "failure"].includes(value)) return TASK_ICON_PATHS.error;
-  return TASK_ICON_PATHS.idle;
+  if (["working", "thinking", "running", "in_progress"].includes(value)) return "working";
+  if (["unread", "complete", "completed", "done", "success"].includes(value)) return "complete";
+  if (["attention", "notification", "input", "approval", "waiting_input", "needs_input"].includes(value)) return "attention";
+  if (["error", "failed", "failure"].includes(value)) return "error";
+  return "idle";
 }
-function shortTitle(value) {
-  const title = String(value || "Untitled").replace(/\s+/g, " ").trim();
-  return title.length > 18 ? `${title.slice(0, 17)}\u2026` : title;
+function debugShortcut(uuid) {
+  const slot = taskSlot(uuid);
+  if (slot !== null) {
+    return Object.freeze({ name: `task-${slot + 1}`, kind: "task", target: `slot-${slot + 1}` });
+  }
+  const action = actionName(uuid);
+  const preset = DEBUG_MODEL_PRESETS[action];
+  if (!preset) return null;
+  return Object.freeze({
+    name: action,
+    kind: "model-preset",
+    target: `model-${preset.model} effort-${preset.effort}`
+  });
+}
+function shortcutErrorCategory(error) {
+  const name = String(error?.name || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  if (name.includes("timeout") || message.includes("timeout")) return "bridge-timeout";
+  if (message.includes("is empty")) return "empty-task-slot";
+  if (message.includes("fetch failed") || message.includes("econnrefused")) return "bridge-unavailable";
+  if (message.includes("authorization") || message.includes("unauthorized") || message.includes("forbidden")) {
+    return "bridge-rejected";
+  }
+  return "bridge-error";
+}
+function logShortcut(instance, shortcut, level, event, fields = []) {
+  const message = `[Codex Micro] shortcut event=${event} name=${shortcut.name} kind=${shortcut.kind} ${fields.join(" ")}`.trim();
+  if (level === "error") console.error(message);
+  else if (level === "warn") console.warn(message);
+  else console.log(message);
+  send({
+    cmd: "logMessage",
+    uuid: PLUGIN_UUID,
+    actionid: "",
+    key: "",
+    level,
+    message
+  });
+}
+function safeDiagnosticFields(event) {
+  const allowed = /* @__PURE__ */ new Set([
+    "action",
+    "attempts",
+    "background",
+    "category",
+    "channel",
+    "complete",
+    "connection",
+    "currentEffort",
+    "durationMs",
+    "effortMatched",
+    "modelMatched",
+    "outcome",
+    "focusOk",
+    "path",
+    "phase",
+    "platform",
+    "reused",
+    "route",
+    "rowCount",
+    "slot",
+    "stage",
+    "targetEffort"
+  ]);
+  return Object.entries(event || {}).flatMap(([key, value]) => {
+    if (!allowed.has(key)) return [];
+    if (typeof value === "boolean" || typeof value === "number" && Number.isFinite(value)) {
+      return [`${key}=${value}`];
+    }
+    const normalized = String(value || "");
+    return /^[a-zA-Z0-9_.:-]{1,80}$/.test(normalized) ? [`${key}=${normalized}`] : [];
+  });
+}
+async function forwardBridgeDiagnostics(instance, shortcut, traceId) {
+  try {
+    if (forwardedTraceEvents.get(traceId) === Infinity) return true;
+    const payload = await bridgeRequest("/diagnostics/trace", "POST", traceId);
+    const diagnostics = payload?.diagnostics;
+    if (!diagnostics || diagnostics.traceId !== traceId || !Array.isArray(diagnostics.events)) return false;
+    const seen = forwardedTraceEvents.get(traceId) || 0;
+    for (const event of diagnostics.events.slice(seen, 160)) {
+      const eventName = String(event?.event || "");
+      if (!/^[a-z0-9.-]{1,80}$/.test(eventName)) continue;
+      logShortcut(instance, shortcut, event.outcome === "failed" ? "error" : "debug", "bridge-trace", [
+        `trace=${traceId}`,
+        `bridgeEvent=${eventName}`,
+        `offsetMs=${Math.max(0, Math.round(Number(event.offsetMs) || 0))}`,
+        ...safeDiagnosticFields(event)
+      ]);
+    }
+    forwardedTraceEvents.set(traceId, diagnostics.events.length);
+    if (diagnostics.complete) forwardedTraceEvents.set(traceId, Infinity);
+    return Boolean(diagnostics.complete);
+  } catch {
+    return false;
+  }
+}
+function collectBridgeDiagnostics(instance, shortcut, traceId) {
+  const delays = [0, 400, 1200, 2600, 5200];
+  for (const delay of delays) {
+    const timer = setTimeout(() => void forwardBridgeDiagnostics(instance, shortcut, traceId), delay);
+    timer.unref?.();
+  }
+  const cleanup = setTimeout(() => forwardedTraceEvents.delete(traceId), 1e4);
+  cleanup.unref?.();
+}
+function titleGraphemes(value) {
+  const title = String(value || "Untitled").replace(/\s+/g, " ").trim() || "Untitled";
+  if (!TASK_TITLE_SEGMENTER) return Array.from(title);
+  return Array.from(TASK_TITLE_SEGMENTER.segment(title), (item) => item.segment);
+}
+function graphemeUnits(value) {
+  if (/^\s$/u.test(value)) return 0.55;
+  if (new RegExp("^\\p{Mark}+$", "u").test(value)) return 0;
+  if (new RegExp("\\p{Extended_Pictographic}", "u").test(value) || /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7af\uf900-\ufaff\ufe10-\ufe6f\uff01-\uff60\uffe0-\uffe6]/u.test(value)) return 2;
+  if (/^[ilI1.,'`:;|!\[\](){}]$/u.test(value)) return 0.55;
+  if (/^[mwMW@#%&]$/u.test(value)) return 1.35;
+  return 1;
+}
+function lineUnits(values) {
+  return values.reduce((total, value) => total + graphemeUnits(value), 0);
+}
+function trimLine(values) {
+  const result = [...values];
+  while (result[0] === " ") result.shift();
+  while (result.at(-1) === " ") result.pop();
+  return result;
+}
+function taskTitleLines(value) {
+  let graphemes = titleGraphemes(value);
+  const maxTotalUnits = TASK_TITLE_MAX_UNITS * TASK_TITLE_MAX_LINES;
+  if (lineUnits(graphemes) > maxTotalUnits) {
+    const ellipsisUnits = graphemeUnits("\u2026");
+    const clipped = [];
+    let used = 0;
+    for (const grapheme of graphemes) {
+      const units = graphemeUnits(grapheme);
+      if (used + units + ellipsisUnits > maxTotalUnits) break;
+      clipped.push(grapheme);
+      used += units;
+    }
+    graphemes = trimLine(clipped);
+    graphemes.push("\u2026");
+  }
+  const lines = [];
+  while (graphemes.length && lines.length < TASK_TITLE_MAX_LINES) {
+    const line = [];
+    while (graphemes.length && lineUnits([...line, graphemes[0]]) <= TASK_TITLE_MAX_UNITS) {
+      line.push(graphemes.shift());
+    }
+    if (!line.length) line.push(graphemes.shift());
+    const trimmed = trimLine(line);
+    if (trimmed.length) lines.push(trimmed.join(""));
+    while (graphemes[0] === " ") graphemes.shift();
+  }
+  if (graphemes.length && lines.length === TASK_TITLE_MAX_LINES && !lines.at(-1).endsWith("\u2026")) {
+    const lastLine = titleGraphemes(lines.at(-1));
+    while (lastLine.length && lineUnits([...lastLine, "\u2026"]) > TASK_TITLE_MAX_UNITS) lastLine.pop();
+    lines[lines.length - 1] = `${trimLine(lastLine).join("")}\u2026`;
+  }
+  return lines;
+}
+function taskIconData(kind, flashOn = false) {
+  const palette = kind === "complete" && flashOn ? TASK_COMPLETE_FLASH_PALETTE : TASK_STATUS_PALETTES[kind];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="196" height="196" viewBox="0 0 196 196">
+    <rect width="196" height="196" rx="30" fill="#07111f"/>
+    <rect x="5" y="5" width="186" height="186" rx="27" fill="${palette.frame}"/>
+    <rect data-role="title-surface" x="12" y="12" width="172" height="172" rx="22" fill="#0b1220" fill-opacity=".94"/>
+    <rect x="12" y="12" width="172" height="9" rx="4.5" fill="${palette.accent}"/>
+    <circle cx="170" cy="33" r="5" fill="${palette.accent}"/>
+    <circle cx="154" cy="33" r="3" fill="${palette.accent}" fill-opacity=".35"/>
+    <path d="M28 168H168" stroke="${palette.accent}" stroke-opacity=".45" stroke-width="3" stroke-linecap="round"/>
+  </svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 function setDisplay(instance, state, text) {
   const digest = `${state}:${text}`;
@@ -4231,8 +5166,12 @@ function setDisplay(instance, state, text) {
     }
   });
 }
-function setTaskDisplay(instance, path, text) {
-  const digest = `path:${path}:${text}`;
+function setTaskDisplay(instance, status, title) {
+  const kind = taskStatusKind(status);
+  const lines = taskTitleLines(title);
+  const displayTitle = lines.join("\n");
+  const flashOn = kind === "complete" && completeFlashOn;
+  const digest = `task:${kind}:${flashOn}:${displayTitle}`;
   if (!instance.active || instance.lastDisplay === digest) return;
   instance.lastDisplay = digest;
   send({
@@ -4242,10 +5181,11 @@ function setTaskDisplay(instance, path, text) {
         uuid: instance.uuid,
         actionid: instance.actionid,
         key: instance.key,
-        type: 2,
-        path,
+        type: 1,
+        data: taskIconData(kind, flashOn),
         showtext: true,
-        textdata: text
+        textData: displayTitle,
+        textdata: displayTitle
       }]
     }
   });
@@ -4276,7 +5216,7 @@ function renderInstance(instance) {
     const action = actionName(instance.uuid);
     if (!latestState?.connected) {
       if (action === "navigate") {
-        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Bridge Offline");
+        setTaskDisplay(instance, "idle", "Bridge Offline");
       } else {
         setDisplay(instance, 0, "Bridge Offline");
       }
@@ -4289,32 +5229,35 @@ function renderInstance(instance) {
     if (action === "navigate") {
       const task2 = latestState.slots?.[0];
       if (!task2?.threadKey) {
-        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Latest Task");
+        setTaskDisplay(instance, "idle", "Latest Task");
         return;
       }
-      setTaskDisplay(instance, taskIconPath(task2.status), shortTitle(task2.title));
+      setTaskDisplay(instance, task2.status, task2.title);
       return;
     }
     setDisplay(instance, 0, ACTION_LABELS[action] || "CODEX");
     return;
   }
   if (!latestState?.connected) {
-    setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Bridge Offline");
+    setTaskDisplay(instance, "idle", "Bridge Offline");
     return;
   }
   const task = latestState.slots?.[slot];
   if (!task?.threadKey) {
-    setTaskDisplay(instance, TASK_ICON_PATHS.idle, `Task ${slot + 1}`);
+    setTaskDisplay(instance, "idle", `Task ${slot + 1}`);
     return;
   }
-  setTaskDisplay(instance, taskIconPath(task.status), shortTitle(task.title));
+  setTaskDisplay(instance, task.status, task.title);
 }
 function renderAll() {
   for (const instance of instances.values()) renderInstance(instance);
 }
-async function bridgeRequest(path, method = "GET") {
+async function bridgeRequest(path, method = "GET", traceId = null) {
+  const headers = { ...await bridgeSetup.authorizationHeaders() };
+  if (traceId) headers["X-Codex-Trace-Id"] = traceId;
   const response = await fetch(`${BRIDGE_URL}${path}`, {
     method,
+    headers,
     signal: AbortSignal.timeout(1200)
   });
   const payload = await response.json();
@@ -4323,10 +5266,10 @@ async function bridgeRequest(path, method = "GET") {
   }
   return payload;
 }
-async function openTaskSlot(slot) {
+async function openTaskSlot(slot, traceId) {
   const task = latestState?.slots?.[slot];
   if (!task?.threadKey) throw new Error(`Codex task slot ${slot + 1} is empty`);
-  await bridgeRequest(`/thread/${encodeURIComponent(task.threadKey)}/click?slot=${slot}`, "POST");
+  await bridgeRequest(`/thread/${encodeURIComponent(task.threadKey)}/click?slot=${slot}`, "POST", traceId);
 }
 async function pollBridge() {
   if (pollInFlight) return;
@@ -4337,15 +5280,52 @@ async function pollBridge() {
     latestState = { connected: false, error: error.message, slots: [] };
   } finally {
     pollInFlight = false;
+    completeFlashOn = !completeFlashOn;
     renderAll();
   }
 }
 async function invoke(instance, pressed) {
   const slot = taskSlot(instance.uuid);
+  const shortcut = debugShortcut(instance.uuid);
+  const invocation = shortcut ? ++shortcutInvocationSequence : null;
+  const traceId = shortcut ? (0, import_node_crypto2.randomUUID)() : null;
+  const phase = pressed ? "down" : "up";
+  const startedAt = Date.now();
+  if (shortcut) {
+    logShortcut(instance, shortcut, "debug", "received", [
+      `invocation=${invocation}`,
+      `trace=${traceId}`,
+      `phase=${phase}`,
+      `target=${shortcut.target}`
+    ]);
+  }
   try {
     if (slot !== null) {
-      if (!pressed) return;
-      await openTaskSlot(slot);
+      if (!pressed) {
+        if (shortcut) {
+          logShortcut(instance, shortcut, "debug", "ignored", [
+            `invocation=${invocation}`,
+            `phase=${phase}`,
+            "reason=keydown-only"
+          ]);
+        }
+        return;
+      }
+      if (shortcut) {
+        logShortcut(instance, shortcut, "debug", "dispatching", [
+          `invocation=${invocation}`,
+          `phase=${phase}`,
+          "transport=bridge-http"
+        ]);
+      }
+      await openTaskSlot(slot, traceId);
+      if (shortcut) {
+        logShortcut(instance, shortcut, "info", "succeeded", [
+          `invocation=${invocation}`,
+          `phase=${phase}`,
+          `durationMs=${Date.now() - startedAt}`
+        ]);
+      }
       return;
     }
     const action = actionName(instance.uuid);
@@ -4354,10 +5334,42 @@ async function invoke(instance, pressed) {
       if (pressed) await bridgeRequest("/focus", "POST");
       return;
     }
-    await bridgeRequest(`/action/${action}/${pressed ? "down" : "up"}`, "POST");
+    if (shortcut) {
+      logShortcut(instance, shortcut, "debug", "dispatching", [
+        `invocation=${invocation}`,
+        `phase=${phase}`,
+        "transport=bridge-http"
+      ]);
+    }
+    await bridgeRequest(`/action/${action}/${pressed ? "down" : "up"}`, "POST", traceId);
+    if (shortcut) {
+      logShortcut(instance, shortcut, "info", "succeeded", [
+        `invocation=${invocation}`,
+        `phase=${phase}`,
+        `durationMs=${Date.now() - startedAt}`
+      ]);
+    }
   } catch (error) {
-    send({ cmd: "logMessage", uuid: instance.uuid, actionid: instance.actionid, key: instance.key, level: "error", message: error.message });
+    if (shortcut) {
+      logShortcut(instance, shortcut, "error", "failed", [
+        `invocation=${invocation}`,
+        `phase=${phase}`,
+        `durationMs=${Date.now() - startedAt}`,
+        `category=${shortcutErrorCategory(error)}`
+      ]);
+    } else {
+      send({
+        cmd: "logMessage",
+        uuid: instance.uuid,
+        actionid: instance.actionid,
+        key: instance.key,
+        level: "error",
+        message: `[Codex Micro] action failed category=${shortcutErrorCategory(error)}`
+      });
+    }
     send({ cmd: "showAlert", uuid: instance.uuid, actionid: instance.actionid, key: instance.key });
+  } finally {
+    if (shortcut && pressed) collectBridgeDiagnostics(instance, shortcut, traceId);
   }
 }
 async function invokeEncoder(instance, message) {
@@ -4449,6 +5461,11 @@ function connect() {
   socket = new wrapper_default(HOST_URL);
   socket.on("open", () => {
     send({ code: 0, cmd: "connected", uuid: PLUGIN_UUID });
+    if (process.env.CODEX_BRIDGE_AUTOSTART !== "0") {
+      void ensureBundledBridgeCurrent().catch((error) => {
+        console.error(`[Codex Micro] Automatic Bridge reconciliation failed: ${error.message}`);
+      });
+    }
     clearInterval(pollTimer);
     pollTimer = setInterval(() => void pollBridge(), 500);
     pollTimer.unref();

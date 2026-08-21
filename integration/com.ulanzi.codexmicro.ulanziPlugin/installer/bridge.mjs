@@ -11,8 +11,15 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   if (typeof require !== "undefined") return require.apply(this, arguments);
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __commonJS = (cb, mod) => function __require2() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
@@ -30,6 +37,208 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+
+// ../../src/bridge/windows-focus.mjs
+var windows_focus_exports = {};
+__export(windows_focus_exports, {
+  activateWindowsProcess: () => activateWindowsProcess,
+  clearWindowsFocusCache: () => clearWindowsFocusCache,
+  initializeWindowsFocusRuntime: () => initializeWindowsFocusRuntime
+});
+import { createRequire } from "node:module";
+import { join } from "node:path";
+function sameWindow(left, right) {
+  return left != null && right != null && String(left) === String(right);
+}
+async function loadKoffi() {
+  const nativeRoot = process.env.CODEX_BRIDGE_NATIVE_ROOT;
+  if (nativeRoot) {
+    return createRequire(join(nativeRoot, "bridge-native.cjs"))(
+      join(nativeRoot, "node_modules", "koffi", "index.cjs")
+    );
+  }
+  return (await import("koffi")).default;
+}
+async function createWindowsApi() {
+  if (process.platform !== "win32") {
+    throw new Error("Native Codex window activation is available on Windows only");
+  }
+  const koffi = await loadKoffi();
+  const user32 = koffi.load("user32.dll");
+  const kernel32 = koffi.load("kernel32.dll");
+  const HANDLE = koffi.pointer("HANDLE", koffi.opaque());
+  koffi.alias("HWND", HANDLE);
+  const FLASHWINFO = koffi.struct("FLASHWINFO", {
+    cbSize: "uint32_t",
+    hwnd: "HWND",
+    dwFlags: "uint32_t",
+    uCount: "uint32_t",
+    dwTimeout: "uint32_t"
+  });
+  const findWindowEx = user32.func(
+    "HWND __stdcall FindWindowExW(HWND parent, HWND childAfter, const char16_t *className, const char16_t *windowName)"
+  );
+  const getWindowThreadProcessId = user32.func(
+    "uint32_t __stdcall GetWindowThreadProcessId(HWND hwnd, _Out_ uint32_t *processId)"
+  );
+  const isWindow = user32.func("bool __stdcall IsWindow(HWND hwnd)");
+  const isWindowVisible = user32.func("bool __stdcall IsWindowVisible(HWND hwnd)");
+  const getWindowTextLength = user32.func("int __stdcall GetWindowTextLengthW(HWND hwnd)");
+  const isZoomed = user32.func("bool __stdcall IsZoomed(HWND hwnd)");
+  const showWindowAsync = user32.func("bool __stdcall ShowWindowAsync(HWND hwnd, int command)");
+  const setForegroundWindow = user32.func("bool __stdcall SetForegroundWindow(HWND hwnd)");
+  const getForegroundWindow = user32.func("HWND __stdcall GetForegroundWindow()");
+  const bringWindowToTop = user32.func("bool __stdcall BringWindowToTop(HWND hwnd)");
+  const setFocus = user32.func("HWND __stdcall SetFocus(HWND hwnd)");
+  const attachThreadInput = user32.func(
+    "bool __stdcall AttachThreadInput(uint32_t sourceThreadId, uint32_t targetThreadId, bool attach)"
+  );
+  const getCurrentThreadId = kernel32.func("uint32_t __stdcall GetCurrentThreadId()");
+  const flashWindowEx = user32.func("bool __stdcall FlashWindowEx(_Inout_ FLASHWINFO *info)");
+  function identityForWindow(hwnd) {
+    const processId = [0];
+    const threadId = getWindowThreadProcessId(hwnd, processId);
+    return {
+      processId: Number(processId[0]) || 0,
+      threadId: Number(threadId) || 0
+    };
+  }
+  return {
+    isWindow,
+    isZoomed,
+    getForegroundWindow,
+    processIdForWindow(hwnd) {
+      return identityForWindow(hwnd).processId;
+    },
+    findWindowForProcess(processId) {
+      let previous = null;
+      for (let index = 0; index < 4096; index += 1) {
+        const hwnd = findWindowEx(null, previous, null, null);
+        if (hwnd == null) return null;
+        previous = hwnd;
+        if (identityForWindow(hwnd).processId === processId && isWindow(hwnd) && isWindowVisible(hwnd) && getWindowTextLength(hwnd) > 0) {
+          return hwnd;
+        }
+      }
+      throw new Error("Windows window enumeration exceeded its safety bound");
+    },
+    maximize(hwnd) {
+      return showWindowAsync(hwnd, SW_MAXIMIZE);
+    },
+    foreground(hwnd) {
+      return setForegroundWindow(hwnd);
+    },
+    forceForeground(hwnd) {
+      const currentThreadId = Number(getCurrentThreadId()) || 0;
+      const foregroundWindow = getForegroundWindow();
+      const foregroundThreadId = foregroundWindow == null ? 0 : identityForWindow(foregroundWindow).threadId;
+      const targetThreadId = identityForWindow(hwnd).threadId;
+      const attached = [];
+      const attach = (threadId) => {
+        if (threadId > 0 && threadId !== currentThreadId && !attached.includes(threadId) && attachThreadInput(currentThreadId, threadId, true)) {
+          attached.push(threadId);
+        }
+      };
+      try {
+        attach(foregroundThreadId);
+        attach(targetThreadId);
+        bringWindowToTop(hwnd);
+        setForegroundWindow(hwnd);
+        setFocus(hwnd);
+      } finally {
+        for (const threadId of attached.reverse()) {
+          attachThreadInput(currentThreadId, threadId, false);
+        }
+      }
+    },
+    flash(hwnd) {
+      const info = {
+        cbSize: koffi.sizeof(FLASHWINFO),
+        hwnd,
+        dwFlags: FLASHW_TRAY | FLASHW_TIMERNOFG,
+        uCount: 3,
+        dwTimeout: 0
+      };
+      flashWindowEx(info);
+    }
+  };
+}
+async function defaultWindowsApi() {
+  if (!windowsApiPromise) windowsApiPromise = createWindowsApi();
+  try {
+    return await windowsApiPromise;
+  } catch (error) {
+    windowsApiPromise = null;
+    throw error;
+  }
+}
+async function initializeWindowsFocusRuntime() {
+  await defaultWindowsApi();
+  return true;
+}
+function validCachedWindow(api, processId) {
+  const hwnd = cachedWindows.get(processId);
+  if (hwnd != null && api.isWindow(hwnd) && api.processIdForWindow(hwnd) === processId) {
+    return hwnd;
+  }
+  cachedWindows.delete(processId);
+  return null;
+}
+async function activateWindowsProcess(processId, {
+  api,
+  wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+} = {}) {
+  if (!Number.isInteger(processId) || processId <= 0) {
+    throw new Error("The connected Codex process identity is unavailable");
+  }
+  const native = api ?? await defaultWindowsApi();
+  const hwnd = validCachedWindow(native, processId) ?? native.findWindowForProcess(processId);
+  if (hwnd == null) throw new Error("The connected Codex Desktop window was not found");
+  cachedWindows.set(processId, hwnd);
+  const alreadyForeground = sameWindow(native.getForegroundWindow(), hwnd);
+  const alreadyMaximized = Boolean(native.isZoomed(hwnd));
+  if (!alreadyMaximized && !native.maximize(hwnd)) {
+    throw new Error("Windows did not accept the Codex maximize request");
+  }
+  if (!alreadyForeground) native.foreground(hwnd);
+  if (!alreadyMaximized) await wait(20);
+  let foreground = sameWindow(native.getForegroundWindow(), hwnd);
+  if (!foreground && !alreadyForeground) {
+    await wait(25);
+    foreground = sameWindow(native.getForegroundWindow(), hwnd);
+  }
+  if (!foreground && !alreadyForeground && typeof native.forceForeground === "function") {
+    native.forceForeground(hwnd);
+    await wait(25);
+    foreground = sameWindow(native.getForegroundWindow(), hwnd);
+  }
+  if (!foreground) {
+    try {
+      native.flash(hwnd);
+    } catch {
+    }
+    throw new Error("Windows did not allow Codex Desktop to receive focus");
+  }
+  return {
+    processId,
+    alreadyForeground,
+    alreadyMaximized,
+    maximized: alreadyMaximized || Boolean(native.isZoomed(hwnd))
+  };
+}
+function clearWindowsFocusCache() {
+  cachedWindows.clear();
+}
+var SW_MAXIMIZE, FLASHW_TRAY, FLASHW_TIMERNOFG, cachedWindows, windowsApiPromise;
+var init_windows_focus = __esm({
+  "../../src/bridge/windows-focus.mjs"() {
+    SW_MAXIMIZE = 3;
+    FLASHW_TRAY = 2;
+    FLASHW_TIMERNOFG = 12;
+    cachedWindows = /* @__PURE__ */ new Map();
+    windowsApiPromise = null;
+  }
+});
 
 // ../../node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
@@ -308,7 +517,7 @@ var require_permessage_deflate = __commonJS({
       acceptAsServer(offers) {
         const opts = this._options;
         const accepted = offers.find((params) => {
-          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && (typeof params.client_max_window_bits === "number" ? opts.clientMaxWindowBits > params.client_max_window_bits : !params.client_max_window_bits)) {
+          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && !params.client_max_window_bits) {
             return false;
           }
           return true;
@@ -2270,7 +2479,7 @@ var require_websocket = __commonJS({
     var http = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes, createHash } = __require("crypto");
+    var { randomBytes, createHash: createHash2 } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
@@ -2938,7 +3147,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -3307,7 +3516,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter = __require("events");
     var http = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash } = __require("crypto");
+    var { createHash: createHash2 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -3614,7 +3823,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -3703,12 +3912,190 @@ var require_websocket_server = __commonJS({
 
 // ../../src/bridge/server.mjs
 import { createServer } from "node:http";
-import { execFile as execFile2 } from "node:child_process";
-import { promisify as promisify2 } from "node:util";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { homedir } from "node:os";
+import { join as join2 } from "node:path";
 
-// ../../src/bridge/codex-cdp.mjs
-import { execFile } from "node:child_process";
+// ../../src/bridge/platform.mjs
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+var execFileAsync = promisify(execFile);
+var CDP_HOST = "127.0.0.1";
+var DEFAULT_CDP_PORT = 9222;
+var CDP_ARGUMENTS = Object.freeze([
+  `--remote-debugging-address=${CDP_HOST}`,
+  `--remote-debugging-port=${DEFAULT_CDP_PORT}`,
+  `--remote-allow-origins=http://${CDP_HOST}:${DEFAULT_CDP_PORT}`
+]);
+var WINDOWS_PROCESS_COMMAND = String.raw`
+$ErrorActionPreference = 'Stop'
+$listenerOwners = @{}
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
+  ForEach-Object { $listenerOwners[('{0}:{1}' -f $_.LocalPort, $_.OwningProcess)] = $true }
+$rows = Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -like '*--remote-debugging-address=127.0.0.1*' } |
+  ForEach-Object {
+    $portMatch = [regex]::Match([string]$_.CommandLine, '--remote-debugging-port(?:=|\s+)(\d+)')
+    $debugPort = if ($portMatch.Success) { [int]$portMatch.Groups[1].Value } else { 0 }
+    [pscustomobject]@{
+      processId = [int]$_.ProcessId
+      executable = [string]$_.ExecutablePath
+      commandLine = [string]$_.CommandLine
+      ownsDebugPort = $debugPort -gt 0 -and $listenerOwners.ContainsKey(('{0}:{1}' -f $debugPort, $_.ProcessId))
+    }
+  }
+@($rows) | ConvertTo-Json -Compress
+`;
+var WINDOWS_PACKAGE_COMMAND = String.raw`
+$ErrorActionPreference = 'Stop'
+$rows = foreach ($name in @('OpenAI.Codex', 'OpenAI.CodexBeta')) {
+  $package = Get-AppxPackage -Name $name | Sort-Object Version -Descending | Select-Object -First 1
+  if (-not $package) { continue }
+  $app = Join-Path $package.InstallLocation 'app'
+  $names = if ($name -eq 'OpenAI.CodexBeta') {
+    @('ChatGPT (Beta).exe', 'Codex (Beta).exe', 'ChatGPT.exe')
+  } else {
+    @('ChatGPT.exe', 'Codex.exe')
+  }
+  foreach ($file in $names) {
+    $candidate = Join-Path $app $file
+    if (Test-Path -LiteralPath $candidate) {
+      [pscustomobject]@{
+        channel = if ($name -eq 'OpenAI.CodexBeta') { 'beta' } else { 'stable' }
+        packageName = $name
+        packageFullName = $package.PackageFullName
+        executable = $candidate
+      }
+      break
+    }
+  }
+}
+@($rows) | ConvertTo-Json -Compress
+`;
+var WINDOWS_STOP_EXECUTABLE_COMMAND = String.raw`
+$ErrorActionPreference = 'Stop'
+$target = $env:CODEX_BRIDGE_TARGET_EXECUTABLE
+$processes = @(Get-CimInstance Win32_Process |
+  Where-Object {
+    $_.ExecutablePath -eq $target -and
+    $_.CommandLine -notlike '*--type=*' -and
+    $_.CommandLine -notlike '*crashpad-handler*'
+  })
+foreach ($process in $processes) { Stop-Process -Id $process.ProcessId -ErrorAction Stop }
+foreach ($process in $processes) { Wait-Process -Id $process.ProcessId -Timeout 8 -ErrorAction SilentlyContinue }
+`;
+function powershellArgs(command, extra = []) {
+  return [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-WindowStyle",
+    "Hidden",
+    "-Command",
+    command,
+    ...extra
+  ];
+}
+function powershellOptions(options = {}) {
+  return { ...options, windowsHide: true };
+}
+function processChannel(executable, commandLine) {
+  const identity = `${executable || ""} ${commandLine || ""}`.toLowerCase();
+  return /codexbeta|chatgpt\s*\(beta\)|codex\s*\(beta\)/.test(identity) ? "beta" : "stable";
+}
+function debugProcessesFromCommandLines(text) {
+  const source = String(text || "").trim();
+  let rows = [];
+  if (source.startsWith("[") || source.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(source);
+      rows = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+    }
+  }
+  if (rows.length === 0) {
+    rows = source.split(/\r?\n/).filter(Boolean).map((commandLine) => ({ commandLine }));
+  }
+  return rows.flatMap((row) => {
+    const commandLine = String(row?.commandLine || "");
+    if (!commandLine.includes("--remote-debugging-address=127.0.0.1")) return [];
+    if (commandLine.includes("--type=")) return [];
+    const port = Number(commandLine.match(/--remote-debugging-port(?:=|\s+)(\d+)/)?.[1]);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) return [];
+    const processId = Number(row?.processId);
+    const executable = typeof row?.executable === "string" ? row.executable : null;
+    return [{
+      port,
+      processId: Number.isInteger(processId) && processId > 0 ? processId : null,
+      executable,
+      channel: processChannel(executable, commandLine),
+      ownsDebugPort: row?.ownsDebugPort === true
+    }];
+  });
+}
+async function fetchJson(url, timeout = 1200, fetchImpl = fetch) {
+  const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeout) });
+  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
+  return response.json();
+}
+async function processCommandLines(platform, execute) {
+  if (platform === "win32") {
+    return (await execute(
+      "powershell.exe",
+      powershellArgs(WINDOWS_PROCESS_COMMAND),
+      powershellOptions({ timeout: 4e3 })
+    )).stdout;
+  }
+  if (platform === "darwin") {
+    return (await execute("/bin/ps", ["-axo", "command="], { timeout: 4e3 })).stdout;
+  }
+  return "";
+}
+async function discoverDebugEndpoint({
+  platform = process.platform,
+  execute = execFileAsync,
+  fetchImpl = fetch,
+  preferredPort = DEFAULT_CDP_PORT
+} = {}) {
+  let processes = [];
+  try {
+    processes = debugProcessesFromCommandLines(await processCommandLines(platform, execute));
+  } catch {
+  }
+  const candidates = [preferredPort, ...processes.map((item) => item.port)];
+  for (const port of [...new Set(candidates)]) {
+    try {
+      await fetchJson(`http://${CDP_HOST}:${port}/json/version`, 500, fetchImpl);
+      const process2 = processes.find((item) => item.port === port && item.ownsDebugPort) ?? processes.find((item) => item.port === port);
+      return {
+        port,
+        processId: process2?.processId ?? null,
+        executable: process2?.executable ?? null,
+        channel: process2?.channel ?? null
+      };
+    } catch {
+    }
+  }
+  throw new Error("Codex is not running with the local debug bridge");
+}
+async function focusCodex({
+  platform = process.platform,
+  execute = execFileAsync,
+  processId = null,
+  activateWindows = null
+} = {}) {
+  if (platform === "win32") {
+    const activate = activateWindows ?? (await Promise.resolve().then(() => (init_windows_focus(), windows_focus_exports))).activateWindowsProcess;
+    return activate(processId);
+  }
+  if (platform === "darwin") {
+    await execute("/usr/bin/open", ["-b", "com.openai.codex"], { timeout: 3e3 });
+    return;
+  }
+  throw new Error(`Codex Desktop focus is not supported on ${platform}`);
+}
 
 // ../../node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -3748,7 +4135,6 @@ function localThreadKey(value) {
 }
 
 // ../../src/bridge/codex-cdp.mjs
-var execFileAsync = promisify(execFile);
 var USAGE_REFRESH_MS = Math.max(
   15e3,
   Number(process.env.CODEX_KEYBOARD_USAGE_REFRESH_SECONDS || 600) * 1e3
@@ -3765,7 +4151,12 @@ var MICRO_ACTION_KEYS = Object.freeze({
   mic: "ACT10",
   submit: "ACT12"
 });
-var RENDERER_ACTIONS = /* @__PURE__ */ new Set(["pin", "new"]);
+var MODEL_PRESETS = Object.freeze({
+  "model-sol-high": Object.freeze({ model: "gpt-5.6-sol", displayName: "5.6 Sol", effort: "high" }),
+  "model-luna-max": Object.freeze({ model: "gpt-5.6-luna", displayName: "5.6 Luna", effort: "max" }),
+  "model-sol-medium": Object.freeze({ model: "gpt-5.6-sol", displayName: "5.6 Sol", effort: "medium" })
+});
+var RENDERER_ACTIONS = /* @__PURE__ */ new Set(["pin", "new", ...Object.keys(MODEL_PRESETS)]);
 var PIN_ACTION_LABELS = Object.freeze([
   "Pin chat",
   "Unpin chat",
@@ -4089,49 +4480,124 @@ function selectMainTarget(targets) {
     }
   }) ?? pages.find((target) => !/avatar-overlay|composition-surface/i.test(target.url || ""));
 }
-async function fetchJson(url, timeout = 1200) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeout) });
-  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
-  return response.json();
+function traceErrorCategory(error) {
+  const name = String(error?.name || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  if (name.includes("timeout") || message.includes("timed out") || message.includes("timeout")) return "timeout";
+  if (message.includes("disconnected") || message.includes("not running")) return "cdp-unavailable";
+  if (message.includes("window")) return "focus-failed";
+  if (message.includes("menu") || message.includes("model") || message.includes("reasoning")) return "renderer-state";
+  return "cdp-operation";
 }
-async function discoverDebugPort() {
-  const { stdout } = await execFileAsync("/bin/ps", ["-axo", "command="], { timeout: 4e3 });
-  for (const line of stdout.split("\n")) {
-    if (!line.includes("--remote-debugging-address=127.0.0.1")) continue;
-    const port = Number(line.match(/--remote-debugging-port(?:=|\s+)(\d+)/)?.[1]);
-    if (!Number.isInteger(port)) continue;
-    try {
-      await fetchJson(`http://127.0.0.1:${port}/json/version`, 500);
-      return port;
-    } catch {
-    }
+async function runTraceStage(trace, stage, operation, fields = {}) {
+  const startedAt = performance.now();
+  trace?.record("cdp.stage", { stage, outcome: "started", ...fields });
+  try {
+    const result = await operation();
+    trace?.record("cdp.stage", {
+      stage,
+      outcome: "succeeded",
+      durationMs: Math.round(performance.now() - startedAt),
+      ...fields
+    });
+    return result;
+  } catch (error) {
+    trace?.record("cdp.stage", {
+      stage,
+      outcome: "failed",
+      category: traceErrorCategory(error),
+      durationMs: Math.round(performance.now() - startedAt),
+      ...fields
+    });
+    throw error;
   }
-  throw new Error("Codex is not running with the local debug bridge");
 }
 var CodexCdpClient = class {
   socket = null;
+  connectPromise = null;
+  connectionGeneration = 0;
   nextId = 0;
   pending = /* @__PURE__ */ new Map();
   lastSnapshot = null;
+  connectionIdentity = null;
+  modelActionQueue = Promise.resolve();
+  modelPickerLayout = null;
+  constructor({
+    discoverPort = discoverDebugEndpoint,
+    fetchTargets = fetchJson,
+    createSocket = (url) => new wrapper_default(url)
+  } = {}) {
+    this.discoverPort = discoverPort;
+    this.fetchTargets = fetchTargets;
+    this.createSocket = createSocket;
+  }
   async connect() {
     if (this.socket?.readyState === wrapper_default.OPEN) return;
-    const port = await discoverDebugPort();
-    const target = selectMainTarget(await fetchJson(`http://127.0.0.1:${port}/json/list`));
+    if (this.connectPromise) return this.connectPromise;
+    const generation = ++this.connectionGeneration;
+    const operation = this.openConnection(generation);
+    this.connectPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      if (this.connectPromise === operation) this.connectPromise = null;
+    }
+  }
+  async openConnection(generation) {
+    const discovery = await this.discoverPort();
+    const identity = Number.isInteger(discovery) ? { port: discovery, processId: null, executable: null, channel: null } : discovery;
+    const port = Number(identity?.port);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      throw new Error("Codex debug endpoint identity was invalid");
+    }
+    const target = selectMainTarget(await this.fetchTargets(`http://127.0.0.1:${port}/json/list`));
     if (!target?.webSocketDebuggerUrl) throw new Error("Codex main renderer was not found");
-    const socket = new wrapper_default(target.webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => {
-      const timer2 = setTimeout(() => reject(new Error("Timed out connecting to Codex")), 3e3);
-      socket.once("open", () => {
-        clearTimeout(timer2);
-        resolve();
-      });
-      socket.once("error", reject);
-    });
-    socket.on("message", (raw) => this.handleMessage(String(raw)));
-    socket.on("close", () => this.disconnect());
-    socket.on("error", () => this.disconnect());
+    if (generation !== this.connectionGeneration) throw new Error("Codex bridge connection was cancelled");
+    const socket = this.createSocket(target.webSocketDebuggerUrl);
     this.socket = socket;
-    await this.evaluate(ENABLE_EXPRESSION);
+    this.connectionIdentity = {
+      port,
+      processId: Number.isInteger(identity?.processId) ? identity.processId : null,
+      executable: typeof identity?.executable === "string" ? identity.executable : null,
+      channel: ["stable", "beta"].includes(identity?.channel) ? identity.channel : null
+    };
+    try {
+      await new Promise((resolve, reject) => {
+        const timer2 = setTimeout(() => {
+          cleanup();
+          reject(new Error("Timed out connecting to Codex"));
+        }, 3e3);
+        const cleanup = () => {
+          clearTimeout(timer2);
+          socket.off("open", onOpen);
+          socket.off("error", onError);
+        };
+        const onOpen = () => {
+          cleanup();
+          resolve();
+        };
+        const onError = (error) => {
+          cleanup();
+          reject(error);
+        };
+        socket.once("open", onOpen);
+        socket.once("error", onError);
+      });
+      if (generation !== this.connectionGeneration || this.socket !== socket) {
+        throw new Error("Codex bridge connection was cancelled");
+      }
+      socket.on("message", (raw) => this.handleMessage(String(raw)));
+      socket.on("close", () => {
+        if (this.socket === socket) this.disconnect();
+      });
+      socket.on("error", () => {
+        if (this.socket === socket) this.disconnect();
+      });
+      await this.evaluate(ENABLE_EXPRESSION);
+    } catch (error) {
+      if (this.socket === socket) this.disconnect();
+      throw error;
+    }
   }
   async snapshot() {
     await this.connect();
@@ -4150,21 +4616,55 @@ var CodexCdpClient = class {
     if (!agent?.threadKey) throw new Error(`Agent slot ${slot + 1} is empty`);
     return this.clickThreadKey(agent.threadKey, slot);
   }
-  async clickThread(threadId, slot = 0) {
-    await this.connect();
-    return this.clickThreadKey(localThreadKey(threadId), slot);
+  async clickThread(threadId, slot = 0, trace = null) {
+    await runTraceStage(trace, "task.connect", () => this.connect(), { slot: slot + 1 });
+    return this.clickThreadKey(localThreadKey(threadId), slot, trace);
   }
-  async clickThreadKey(threadKey, slot) {
+  async clickThreadKey(threadKey, slot, trace = null) {
     try {
-      await this.dispatchAgent(slot, threadKey, 1);
+      await runTraceStage(
+        trace,
+        "task.native-act1",
+        () => this.dispatchAgent(slot, threadKey, 1),
+        { slot: slot + 1 }
+      );
+      const finishBackground = trace?.defer?.();
+      trace?.record("task.background", { stage: "scheduled", background: true, slot: slot + 1 });
       void (async () => {
         await new Promise((resolve) => setTimeout(resolve, 35));
-        await this.dispatchAgent(slot, threadKey, 0);
-        await this.activateThread(threadKey);
-      })().catch(() => {
+        await runTraceStage(
+          trace,
+          "task.native-act0",
+          () => this.dispatchAgent(slot, threadKey, 0),
+          { background: true, slot: slot + 1 }
+        );
+        await runTraceStage(
+          trace,
+          "task.dom-activate",
+          () => this.activateThread(threadKey),
+          { background: true, slot: slot + 1 }
+        );
+      })().catch((error) => {
+        trace?.record("task.background", {
+          stage: "complete",
+          background: true,
+          outcome: "failed",
+          category: traceErrorCategory(error),
+          slot: slot + 1
+        });
+      }).finally(() => finishBackground?.());
+    } catch (error) {
+      trace?.record("task.fallback", {
+        outcome: "started",
+        category: traceErrorCategory(error),
+        slot: slot + 1
       });
-    } catch {
-      await this.activateThread(threadKey);
+      await runTraceStage(
+        trace,
+        "task.dom-activate-fallback",
+        () => this.activateThread(threadKey),
+        { slot: slot + 1 }
+      );
     }
   }
   async dispatchAgent(slot, threadKey, act) {
@@ -4179,20 +4679,329 @@ var CodexCdpClient = class {
       event: { key, act, slot: null, threadKey: null }
     }, "codex-micro-hid-event");
   }
-  async dispatchNamedAction(action, pressed) {
+  async dispatchNamedAction(action, pressed, trace = null) {
     const key = MICRO_ACTION_KEYS[action];
     if (key) return this.dispatchAction(key, pressed ? 1 : 0);
     if (!RENDERER_ACTIONS.has(action)) {
       throw new Error(`Unsupported Codex bridge action: ${action}`);
     }
     if (!pressed) return true;
-    return this.dispatchRendererAction(action);
+    return this.dispatchRendererAction(action, trace);
   }
-  async dispatchRendererAction(action) {
-    await this.connect();
+  async dispatchRendererAction(action, trace = null) {
+    if (MODEL_PRESETS[action]) {
+      const operation = this.modelActionQueue.then(async () => {
+        await runTraceStage(trace, "model.connect", () => this.connect(), { action });
+        return this.dispatchModelPreset(action, trace);
+      });
+      this.modelActionQueue = operation.catch(() => {
+      });
+      await operation;
+      return true;
+    }
+    await runTraceStage(trace, "model.connect", () => this.connect(), { action });
     const invoked = await this.evaluate(rendererActionExpression(action));
     if (!invoked) throw new Error(`Codex ${action} action is not available`);
     return true;
+  }
+  async dispatchModelPreset(action, trace = null) {
+    const preset = MODEL_PRESETS[action];
+    if (!preset) throw new Error(`Unknown Codex model preset: ${action}`);
+    const presetStartedAt = performance.now();
+    trace?.record("model.preset", {
+      action,
+      stage: "start",
+      outcome: "started",
+      targetEffort: preset.effort
+    });
+    const effortOrder = ["low", "medium", "high", "xhigh", "max"];
+    const targetEffortIndex = effortOrder.indexOf(preset.effort);
+    const readState = async () => {
+      const state = await runTraceStage(trace, "model.read-state", () => this.evaluate(`(() => {
+        const visible = (element) => {
+          const rect = element?.getBoundingClientRect?.();
+          return element && (element.offsetParent !== null || (rect?.width > 0 && rect?.height > 0));
+        };
+        const triggers = [...document.querySelectorAll("[data-codex-intelligence-trigger]")].filter(visible);
+        if (triggers.length !== 1) return { error: \`Expected one visible intelligence trigger, found \${triggers.length}\` };
+        return {
+          text: String(triggers[0].textContent ?? "").replace(/\\s+/g, " ").trim(),
+          effort: triggers[0].getAttribute("data-selected-reasoning-effort"),
+          expanded: triggers[0].getAttribute("aria-expanded") === "true"
+        };
+      })()`));
+      if (state?.error) throw new Error(state.error);
+      trace?.record("model.state", {
+        currentEffort: state.effort || "unknown",
+        effortMatched: state.effort === preset.effort,
+        modelMatched: state.text.includes(preset.displayName)
+      });
+      return state;
+    };
+    const closeMenus = async () => {
+      let attempts = 0;
+      for (; attempts < 3 && (await readState()).expanded; attempts += 1) {
+        await this.pressRendererEscape(trace, "model.close-menu");
+      }
+      if ((await readState()).expanded) throw new Error("Codex intelligence menu did not close");
+      trace?.record("model.menu-close", { attempts, outcome: "succeeded" });
+    };
+    const openMain = async () => {
+      if (!(await readState()).expanded) {
+        await this.clickRendererCandidates(
+          '[...document.querySelectorAll("[data-codex-intelligence-trigger]")]',
+          "Codex intelligence trigger",
+          trace,
+          "model.open-trigger"
+        );
+      }
+      await this.waitForRenderer(`(() => {
+        const visible = (element) => {
+          const rect = element?.getBoundingClientRect?.();
+          return element && (element.offsetParent !== null || (rect?.width > 0 && rect?.height > 0));
+        };
+        return [...document.querySelectorAll('[role="menu"][data-state="open"]')].filter(
+          (menu) => visible(menu) && (
+            menu.querySelector("[data-model-picker-view-toggle]") ||
+            menu.querySelector("[data-reasoning-slider]")
+          )
+        ).length === 1;
+      })()`, "Codex intelligence menu", trace, "model.wait-main-menu");
+      const toggleState = await runTraceStage(trace, "model.read-menu-shape", () => this.evaluate(`(() => {
+        const menus = [...document.querySelectorAll('[role="menu"][data-state="open"]')].filter(
+          (menu) => menu.querySelector("[data-model-picker-view-toggle]") || menu.querySelector("[data-reasoning-slider]")
+        );
+        const toggles = menus.length === 1
+          ? [...menus[0].querySelectorAll("[data-model-picker-view-toggle]")]
+          : [];
+        return {
+          count: toggles.length,
+          expanded: toggles[0]?.getAttribute("aria-expanded") === "true",
+          rowCount: menus[0]?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0
+        };
+      })()`));
+      trace?.record("model.menu-shape", {
+        rowCount: toggleState.rowCount,
+        outcome: toggleState.expanded ? "expanded" : "collapsed"
+      });
+      if (toggleState.count === 0 && toggleState.rowCount === 2) return;
+      if (toggleState.count !== 1) {
+        throw new Error(`Expected one model picker view toggle, found ${toggleState.count}`);
+      }
+      if (!toggleState.expanded) {
+        await this.clickRendererCandidates(
+          `(() => {
+            const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+              (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+            );
+            return menu ? [...menu.querySelectorAll("[data-model-picker-view-toggle]")] : [];
+          })()`,
+          "model picker view toggle",
+          trace,
+          "model.open-picker-view"
+        );
+        await this.waitForRenderer(`(() => {
+          const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+            (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+          );
+          return menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length === 2;
+        })()`, "expanded Codex model picker", trace, "model.wait-picker-view");
+      }
+    };
+    const rowExpression = (rowIndex) => `(() => {
+      const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+        (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+      );
+      const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
+      return rows[${rowIndex}] ? [rows[${rowIndex}]] : [];
+    })()`;
+    const submenuInfo = async (rowIndex) => this.waitForRenderer(`(() => {
+      const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+        (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+      );
+      const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
+      if (rows.length !== 2 || !rows[${rowIndex}]) return null;
+      const submenu = document.getElementById(rows[${rowIndex}].getAttribute("aria-controls"));
+      if (!submenu || submenu.getAttribute("data-state") !== "open") return null;
+      return [...submenu.querySelectorAll('[role="menuitem"]')].map((item) => ({
+        text: String(item.textContent ?? "").replace(/\\s+/g, " ").trim(),
+        checked: Boolean(item.querySelector("svg"))
+      }));
+    })()`, "Codex model picker submenu", trace, `model.wait-submenu-${rowIndex + 1}`);
+    const identifyRows = async () => {
+      if (this.modelPickerLayout?.connectionGeneration === this.connectionGeneration) {
+        trace?.record("model.rows-identified", {
+          rowCount: 2,
+          source: "cache",
+          outcome: "succeeded"
+        });
+        return this.modelPickerLayout;
+      }
+      this.modelPickerLayout = null;
+      const rowCount = await runTraceStage(trace, "model.read-row-count", () => this.evaluate(`(() => {
+        const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+          (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+        );
+        return menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0;
+      })()`));
+      if (rowCount !== 2) throw new Error(`Expected two Codex model picker rows, found ${rowCount}`);
+      let modelRowIndex = -1;
+      for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+        await openMain();
+        await this.clickRendererCandidates(
+          rowExpression(rowIndex),
+          `model picker row ${rowIndex + 1}`,
+          trace,
+          `model.open-row-${rowIndex + 1}`
+        );
+        const items = await submenuInfo(rowIndex);
+        if (items.filter((item) => item.text === preset.displayName).length === 1) {
+          modelRowIndex = rowIndex;
+        }
+        await this.pressRendererEscape(trace, `model.close-row-${rowIndex + 1}`);
+      }
+      if (modelRowIndex < 0) throw new Error(`Codex model ${preset.displayName} is not available`);
+      const result = {
+        connectionGeneration: this.connectionGeneration,
+        modelRowIndex,
+        effortRowIndex: modelRowIndex === 0 ? 1 : 0
+      };
+      this.modelPickerLayout = result;
+      trace?.record("model.rows-identified", {
+        rowCount,
+        source: "probe",
+        outcome: "succeeded"
+      });
+      return result;
+    };
+    const selectEffort = async () => {
+      const current = await readState();
+      if (current.effort === preset.effort) {
+        trace?.record("model.effort", {
+          currentEffort: current.effort,
+          targetEffort: preset.effort,
+          outcome: "skipped"
+        });
+        return;
+      }
+      trace?.record("model.effort", {
+        currentEffort: current.effort || "unknown",
+        targetEffort: preset.effort,
+        outcome: "changing"
+      });
+      const currentEffortIndex = effortOrder.indexOf(current.effort);
+      if (currentEffortIndex < 0 || targetEffortIndex < 0) {
+        throw new Error(`Unsupported Codex reasoning effort transition: ${current.effort} -> ${preset.effort}`);
+      }
+      await openMain();
+      const { effortRowIndex } = await identifyRows();
+      await openMain();
+      await this.clickRendererCandidates(
+        rowExpression(effortRowIndex),
+        "reasoning effort row",
+        trace,
+        "model.open-effort-row"
+      );
+      const items = await submenuInfo(effortRowIndex);
+      const checkedIndexes = items.flatMap((item, index) => item.checked ? [index] : []);
+      if (items.length !== effortOrder.length || checkedIndexes.length !== 1 || checkedIndexes[0] !== currentEffortIndex) {
+        throw new Error("Codex reasoning effort order or selected state changed");
+      }
+      await this.clickRendererCandidates(`(() => {
+        const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+          (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+        );
+        const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
+        const submenu = rows[${effortRowIndex}]
+          ? document.getElementById(rows[${effortRowIndex}].getAttribute("aria-controls"))
+          : null;
+        const items = submenu ? [...submenu.querySelectorAll('[role="menuitem"]')] : [];
+        return items[${targetEffortIndex}] ? [items[${targetEffortIndex}]] : [];
+      })()`, `reasoning effort ${preset.effort}`, trace, "model.select-effort-option");
+      await this.waitForRenderer(
+        `document.querySelector("[data-codex-intelligence-trigger]")?.getAttribute("data-selected-reasoning-effort") === ${JSON.stringify(preset.effort)}`,
+        `reasoning effort ${preset.effort}`,
+        trace,
+        "model.wait-effort-selected"
+      );
+      trace?.record("model.effort", {
+        targetEffort: preset.effort,
+        outcome: "succeeded"
+      });
+    };
+    const selectModel = async () => {
+      if ((await readState()).text.includes(preset.displayName)) {
+        trace?.record("model.model", { modelMatched: true, outcome: "skipped" });
+        return;
+      }
+      trace?.record("model.model", { modelMatched: false, outcome: "changing" });
+      await openMain();
+      const { modelRowIndex } = await identifyRows();
+      await openMain();
+      await this.clickRendererCandidates(
+        rowExpression(modelRowIndex),
+        "model row",
+        trace,
+        "model.open-model-row"
+      );
+      const items = await submenuInfo(modelRowIndex);
+      if (items.filter((item) => item.text === preset.displayName).length !== 1) {
+        throw new Error(`Expected one available ${preset.displayName} model option`);
+      }
+      await this.clickRendererCandidates(`(() => {
+        const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+          (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+        );
+        const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
+        const submenu = rows[${modelRowIndex}]
+          ? document.getElementById(rows[${modelRowIndex}].getAttribute("aria-controls"))
+          : null;
+        return submenu
+          ? [...submenu.querySelectorAll('[role="menuitem"]')].filter(
+              (item) => String(item.textContent ?? "").replace(/\\s+/g, " ").trim() === ${JSON.stringify(preset.displayName)}
+            )
+          : [];
+      })()`, `model ${preset.displayName}`, trace, "model.select-model-option");
+      await this.waitForRenderer(
+        `String(document.querySelector("[data-codex-intelligence-trigger]")?.textContent ?? "").includes(${JSON.stringify(preset.displayName)})`,
+        `model ${preset.displayName}`,
+        trace,
+        "model.wait-model-selected"
+      );
+      trace?.record("model.model", { modelMatched: true, outcome: "succeeded" });
+    };
+    try {
+      await runTraceStage(trace, "model.select-model", selectModel, { action });
+      await runTraceStage(trace, "model.select-effort", selectEffort, { targetEffort: preset.effort });
+      const selected = await runTraceStage(trace, "model.validate", readState, { action });
+      if (!selected.text.includes(preset.displayName) || selected.effort !== preset.effort) {
+        throw new Error(`Codex did not select ${preset.displayName} / ${preset.effort}`);
+      }
+      await runTraceStage(trace, "model.close-menus", closeMenus, { action });
+      trace?.record("model.preset", {
+        action,
+        stage: "complete",
+        outcome: "succeeded",
+        targetEffort: preset.effort,
+        durationMs: Math.round(performance.now() - presetStartedAt)
+      });
+      return { model: preset.model, effort: preset.effort };
+    } catch (error) {
+      this.modelPickerLayout = null;
+      trace?.record("model.preset", {
+        action,
+        stage: "complete",
+        outcome: "failed",
+        category: traceErrorCategory(error),
+        targetEffort: preset.effort,
+        durationMs: Math.round(performance.now() - presetStartedAt)
+      });
+      try {
+        await runTraceStage(trace, "model.cleanup-menus", closeMenus, { action });
+      } catch {
+      }
+      throw error;
+    }
   }
   async dispatchComposerSteer() {
     await this.connect();
@@ -4268,7 +5077,7 @@ var CodexCdpClient = class {
       return true;
     })()`);
   }
-  evaluate(expression) {
+  sendCommand(method, params, returnValue = false) {
     if (!this.socket || this.socket.readyState !== wrapper_default.OPEN) {
       return Promise.reject(new Error("Codex bridge is disconnected"));
     }
@@ -4278,13 +5087,76 @@ var CodexCdpClient = class {
         this.pending.delete(id);
         reject(new Error("Codex runtime response timed out"));
       }, 7e3);
-      this.pending.set(id, { resolve, reject, timer: timer2 });
+      this.pending.set(id, { resolve, reject, timer: timer2, returnValue });
       this.socket.send(JSON.stringify({
         id,
-        method: "Runtime.evaluate",
-        params: { expression, awaitPromise: true, returnByValue: true }
+        method,
+        params
       }));
     });
+  }
+  evaluate(expression) {
+    return this.sendCommand("Runtime.evaluate", {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    }, true);
+  }
+  async clickRendererCandidates(candidatesExpression, description, trace = null, stage = "renderer.click") {
+    await runTraceStage(trace, stage, () => this.evaluate(`(() => {
+      const visible = (element) => {
+        const rect = element?.getBoundingClientRect?.();
+        return element && (element.offsetParent !== null || (rect?.width > 0 && rect?.height > 0));
+      };
+      const candidates = [...(${candidatesExpression})].filter(visible);
+      if (candidates.length !== 1) {
+        throw new Error(\`Expected one ${description}, found \${candidates.length}\`);
+      }
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+        const EventType = type.startsWith("pointer") ? PointerEvent : MouseEvent;
+        candidates[0].dispatchEvent(new EventType(type, {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          buttons: type.endsWith("down") ? 1 : 0,
+          view: window
+        }));
+      }
+      return true;
+    })()`));
+  }
+  async pressRendererEscape(trace = null, stage = "renderer.escape") {
+    await runTraceStage(trace, stage, () => this.evaluate(`(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape", code: "Escape", bubbles: true, cancelable: true
+      }));
+      return true;
+    })()`));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  async waitForRenderer(expression, description, trace = null, stage = "renderer.wait") {
+    const startedAt = performance.now();
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const result = await this.evaluate(expression);
+      if (result) {
+        trace?.record("renderer.poll", {
+          stage,
+          outcome: "succeeded",
+          attempts: attempt + 1,
+          durationMs: Math.round(performance.now() - startedAt)
+        });
+        return result;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    trace?.record("renderer.poll", {
+      stage,
+      outcome: "failed",
+      category: "timeout",
+      attempts: 20,
+      durationMs: Math.round(performance.now() - startedAt)
+    });
+    throw new Error(`Timed out waiting for ${description}`);
   }
   handleMessage(raw) {
     let message;
@@ -4303,12 +5175,24 @@ var CodexCdpClient = class {
         message.result.exceptionDetails.exception?.description ?? message.result.exceptionDetails.text ?? "Codex evaluation failed"
       ));
     }
-    pending.resolve(message.result?.result?.value);
+    pending.resolve(
+      pending.returnValue ? message.result?.result?.value : message.result
+    );
   }
   disconnect() {
+    this.connectionGeneration += 1;
+    this.connectPromise = null;
+    this.modelPickerLayout = null;
+    this.connectionIdentity = null;
     const socket = this.socket;
     this.socket = null;
-    if (socket?.readyState === wrapper_default.OPEN) socket.close();
+    if (socket && socket.readyState !== wrapper_default.CLOSED) {
+      try {
+        socket.close();
+      } catch {
+        socket.terminate?.();
+      }
+    }
     for (const { reject, timer: timer2 } of this.pending.values()) {
       clearTimeout(timer2);
       reject(new Error("Codex bridge disconnected"));
@@ -4317,13 +5201,46 @@ var CodexCdpClient = class {
   }
 };
 
+// ../../src/bridge/auth.mjs
+import { timingSafeEqual } from "node:crypto";
+function bridgeRequestAuthorized(token, authorizationHeader) {
+  if (!token) return false;
+  const candidate = String(authorizationHeader || "").replace(/^Bearer\s+/i, "");
+  const actual = Buffer.from(token);
+  const supplied = Buffer.from(candidate);
+  return actual.length === supplied.length && timingSafeEqual(actual, supplied);
+}
+
+// ../../src/bridge/navigation.mjs
+async function navigateAndFocus(navigate, focus) {
+  const [navigation, activation] = await Promise.allSettled([navigate(), focus()]);
+  if (navigation.status === "rejected") throw navigation.reason;
+  return { focusOk: activation.status === "fulfilled" };
+}
+
 // ../../src/bridge/server.mjs
-var execFileAsync2 = promisify2(execFile2);
 var HOST = "127.0.0.1";
 var PORT = Number(process.env.CODEX_KEYBOARD_PORT || 17373);
+var BRIDGE_VERSION = false ? null : "0.6.1";
+var RUNTIME_HASH = (() => {
+  try {
+    return createHash("sha256").update(readFileSync(process.argv[1])).digest("hex");
+  } catch {
+    return null;
+  }
+})();
+var NATIVE_RUNTIME_HASH = /^[a-f0-9]{64}$/.test(String(process.env.CODEX_BRIDGE_NATIVE_HASH || "")) ? process.env.CODEX_BRIDGE_NATIVE_HASH : null;
 var configuredRefreshMs = Number(process.env.CODEX_KEYBOARD_REFRESH_MS || 500);
 var REFRESH_MS = Number.isFinite(configuredRefreshMs) ? Math.max(250, configuredRefreshMs) : 500;
 var client = new CodexCdpClient();
+var dataRoot = process.env.CODEX_BRIDGE_DATA_ROOT || (process.platform === "win32" ? join2(process.env.LOCALAPPDATA || join2(homedir(), "AppData", "Local"), "OpenCodexMicro") : join2(homedir(), "Library", "Application Support", "OpenCodexMicro"));
+var bridgeToken = process.env.CODEX_BRIDGE_TOKEN || (() => {
+  try {
+    return readFileSync(join2(dataRoot, "bridge-token"), "utf8").trim();
+  } catch {
+    return "";
+  }
+})();
 var cached = {
   connected: false,
   slots: Array.from({ length: 6 }, (_, id) => ({
@@ -4338,10 +5255,125 @@ var cached = {
 };
 var refreshPromise = null;
 var nextReconnectAt = 0;
-async function focusCodex() {
-  await execFileAsync2("/usr/bin/open", ["-b", "com.openai.codex"], {
-    timeout: 3e3
-  });
+var hasRefreshed = false;
+var traceBuffer = /* @__PURE__ */ new Map();
+var TRACE_TTL_MS = 3e4;
+var TRACE_LIMIT = 32;
+var TRACE_EVENT_LIMIT = 160;
+function diagnosticErrorCategory(error) {
+  const name = String(error?.name || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  if (name.includes("timeout") || message.includes("timed out") || message.includes("timeout")) return "timeout";
+  if (message.includes("disconnected") || message.includes("not running")) return "cdp-unavailable";
+  if (message.includes("window")) return "focus-failed";
+  if (message.includes("menu") || message.includes("model") || message.includes("reasoning")) return "renderer-state";
+  return "bridge-operation";
+}
+function traceIdFrom(request) {
+  const value = String(request.headers["x-codex-trace-id"] || "");
+  return /^[a-f0-9-]{36}$/.test(value) ? value : null;
+}
+function safeTraceFields(fields) {
+  return Object.fromEntries(Object.entries(fields || {}).flatMap(([key, value]) => {
+    if (typeof value === "boolean" || typeof value === "number" && Number.isFinite(value)) {
+      return [[key, value]];
+    }
+    const normalized = String(value || "");
+    return /^[a-zA-Z0-9_.:-]{1,80}$/.test(normalized) ? [[key, normalized]] : [];
+  }));
+}
+function startTrace(request, route, fields = {}) {
+  const traceId = traceIdFrom(request);
+  if (!traceId) return null;
+  const startedAt = performance.now();
+  const trace = {
+    traceId,
+    startedAt,
+    events: [],
+    pending: 0,
+    completionRequested: false,
+    complete: false,
+    record(event, details = {}) {
+      if (!/^[a-z0-9.-]{1,80}$/.test(event) || this.events.length >= TRACE_EVENT_LIMIT) return;
+      this.events.push({
+        event,
+        offsetMs: Math.round(performance.now() - startedAt),
+        ...safeTraceFields(details)
+      });
+    },
+    defer() {
+      this.pending += 1;
+      let settled = false;
+      return () => {
+        if (settled) return;
+        settled = true;
+        this.pending = Math.max(0, this.pending - 1);
+        if (this.completionRequested && this.pending === 0) this.complete = true;
+      };
+    },
+    finish() {
+      this.completionRequested = true;
+      if (this.pending === 0) this.complete = true;
+    }
+  };
+  trace.record("server.request", { route, ...fields });
+  traceBuffer.set(traceId, trace);
+  while (traceBuffer.size > TRACE_LIMIT) traceBuffer.delete(traceBuffer.keys().next().value);
+  const cleanup = setTimeout(() => traceBuffer.delete(traceId), TRACE_TTL_MS);
+  cleanup.unref?.();
+  return trace;
+}
+function traceSnapshot(traceId) {
+  const trace = traceBuffer.get(traceId);
+  if (!trace) return null;
+  return {
+    traceId,
+    complete: trace.complete,
+    events: trace.events.map((event) => ({ ...event }))
+  };
+}
+async function focusCodexDesktop(trace = null) {
+  const startedAt = performance.now();
+  const path = process.platform === "win32" ? "win32-native" : "platform-adapter";
+  trace?.record("focus.start", { platform: process.platform, path });
+  try {
+    let identity = null;
+    if (process.platform === "win32") {
+      const connection = client.socket?.readyState === 1 ? "reused" : "open";
+      await client.connect();
+      identity = client.connectionIdentity;
+      trace?.record("focus.target", {
+        connection,
+        channel: identity?.channel || "unknown",
+        outcome: "succeeded"
+      });
+    }
+    const result = await focusCodex({ processId: identity?.processId ?? null });
+    trace?.record("focus.native", {
+      outcome: "succeeded",
+      channel: identity?.channel || "unknown",
+      reused: Boolean(result?.alreadyForeground && result?.alreadyMaximized)
+    });
+    trace?.record("focus.complete", {
+      platform: process.platform,
+      path,
+      outcome: "succeeded",
+      durationMs: Math.round(performance.now() - startedAt)
+    });
+    console.log("Codex Desktop window maximized and focused through the native desktop adapter");
+  } catch (error) {
+    trace?.record("focus.complete", {
+      platform: process.platform,
+      path,
+      outcome: "failed",
+      category: diagnosticErrorCategory(error),
+      durationMs: Math.round(performance.now() - startedAt)
+    });
+    throw error;
+  }
+}
+function authorized(request) {
+  return bridgeRequestAuthorized(bridgeToken, request.headers.authorization);
 }
 async function refresh(force = false) {
   if (refreshPromise) return refreshPromise;
@@ -4359,6 +5391,7 @@ async function refresh(force = false) {
   try {
     await refreshPromise;
   } finally {
+    hasRefreshed = true;
     refreshPromise = null;
   }
 }
@@ -4373,16 +5406,33 @@ function json(response, status, body) {
 }
 var server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${HOST}:${PORT}`);
+  if (request.method === "POST" && !authorized(request)) {
+    return json(response, 401, { ok: false, error: "Bridge authorization required" });
+  }
   if (request.method === "GET" && url.pathname === "/health") {
-    await refresh(true);
-    return json(response, 200, { ok: true, codexConnected: cached.connected, updatedAt: cached.updatedAt });
+    if (!hasRefreshed || Date.now() - cached.updatedAt >= REFRESH_MS * 2) {
+      await refresh(true);
+    }
+    return json(response, 200, {
+      ok: true,
+      bridgeVersion: BRIDGE_VERSION,
+      runtimeHash: RUNTIME_HASH,
+      nativeRuntimeHash: NATIVE_RUNTIME_HASH,
+      codexConnected: cached.connected,
+      updatedAt: cached.updatedAt
+    });
   }
   if (request.method === "GET" && url.pathname === "/state") {
     return json(response, 200, cached);
   }
+  if (request.method === "POST" && url.pathname === "/diagnostics/trace") {
+    const traceId = traceIdFrom(request);
+    const diagnostics = traceId ? traceSnapshot(traceId) : null;
+    return json(response, diagnostics ? 200 : 404, diagnostics ? { ok: true, diagnostics } : { ok: false, error: "Trace diagnostics are unavailable" });
+  }
   if (request.method === "POST" && url.pathname === "/focus") {
     try {
-      await focusCodex();
+      await focusCodexDesktop();
       return json(response, 200, { ok: true });
     } catch (error) {
       return json(response, 503, { ok: false, error: error.message });
@@ -4391,11 +5441,11 @@ var server = createServer(async (request, response) => {
   const match = request.method === "POST" && url.pathname.match(/^\/agent\/([0-5])\/click$/);
   if (match) {
     try {
-      await Promise.all([
-        client.clickAgent(Number(match[1])),
-        focusCodex()
-      ]);
-      return json(response, 200, { ok: true });
+      const result = await navigateAndFocus(
+        () => client.clickAgent(Number(match[1])),
+        () => focusCodexDesktop()
+      );
+      return json(response, 200, { ok: true, ...result });
     } catch (error) {
       return json(response, 503, { ok: false, error: error.message });
     }
@@ -4404,41 +5454,64 @@ var server = createServer(async (request, response) => {
     /^\/thread\/([^/]+)\/click$/
   );
   if (threadMatch) {
+    let trace = null;
     try {
       const threadId = decodeThreadPathSegment(threadMatch[1]);
       const slot = Number(url.searchParams.get("slot") || 0);
       if (!Number.isInteger(slot) || slot < 0 || slot > 5) {
         throw new Error("Invalid Codex Micro slot");
       }
-      await Promise.all([
-        client.clickThread(threadId, slot),
-        focusCodex()
-      ]);
-      return json(response, 200, { ok: true, bridge: true });
+      trace = startTrace(request, "thread-click", { slot: slot + 1 });
+      const result = await navigateAndFocus(
+        () => client.clickThread(threadId, slot, trace),
+        () => focusCodexDesktop(trace)
+      );
+      trace?.record("server.response", {
+        outcome: "succeeded",
+        route: "thread-click",
+        focusOk: result.focusOk
+      });
+      return json(response, 200, { ok: true, bridge: true, ...result });
     } catch (error) {
+      trace?.record("server.response", {
+        outcome: "failed",
+        route: "thread-click",
+        category: diagnosticErrorCategory(error)
+      });
       return json(response, 503, {
         ok: false,
         bridge: false,
         error: error.message
       });
+    } finally {
+      trace?.finish();
     }
   }
   const action = request.method === "POST" && url.pathname.match(
-    /^\/action\/(fast|approve|reject|pin|new|fork|mic|steer|submit)\/(down|up)$/
+    /^\/action\/(fast|approve|reject|pin|new|fork|mic|steer|submit|model-sol-high|model-luna-max|model-sol-medium)\/(down|up)$/
   );
   if (action) {
+    const trace = startTrace(request, "action", { action: action[1], phase: action[2] });
     try {
       if (action[1] === "steer") {
         if (action[2] === "down") {
-          await focusCodex();
+          await focusCodexDesktop();
           await client.dispatchComposerSteer();
         }
         return json(response, 200, { ok: true });
       }
-      await client.dispatchNamedAction(action[1], action[2] === "down");
+      await client.dispatchNamedAction(action[1], action[2] === "down", trace);
+      trace?.record("server.response", { outcome: "succeeded", route: "action" });
       return json(response, 200, { ok: true, bridge: true });
     } catch (error) {
+      trace?.record("server.response", {
+        outcome: "failed",
+        route: "action",
+        category: diagnosticErrorCategory(error)
+      });
       return json(response, 503, { ok: false, error: error.message });
+    } finally {
+      trace?.finish();
     }
   }
   const joystick = request.method === "POST" && url.pathname.match(
@@ -4455,7 +5528,7 @@ var server = createServer(async (request, response) => {
   return json(response, 404, { ok: false, error: "Not found" });
 });
 server.listen(PORT, HOST, () => {
-  console.log(`Codex Keyboard bridge listening on http://${HOST}:${PORT}`);
+  console.log(`Codex Keyboard bridge ${BRIDGE_VERSION || "unversioned"} listening on http://${HOST}:${PORT}`);
   void refresh();
 });
 var timer = setInterval(() => void refresh(), REFRESH_MS);

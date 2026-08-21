@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 
 const packageRoot = resolve(".");
 const repositoryRoot = resolve(packageRoot, "../..");
-const workspaceRoot = resolve(repositoryRoot, "../..");
 const installerRoot = resolve(packageRoot, "installer");
 const nativeRuntimeRoot = resolve(installerRoot, "native-runtime");
 const manifest = JSON.parse(await readFile(resolve(packageRoot, "manifest.json"), "utf8"));
@@ -53,7 +52,7 @@ const nativeRuntimeFiles = [
 await rm(nativeRuntimeRoot, { recursive: true, force: true });
 const manifestFiles = [];
 for (const [sourceRelative, destinationRelative] of nativeRuntimeFiles) {
-  const source = resolve(workspaceRoot, "node_modules", sourceRelative);
+  const source = resolve(repositoryRoot, "node_modules", sourceRelative);
   const destination = resolve(nativeRuntimeRoot, destinationRelative);
   await mkdir(resolve(destination, ".."), { recursive: true });
   await copyFile(source, destination);
