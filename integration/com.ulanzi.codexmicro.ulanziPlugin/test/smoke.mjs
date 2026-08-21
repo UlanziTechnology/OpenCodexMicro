@@ -11,14 +11,32 @@ const navigateAction = manifest.Actions.find(action =>
 );
 assert.deepEqual(navigateAction?.Controllers, ["Encoder"]);
 assert.equal(navigateAction?.Encoder?.layout, "$UA1");
-assert.equal(manifest.Version, "0.5.0");
+assert.equal(manifest.Version, "0.6.0");
 assert.equal(manifest.Software?.MinVersion, "3.0.1");
 assert.equal(manifest.OS?.find(item => item.Platform === "mac")?.MinimumVersion, "13.0");
 assert.equal(manifest.OS?.find(item => item.Platform === "windows")?.MinimumVersion, "10.0");
+const completeGif = await readFile(new URL("assets/icons/task-complete.gif", packageRootUrl));
+assert.equal(completeGif.subarray(0, 6).toString("ascii"), "GIF89a");
+assert.ok(completeGif.length > 0, "animated complete task icon must be packaged");
 assert.ok(
   manifest.Actions.every(action => action.PropertyInspectorPath === "property-inspector/setup.html"),
   "every action must expose the shared Bridge setup inspector"
 );
+const modelActions = manifest.Actions.slice(-3);
+assert.deepEqual(
+  modelActions.map(action => action.UUID),
+  [
+    "com.ulanzi.ulanzistudio.codexmicro.model-sol-high",
+    "com.ulanzi.ulanzistudio.codexmicro.model-luna-max",
+    "com.ulanzi.ulanzistudio.codexmicro.model-sol-medium"
+  ]
+);
+for (const action of modelActions) {
+  assert.deepEqual(action.Controllers, ["Keypad"]);
+  assert.equal(action.DisableAutomaticStates, true);
+  assert.equal(action.States?.[0]?.Image, action.Icon);
+  assert.ok((await readFile(new URL(action.Icon, packageRootUrl))).length > 0, `${action.Icon} must exist`);
+}
 const setupInspector = await readFile(new URL("property-inspector/setup.html", packageRootUrl), "utf8");
 assert.match(setupInspector, /Codex Bridge Setup/);
 assert.match(setupInspector, /Install \/ Repair/);
@@ -55,6 +73,16 @@ const localizedActionNames = {
   "pt_PT.json": ["Tarefa Codex 1", "Tarefa recente e deslocamento", "Enviar para o Codex"],
   "es_ES.json": ["Tarea Codex 1", "Tarea reciente y desplazamiento", "Enviar a Codex"]
 };
+const localizedModelActionNames = {
+  "en.json": ["Codex Sol High", "Codex Luna Max", "Codex Sol Medium"],
+  "zh_CN.json": ["Codex Sol 高", "Codex Luna 最高", "Codex Sol 中"],
+  "zh_HK.json": ["Codex Sol 高", "Codex Luna 最高", "Codex Sol 中"],
+  "ja_JP.json": ["Codex Sol High", "Codex Luna Max", "Codex Sol Medium"],
+  "de_DE.json": ["Codex Sol Hoch", "Codex Luna Maximum", "Codex Sol Mittel"],
+  "ko_KR.json": ["Codex Sol 높음", "Codex Luna 최대", "Codex Sol 중간"],
+  "pt_PT.json": ["Codex Sol Alto", "Codex Luna Máximo", "Codex Sol Médio"],
+  "es_ES.json": ["Codex Sol Alto", "Codex Luna Máximo", "Codex Sol Medio"]
+};
 
 for (const locale of [
   "en.json",
@@ -88,6 +116,11 @@ for (const locale of [
     [messages.Actions[0].Name, messages.Actions[9].Name, messages.Actions[13].Name],
     localizedActionNames[locale],
     `${locale} action localization must follow manifest action order`
+  );
+  assert.deepEqual(
+    messages.Actions.slice(-3).map(action => action.Name),
+    localizedModelActionNames[locale],
+    `${locale} must localize all model presets in manifest order`
   );
   assert.equal(messages.Localization.BridgeApp, "Codex Bridge");
   assert.doesNotMatch(messages.Localization.BridgeAppDescription, /Codex Bridge\.app/);
@@ -162,16 +195,16 @@ try {
   );
   assert.equal(setupStatus?.payload?.status?.serviceOnline, true);
   assert.equal(setupStatus?.payload?.status?.cdpConnected, true);
-  assert.equal(setupStatus?.payload?.status?.bundledVersion, "0.5.0");
+  assert.equal(setupStatus?.payload?.status?.bundledVersion, "0.6.0");
 
-  const taskPaths = [
-    "assets/icons/task-working.png",
-    "assets/icons/task-complete.png",
-    "assets/icons/task-attention.png",
-    "assets/icons/task-error.png",
-    "assets/icons/task-idle.png"
+  const taskImages = [
+    { type: 2, field: "path", value: "assets/icons/task-working.png" },
+    { type: 4, field: "gifpath", value: "assets/icons/task-complete.gif" },
+    { type: 2, field: "path", value: "assets/icons/task-attention.png" },
+    { type: 2, field: "path", value: "assets/icons/task-error.png" },
+    { type: 2, field: "path", value: "assets/icons/task-idle.png" }
   ];
-  for (let index = 0; index < taskPaths.length; index += 1) {
+  for (let index = 0; index < taskImages.length; index += 1) {
     client.send(JSON.stringify({
       cmd: "add",
       uuid: `com.ulanzi.ulanzistudio.codexmicro.task${index + 1}`,
@@ -181,14 +214,15 @@ try {
     }));
   }
   await new Promise(resolve => setTimeout(resolve, 700));
-  for (let index = 0; index < taskPaths.length; index += 1) {
+  for (let index = 0; index < taskImages.length; index += 1) {
     const taskUuid = `com.ulanzi.ulanzistudio.codexmicro.task${index + 1}`;
     const state = messages.find(message =>
       message.cmd === "state" && message.param?.statelist?.[0]?.uuid === taskUuid
     );
     const item = state?.param?.statelist?.[0];
-    assert.equal(item?.type, 2);
-    assert.equal(item?.path, taskPaths[index]);
+    const expected = taskImages[index];
+    assert.equal(item?.type, expected.type);
+    assert.equal(item?.[expected.field], expected.value);
     assert.equal(item?.showtext, true);
     assert.equal(Object.hasOwn(item || {}, "state"), false, "task icon update must not send a state index");
   }
@@ -232,7 +266,10 @@ try {
   assert.equal(navigateState?.param?.statelist?.[0]?.path, "assets/icons/task-working.png");
   assert.equal(navigateState?.param?.statelist?.[0]?.textdata, "Working task");
 
-  const actions = ["fast", "pin", "new", "fork", "steer", "mic", "submit"];
+  const actions = [
+    "fast", "pin", "new", "fork", "steer", "mic", "submit",
+    "model-sol-high", "model-luna-max", "model-sol-medium"
+  ];
   for (const [index, action] of actions.entries()) {
     const uuid = `com.ulanzi.ulanzistudio.codexmicro.${action}`;
     const event = { uuid, actionid: `action-${action}`, key: `1_${index}`, param: {} };

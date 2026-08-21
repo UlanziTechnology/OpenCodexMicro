@@ -1,7 +1,7 @@
 {
   "Name": "Codex Micro",
   "Overview": "Control Codex Desktop tasks and actions from Ulanzi D200 Series in Ulanzi Studio.",
-  "Description": "Control Codex Desktop from Ulanzi D200 Series through Ulanzi Studio. View five recent tasks, use Fast, Usage, Pin, New, Fork, Steer, Mic and Submit, and navigate with the Encoder. Supports Windows 10 or later and macOS 13 or later. Codex Bridge dynamically locates Windows Stable or Beta and keeps authenticated Bridge actions and CDP on loopback. For repository setup run npm install, npm run install:plugin, and npm run setup.",
+  "Description": "Control Codex Desktop from Ulanzi D200 Series through Ulanzi Studio. View five recent tasks, use Fast, Usage, Pin, New, Fork, Steer, Mic and Submit, switch among three GPT-5.6 model presets, and navigate with the Encoder. Supports Windows 10 or later and macOS 13 or later. Codex Bridge dynamically locates Windows Stable or Beta and keeps authenticated Bridge actions and CDP on loopback. For repository setup run npm install, npm run install:plugin, and npm run setup.",
   "Actions": [
     { "Name": "Codex Task 1", "Tooltip": "Open recent Codex task slot 1 and show its live status." },
     { "Name": "Codex Task 2", "Tooltip": "Open recent Codex task slot 2 and show its live status." },
@@ -16,7 +16,10 @@
     { "Name": "Fork Codex Task", "Tooltip": "Fork the active Codex task into a new task." },
     { "Name": "Steer Codex", "Tooltip": "Send the current composer text as steering input to the running task." },
     { "Name": "Codex Microphone", "Tooltip": "Toggle the Codex microphone action." },
-    { "Name": "Submit to Codex", "Tooltip": "Submit or queue the current Codex composer text." }
+    { "Name": "Submit to Codex", "Tooltip": "Submit or queue the current Codex composer text." },
+    { "Name": "Codex Sol High", "Tooltip": "Switch the visible Codex task to GPT-5.6 Sol with high reasoning effort." },
+    { "Name": "Codex Luna Max", "Tooltip": "Switch the visible Codex task to GPT-5.6 Luna with maximum reasoning effort." },
+    { "Name": "Codex Sol Medium", "Tooltip": "Switch the visible Codex task to GPT-5.6 Sol with medium reasoning effort." }
   ],
   "Localization": {
     "BridgeSetup": "Codex Bridge Setup",

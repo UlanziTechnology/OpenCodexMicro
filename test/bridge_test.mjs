@@ -11,6 +11,7 @@ import {
 import {
   CodexCdpClient,
   composerSteerExpression,
+  modelPreset,
   rendererActionExpression
 } from "../src/bridge/codex-cdp.mjs";
 import {
@@ -194,16 +195,27 @@ test("named Micro actions preserve press and release phases", async () => {
   }
 });
 
-test("renderer actions execute once on key down", async () => {
+test("renderer actions and model presets execute once on key down", async () => {
   const client = new CodexCdpClient();
   const calls = [];
   client.dispatchRendererAction = async (action) => calls.push(action);
 
-  for (const action of ["pin", "new"]) {
+  for (const action of ["pin", "new", "model-sol-high", "model-luna-max", "model-sol-medium"]) {
     await client.dispatchNamedAction(action, true);
     await client.dispatchNamedAction(action, false);
   }
-  assert.deepEqual(calls, ["pin", "new"]);
+  assert.deepEqual(calls, ["pin", "new", "model-sol-high", "model-luna-max", "model-sol-medium"]);
+});
+
+test("model presets freeze the requested model and effort", () => {
+  for (const [action, model, displayName, effort] of [
+    ["model-sol-high", "gpt-5.6-sol", "5.6 Sol", "high"],
+    ["model-luna-max", "gpt-5.6-luna", "5.6 Luna", "max"],
+    ["model-sol-medium", "gpt-5.6-sol", "5.6 Sol", "medium"]
+  ]) {
+    assert.deepEqual(modelPreset(action), { model, displayName, effort });
+  }
+  assert.throws(() => modelPreset("unknown"), /Unknown Codex model preset/);
 });
 
 test("new renderer action accepts the current localized New conversation control", () => {

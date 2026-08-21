@@ -1,7 +1,7 @@
 {
   "Name": "Codex Micro",
   "Overview": "Codex-Desktop-Aufgaben und -Aktionen mit der Ulanzi D200 Series in Ulanzi Studio steuern.",
-  "Description": "Steuert Codex Desktop mit der Ulanzi D200 Series in Ulanzi Studio. Unterstützt fünf aktuelle Aufgaben, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit und Encoder-Navigation unter Windows 10 oder neuer sowie macOS 13 oder neuer. Unter Windows erkennt die Bridge Stable oder Beta dynamisch; Schreibaktionen sind durch ein lokales Capability-Token geschützt und CDP bleibt auf Loopback. Für die Repository-Einrichtung: npm install, npm run install:plugin und npm run setup.",
+  "Description": "Steuert Codex Desktop mit der Ulanzi D200 Series in Ulanzi Studio. Unterstützt fünf aktuelle Aufgaben, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit, drei GPT-5.6-Modellvoreinstellungen und Encoder-Navigation unter Windows 10 oder neuer sowie macOS 13 oder neuer. Unter Windows erkennt die Bridge Stable oder Beta dynamisch; Schreibaktionen sind durch ein lokales Capability-Token geschützt und CDP bleibt auf Loopback. Für die Repository-Einrichtung: npm install, npm run install:plugin und npm run setup.",
   "Actions": [
     { "Name": "Codex-Aufgabe 1", "Tooltip": "Öffnet den letzten Codex-Aufgabenplatz 1 und zeigt seinen Live-Status." },
     { "Name": "Codex-Aufgabe 2", "Tooltip": "Öffnet den letzten Codex-Aufgabenplatz 2 und zeigt seinen Live-Status." },
@@ -16,7 +16,10 @@
     { "Name": "Codex-Aufgabe abzweigen", "Tooltip": "Zweigt die aktive Codex-Aufgabe in eine neue Aufgabe ab." },
     { "Name": "Codex steuern", "Tooltip": "Sendet den aktuellen Eingabetext als Steueranweisung an die laufende Aufgabe." },
     { "Name": "Codex-Mikrofon", "Tooltip": "Schaltet die Codex-Mikrofonaktion um." },
-    { "Name": "An Codex senden", "Tooltip": "Sendet den aktuellen Codex-Eingabetext oder stellt ihn in die Warteschlange." }
+    { "Name": "An Codex senden", "Tooltip": "Sendet den aktuellen Codex-Eingabetext oder stellt ihn in die Warteschlange." },
+    { "Name": "Codex Sol Hoch", "Tooltip": "Wechselt die sichtbare Codex-Aufgabe zu GPT-5.6 Sol mit hoher Denkintensität." },
+    { "Name": "Codex Luna Maximum", "Tooltip": "Wechselt die sichtbare Codex-Aufgabe zu GPT-5.6 Luna mit maximaler Denkintensität." },
+    { "Name": "Codex Sol Mittel", "Tooltip": "Wechselt die sichtbare Codex-Aufgabe zu GPT-5.6 Sol mit mittlerer Denkintensität." }
   ],
   "Localization": {
     "BridgeSetup": "Codex Bridge einrichten",

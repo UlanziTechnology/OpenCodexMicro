@@ -1,7 +1,7 @@
 {
   "Name": "Codex Micro",
   "Overview": "Ulanzi Studio の Ulanzi D200 Series から Codex Desktop のタスクと操作を制御します。",
-  "Description": "Ulanzi Studio と Ulanzi D200 Series から Codex Desktop を操作します。最近の 5 タスク、Fast、Usage、Pin、New、Fork、Steer、Mic、Submit、Encoder ナビゲーションに対応します。Windows 10 以降と macOS 13 以降をサポートします。Windows Bridge は Stable または Beta を動的に検出し、Bridge の書き込み操作はローカル能力トークンで保護され、CDP はループバックだけを待ち受けます。リポジトリ設定では npm install、npm run install:plugin、npm run setup を実行します。",
+  "Description": "Ulanzi Studio と Ulanzi D200 Series から Codex Desktop を操作します。最近の 5 タスク、Fast、Usage、Pin、New、Fork、Steer、Mic、Submit、3 つの GPT-5.6 モデルプリセット、Encoder ナビゲーションに対応します。Windows 10 以降と macOS 13 以降をサポートします。Windows Bridge は Stable または Beta を動的に検出し、Bridge の書き込み操作はローカル能力トークンで保護され、CDP はループバックだけを待ち受けます。リポジトリ設定では npm install、npm run install:plugin、npm run setup を実行します。",
   "Actions": [
     { "Name": "Codex タスク 1", "Tooltip": "最近の Codex タスクスロット 1 を開き、リアルタイム状態を表示します。" },
     { "Name": "Codex タスク 2", "Tooltip": "最近の Codex タスクスロット 2 を開き、リアルタイム状態を表示します。" },
@@ -16,7 +16,10 @@
     { "Name": "Codex タスクをフォーク", "Tooltip": "アクティブな Codex タスクを新しいタスクとしてフォークします。" },
     { "Name": "Codex を誘導", "Tooltip": "現在の入力欄のテキストを実行中タスクへの誘導入力として送信します。" },
     { "Name": "Codex マイク", "Tooltip": "Codex のマイク操作を切り替えます。" },
-    { "Name": "Codex に送信", "Tooltip": "現在の Codex 入力欄のテキストを送信またはキューに追加します。" }
+    { "Name": "Codex に送信", "Tooltip": "現在の Codex 入力欄のテキストを送信またはキューに追加します。" },
+    { "Name": "Codex Sol High", "Tooltip": "表示中の Codex タスクを GPT-5.6 Sol、高推論強度に切り替えます。" },
+    { "Name": "Codex Luna Max", "Tooltip": "表示中の Codex タスクを GPT-5.6 Luna、最大推論強度に切り替えます。" },
+    { "Name": "Codex Sol Medium", "Tooltip": "表示中の Codex タスクを GPT-5.6 Sol、中推論強度に切り替えます。" }
   ],
   "Localization": {
     "BridgeSetup": "Codex Bridge 設定",

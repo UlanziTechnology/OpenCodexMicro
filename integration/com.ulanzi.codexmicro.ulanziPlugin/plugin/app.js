@@ -27,12 +27,15 @@ const ACTION_LABELS = Object.freeze({
   fork: "FORK",
   steer: "STEER",
   mic: "MIC",
-  submit: "SUBMIT"
+  submit: "SUBMIT",
+  "model-sol-high": "SOL HIGH",
+  "model-luna-max": "LUNA MAX",
+  "model-sol-medium": "SOL MED"
 });
 const TASK_ICON_PATHS = Object.freeze({
   idle: "assets/icons/task-idle.png",
   working: "assets/icons/task-working.png",
-  complete: "assets/icons/task-complete.png",
+  complete: "assets/icons/task-complete.gif",
   attention: "assets/icons/task-attention.png",
   error: "assets/icons/task-error.png"
 });
@@ -223,9 +226,11 @@ function setDisplay(instance, state, text) {
 }
 
 function setTaskDisplay(instance, path, text) {
-  const digest = `path:${path}:${text}`;
+  const isGif = path.toLowerCase().endsWith(".gif");
+  const digest = `${isGif ? "gif" : "path"}:${path}:${text}`;
   if (!instance.active || instance.lastDisplay === digest) return;
   instance.lastDisplay = digest;
+  const image = isGif ? { type: 4, gifpath: path } : { type: 2, path };
   send({
     cmd: "state",
     param: {
@@ -233,8 +238,7 @@ function setTaskDisplay(instance, path, text) {
         uuid: instance.uuid,
         actionid: instance.actionid,
         key: instance.key,
-        type: 2,
-        path,
+        ...image,
         showtext: true,
         textdata: text
       }]

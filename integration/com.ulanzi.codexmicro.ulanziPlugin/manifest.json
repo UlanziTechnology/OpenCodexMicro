@@ -2,7 +2,7 @@
   "Author": "OpenCodexMicro",
   "Name": "Codex Micro",
   "Overview": "Control Codex Desktop tasks and actions from Ulanzi D200 Series in Ulanzi Studio.",
-  "Description": "Turn Ulanzi D200 Series into a dedicated Codex Desktop control surface through Ulanzi Studio.\n\nFEATURES\n- View five recent Codex tasks with live status and open the exact selected task.\n- Use Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit actions.\n- Use the Latest Task & Scroll Encoder action to open task 1 and scroll Codex.\n- Install, repair, launch, and check Codex Bridge from every Action setup page.\n- Keep Bridge and CDP communication on authenticated loopback-only endpoints.\n\nINSTALLATION ENVIRONMENT\n- Windows 10 or later, or macOS 13 or later\n- Codex Desktop Stable or Beta\n- Ulanzi Studio 3.0.1 or later\n- Ulanzi D200 Series connected in Ulanzi Studio\n- Node.js 20 or later only for manual repository setup\n\nMANUAL INSTALLATION\n1. Clone the repository and open plugins/codex-console.\n2. Quit Ulanzi Studio.\n3. Run: npm install\n4. Run: npm run install:plugin\n5. Run: npm run setup\n6. Reopen Ulanzi Studio and select any Action to check Bridge, service, and CDP status.\n\nIMPORTANT\nOn Windows, Codex Bridge dynamically locates the installed Stable or Beta Appx package and starts Codex with loopback-only CDP arguments. It does not use a version-pinned WindowsApps path.",
+  "Description": "Turn Ulanzi D200 Series into a dedicated Codex Desktop control surface through Ulanzi Studio.\n\nFEATURES\n- View five recent Codex tasks with live status and open the exact selected task.\n- Use Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit actions.\n- Switch the visible Codex task to Sol High, Luna Max, or Sol Medium.\n- Use the Latest Task & Scroll Encoder action to open task 1 and scroll Codex.\n- Install, repair, launch, and check Codex Bridge from every Action setup page.\n- Keep Bridge and CDP communication on authenticated loopback-only endpoints.\n\nINSTALLATION ENVIRONMENT\n- Windows 10 or later, or macOS 13 or later\n- Codex Desktop Stable or Beta\n- Ulanzi Studio 3.0.1 or later\n- Ulanzi D200 Series connected in Ulanzi Studio\n- Node.js 20 or later only for manual repository setup\n\nMANUAL INSTALLATION\n1. Clone the repository and open plugins/codex-console.\n2. Quit Ulanzi Studio.\n3. Run: npm install\n4. Run: npm run install:plugin\n5. Run: npm run setup\n6. Reopen Ulanzi Studio and select any Action to check Bridge, service, and CDP status.\n\nIMPORTANT\nOn Windows, Codex Bridge dynamically locates the installed Stable or Beta Appx package and starts Codex with loopback-only CDP arguments. It does not use a version-pinned WindowsApps path.",
   "Icon": "assets/icons/plugin.png",
   "Category": "AI",
   "CategoryIcon": "assets/icons/plugin.png",
@@ -11,7 +11,7 @@
     "assets/banners/codex-micro-banner-2.png",
     "assets/banners/codex-micro-banner-3.png"
   ],
-  "Version": "0.5.0",
+  "Version": "0.6.0",
   "UUID": "com.ulanzi.ulanzistudio.codexmicro",
   "Type": "JavaScript",
   "CodePath": "dist/app.js",
@@ -169,6 +169,36 @@
       "Controllers": ["Keypad"],
       "DisableAutomaticStates": true,
       "States": [{ "Name": "Submit", "Image": "assets/icons/submit.png" }]
+    },
+    {
+      "Name": "Codex Sol High",
+      "Icon": "assets/icons/model-sol-high.svg",
+      "PropertyInspectorPath": "property-inspector/setup.html",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.model-sol-high",
+      "Tooltip": "Switch the visible Codex task to GPT-5.6 Sol with high reasoning effort.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Sol High", "Image": "assets/icons/model-sol-high.svg" }]
+    },
+    {
+      "Name": "Codex Luna Max",
+      "Icon": "assets/icons/model-luna-max.svg",
+      "PropertyInspectorPath": "property-inspector/setup.html",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.model-luna-max",
+      "Tooltip": "Switch the visible Codex task to GPT-5.6 Luna with maximum reasoning effort.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Luna Max", "Image": "assets/icons/model-luna-max.svg" }]
+    },
+    {
+      "Name": "Codex Sol Medium",
+      "Icon": "assets/icons/model-sol-medium.svg",
+      "PropertyInspectorPath": "property-inspector/setup.html",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.model-sol-medium",
+      "Tooltip": "Switch the visible Codex task to GPT-5.6 Sol with medium reasoning effort.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Sol Medium", "Image": "assets/icons/model-sol-medium.svg" }]
     }
   ]
 }

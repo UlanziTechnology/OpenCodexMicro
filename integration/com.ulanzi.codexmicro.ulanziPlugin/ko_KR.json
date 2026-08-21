@@ -1,7 +1,7 @@
 {
   "Name": "Codex Micro",
   "Overview": "Ulanzi Studio의 Ulanzi D200 Series에서 Codex Desktop 작업과 동작을 제어합니다.",
-  "Description": "Ulanzi Studio의 Ulanzi D200 Series에서 Codex Desktop을 제어합니다. 최근 작업 5개, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit 및 Encoder 탐색을 Windows 10 이상과 macOS 13 이상에서 지원합니다. Windows Bridge는 Stable 또는 Beta를 동적으로 찾고, 쓰기 작업은 로컬 기능 토큰으로 보호되며 CDP는 루프백에서만 수신합니다. 저장소 설정은 npm install, npm run install:plugin, npm run setup을 실행하세요.",
+  "Description": "Ulanzi Studio의 Ulanzi D200 Series에서 Codex Desktop을 제어합니다. 최근 작업 5개, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit, GPT-5.6 모델 프리셋 3개 및 Encoder 탐색을 Windows 10 이상과 macOS 13 이상에서 지원합니다. Windows Bridge는 Stable 또는 Beta를 동적으로 찾고, 쓰기 작업은 로컬 기능 토큰으로 보호되며 CDP는 루프백에서만 수신합니다. 저장소 설정은 npm install, npm run install:plugin, npm run setup을 실행하세요.",
   "Actions": [
     { "Name": "Codex 작업 1", "Tooltip": "최근 Codex 작업 슬롯 1을 열고 실시간 상태를 표시합니다." },
     { "Name": "Codex 작업 2", "Tooltip": "최근 Codex 작업 슬롯 2를 열고 실시간 상태를 표시합니다." },
@@ -16,7 +16,10 @@
     { "Name": "Codex 작업 포크", "Tooltip": "활성 Codex 작업을 새 작업으로 포크합니다." },
     { "Name": "Codex 조정", "Tooltip": "현재 입력창 텍스트를 실행 중인 작업에 조정 입력으로 보냅니다." },
     { "Name": "Codex 마이크", "Tooltip": "Codex 마이크 동작을 전환합니다." },
-    { "Name": "Codex에 제출", "Tooltip": "현재 Codex 입력창 텍스트를 제출하거나 대기열에 추가합니다." }
+    { "Name": "Codex에 제출", "Tooltip": "현재 Codex 입력창 텍스트를 제출하거나 대기열에 추가합니다." },
+    { "Name": "Codex Sol 높음", "Tooltip": "현재 보이는 Codex 작업을 GPT-5.6 Sol과 높은 추론 강도로 전환합니다." },
+    { "Name": "Codex Luna 최대", "Tooltip": "현재 보이는 Codex 작업을 GPT-5.6 Luna와 최대 추론 강도로 전환합니다." },
+    { "Name": "Codex Sol 중간", "Tooltip": "현재 보이는 Codex 작업을 GPT-5.6 Sol과 중간 추론 강도로 전환합니다." }
   ],
   "Localization": {
     "BridgeSetup": "Codex Bridge 설정",

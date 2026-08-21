@@ -31,9 +31,11 @@ context map, and usage query clients. Those references are cached for the
 renderer lifecycle and rediscovered only when they become invalid.
 
 Task activation and Fast, Fork, Submit, and Mic use Codex Micro events. Pin,
-New, and Steer invoke the matching semantic renderer controls. An uncertain
-HTTP failure is never replayed through another mechanism because the first
-request may already have executed.
+New, Steer, and the three model presets invoke semantic renderer controls. The
+model adapter requires the visible intelligence trigger, validates the exact
+model option and reasoning-effort ordering, and verifies the final selection.
+An uncertain HTTP failure is never replayed through another mechanism because
+the first request may already have executed.
 
 ## Ulanzi Studio plugin
 

@@ -1,7 +1,7 @@
 {
   "Name": "Codex Micro",
   "Overview": "透過 Ulanzi Studio，在 Ulanzi D200 Series 上查看並控制 Codex Desktop。",
-  "Description": "透過 Ulanzi Studio，在 Ulanzi D200 Series 上查看及控制 Codex Desktop。支援最近五個任務、Fast、Usage、Pin、New、Fork、Steer、Mic、Submit 及旋鈕導覽。支援 Windows 10 或更新版本及 macOS 13 或更新版本。Windows Bridge 會動態尋找 Stable 或 Beta，Bridge 寫入操作使用本機能力權杖，CDP 只監聽迴環位址。儲存庫安裝請執行 npm install、npm run install:plugin 及 npm run setup。",
+  "Description": "透過 Ulanzi Studio，在 Ulanzi D200 Series 上查看及控制 Codex Desktop。支援最近五個任務、Fast、Usage、Pin、New、Fork、Steer、Mic、Submit、三個 GPT-5.6 模型預設及旋鈕導覽。支援 Windows 10 或更新版本及 macOS 13 或更新版本。Windows Bridge 會動態尋找 Stable 或 Beta，Bridge 寫入操作使用本機能力權杖，CDP 只監聽迴環位址。儲存庫安裝請執行 npm install、npm run install:plugin 及 npm run setup。",
   "Actions": [
     { "Name": "Codex 任務 1", "Tooltip": "開啟最近的 Codex 任務欄位 1，並顯示即時狀態。" },
     { "Name": "Codex 任務 2", "Tooltip": "開啟最近的 Codex 任務欄位 2，並顯示即時狀態。" },
@@ -16,7 +16,10 @@
     { "Name": "分支 Codex 任務", "Tooltip": "從目前 Codex 任務建立新的分支任務。" },
     { "Name": "引導 Codex", "Tooltip": "將目前編輯器文字作為引導輸入傳送給執行中的任務。" },
     { "Name": "Codex 麥克風", "Tooltip": "切換 Codex 麥克風操作。" },
-    { "Name": "提交至 Codex", "Tooltip": "提交或排隊傳送目前的 Codex 編輯器文字。" }
+    { "Name": "提交至 Codex", "Tooltip": "提交或排隊傳送目前的 Codex 編輯器文字。" },
+    { "Name": "Codex Sol 高", "Tooltip": "將目前可見的 Codex 任務切換至 GPT-5.6 Sol，並使用高推理強度。" },
+    { "Name": "Codex Luna 最高", "Tooltip": "將目前可見的 Codex 任務切換至 GPT-5.6 Luna，並使用最高推理強度。" },
+    { "Name": "Codex Sol 中", "Tooltip": "將目前可見的 Codex 任務切換至 GPT-5.6 Sol，並使用中等推理強度。" }
   ],
   "Localization": {
     "BridgeSetup": "Codex Bridge 設定",

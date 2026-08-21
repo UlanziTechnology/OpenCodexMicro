@@ -125,7 +125,7 @@ const server = createServer(async (request, response) => {
     }
   }
   const action = request.method === "POST" && url.pathname.match(
-    /^\/action\/(fast|approve|reject|pin|new|fork|mic|steer|submit)\/(down|up)$/
+    /^\/action\/(fast|approve|reject|pin|new|fork|mic|steer|submit|model-sol-high|model-luna-max|model-sol-medium)\/(down|up)$/
   );
   if (action) {
     try {

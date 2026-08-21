@@ -1,7 +1,7 @@
 {
   "Name": "Codex Micro",
   "Overview": "Controla tareas y acciones de Codex Desktop con Ulanzi D200 Series en Ulanzi Studio.",
-  "Description": "Controla Codex Desktop con Ulanzi D200 Series en Ulanzi Studio. Incluye cinco tareas recientes, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit y navegación con Encoder en Windows 10 o posterior y macOS 13 o posterior. En Windows, Bridge encuentra Stable o Beta dinámicamente; las acciones de escritura usan un token local y CDP permanece en loopback. Para configurar desde el repositorio ejecuta npm install, npm run install:plugin y npm run setup.",
+  "Description": "Controla Codex Desktop con Ulanzi D200 Series en Ulanzi Studio. Incluye cinco tareas recientes, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit, tres preajustes de modelo GPT-5.6 y navegación con Encoder en Windows 10 o posterior y macOS 13 o posterior. En Windows, Bridge encuentra Stable o Beta dinámicamente; las acciones de escritura usan un token local y CDP permanece en loopback. Para configurar desde el repositorio ejecuta npm install, npm run install:plugin y npm run setup.",
   "Actions": [
     { "Name": "Tarea Codex 1", "Tooltip": "Abre la posición 1 de las tareas recientes de Codex y muestra su estado en tiempo real." },
     { "Name": "Tarea Codex 2", "Tooltip": "Abre la posición 2 de las tareas recientes de Codex y muestra su estado en tiempo real." },
@@ -16,7 +16,10 @@
     { "Name": "Bifurcar tarea de Codex", "Tooltip": "Bifurca la tarea activa de Codex en una tarea nueva." },
     { "Name": "Orientar Codex", "Tooltip": "Envía el texto actual del editor como orientación a la tarea en ejecución." },
     { "Name": "Micrófono de Codex", "Tooltip": "Activa o desactiva la acción de micrófono de Codex." },
-    { "Name": "Enviar a Codex", "Tooltip": "Envía o pone en cola el texto actual del editor de Codex." }
+    { "Name": "Enviar a Codex", "Tooltip": "Envía o pone en cola el texto actual del editor de Codex." },
+    { "Name": "Codex Sol Alto", "Tooltip": "Cambia la tarea visible de Codex a GPT-5.6 Sol con razonamiento alto." },
+    { "Name": "Codex Luna Máximo", "Tooltip": "Cambia la tarea visible de Codex a GPT-5.6 Luna con razonamiento máximo." },
+    { "Name": "Codex Sol Medio", "Tooltip": "Cambia la tarea visible de Codex a GPT-5.6 Sol con razonamiento medio." }
   ],
   "Localization": {
     "BridgeSetup": "Configuración de Codex Bridge",

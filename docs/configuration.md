@@ -23,11 +23,19 @@ No repository or npm working directory is required for this flow.
 | Steer | Send the visible composer text as steering input to a running task |
 | Mic | Press and release the Codex Micro microphone action |
 | Submit | Submit or queue the composer text |
+| Sol High | Switch the visible task to GPT-5.6 Sol with high reasoning effort |
+| Luna Max | Switch the visible task to GPT-5.6 Luna with maximum reasoning effort |
+| Sol Medium | Switch the visible task to GPT-5.6 Sol with medium reasoning effort |
 
 Task actions dynamically use the plugin's idle, working, complete, attention,
 error, and offline artwork. Usage is rendered at runtime from the allowance
 returned by the Bridge. The Encoder action mirrors task 1's current title and
 status artwork.
+
+Model presets operate the visible Codex Desktop intelligence picker. They
+validate the target model, the current reasoning-effort ordering, and the final
+selection. A running turn is not moved to another model; the preset applies to
+the next turn submitted from the visible task.
 
 ## Recommended layout
 
