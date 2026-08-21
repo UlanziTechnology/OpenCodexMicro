@@ -37,10 +37,12 @@ placed on more than one key.
 
 ## Runtime requirements
 
-- Start Codex through `~/Applications/Codex Bridge.app`.
+- Start Codex from the Bridge setup page or with `npm run bridge:start`; Windows
+  resolves the current Stable or Beta Appx package dynamically.
 - Keep the Bridge sidecar running at `127.0.0.1:17373`.
-- Allow Ulanzi Studio under macOS System Settings > Privacy & Security >
-  Accessibility so the Encoder can emit mouse-wheel events.
+- On macOS, allow Ulanzi Studio under System Settings > Privacy & Security >
+  Accessibility so the Encoder can emit mouse-wheel events. On Windows, confirm
+  Ulanzi Studio is allowed to send the configured hotkey events.
 - Restart Ulanzi Studio after installing a new plugin build.
 
 The plugin does not require a separate device service, shortcut file, or theme

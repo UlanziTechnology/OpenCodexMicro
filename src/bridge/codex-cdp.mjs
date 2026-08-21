@@ -1,9 +1,7 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { discoverDebugPort, fetchJson } from "./platform.mjs";
 import WebSocket from "ws";
 import { localThreadKey } from "./thread-key.mjs";
 
-const execFileAsync = promisify(execFile);
 const USAGE_REFRESH_MS = Math.max(
   15000,
   Number(process.env.CODEX_KEYBOARD_USAGE_REFRESH_SECONDS || 600) * 1000
@@ -345,26 +343,6 @@ function selectMainTarget(targets) {
     try { return new URL(target.url).pathname === "/index.html" && !new URL(target.url).search; }
     catch { return false; }
   }) ?? pages.find((target) => !/avatar-overlay|composition-surface/i.test(target.url || ""));
-}
-
-async function fetchJson(url, timeout = 1200) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeout) });
-  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
-  return response.json();
-}
-
-async function discoverDebugPort() {
-  const { stdout } = await execFileAsync("/bin/ps", ["-axo", "command="], { timeout: 4000 });
-  for (const line of stdout.split("\n")) {
-    if (!line.includes("--remote-debugging-address=127.0.0.1")) continue;
-    const port = Number(line.match(/--remote-debugging-port(?:=|\s+)(\d+)/)?.[1]);
-    if (!Number.isInteger(port)) continue;
-    try {
-      await fetchJson(`http://127.0.0.1:${port}/json/version`, 500);
-      return port;
-    } catch {}
-  }
-  throw new Error("Codex is not running with the local debug bridge");
 }
 
 export class CodexCdpClient {

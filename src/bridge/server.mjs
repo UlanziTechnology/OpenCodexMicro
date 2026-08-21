@@ -1,10 +1,12 @@
 import { createServer } from "node:http";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { CodexCdpClient } from "./codex-cdp.mjs";
+import { bridgeRequestAuthorized } from "./auth.mjs";
+import { focusCodex } from "./platform.mjs";
 import { decodeThreadPathSegment } from "./thread-key.mjs";
 
-const execFileAsync = promisify(execFile);
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.CODEX_KEYBOARD_PORT || 17373);
 const configuredRefreshMs = Number(process.env.CODEX_KEYBOARD_REFRESH_MS || 500);
@@ -12,6 +14,13 @@ const REFRESH_MS = Number.isFinite(configuredRefreshMs)
   ? Math.max(250, configuredRefreshMs)
   : 500;
 const client = new CodexCdpClient();
+const dataRoot = process.env.CODEX_BRIDGE_DATA_ROOT || (process.platform === "win32"
+  ? join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "OpenCodexMicro")
+  : join(homedir(), "Library", "Application Support", "OpenCodexMicro"));
+const bridgeToken = process.env.CODEX_BRIDGE_TOKEN || (() => {
+  try { return readFileSync(join(dataRoot, "bridge-token"), "utf8").trim(); }
+  catch { return ""; }
+})();
 let cached = {
   connected: false,
   slots: Array.from({ length: 6 }, (_, id) => ({
@@ -23,10 +32,8 @@ let cached = {
 let refreshPromise = null;
 let nextReconnectAt = 0;
 
-async function focusCodex() {
-  await execFileAsync("/usr/bin/open", ["-b", "com.openai.codex"], {
-    timeout: 3000
-  });
+function authorized(request) {
+  return bridgeRequestAuthorized(bridgeToken, request.headers.authorization);
 }
 
 async function refresh(force = false) {
@@ -60,6 +67,9 @@ function json(response, status, body) {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${HOST}:${PORT}`);
+  if (request.method === "POST" && !authorized(request)) {
+    return json(response, 401, { ok: false, error: "Bridge authorization required" });
+  }
   if (request.method === "GET" && url.pathname === "/health") {
     await refresh(true);
     return json(response, 200, { ok: true, codexConnected: cached.connected, updatedAt: cached.updatedAt });
@@ -69,7 +79,7 @@ const server = createServer(async (request, response) => {
   }
   if (request.method === "POST" && url.pathname === "/focus") {
     try {
-      await focusCodex();
+       await focusCodex();
       return json(response, 200, { ok: true });
     } catch (error) {
       return json(response, 503, { ok: false, error: error.message });

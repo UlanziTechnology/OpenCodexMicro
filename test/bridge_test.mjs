@@ -12,8 +12,54 @@ import {
   composerSteerExpression,
   rendererActionExpression
 } from "../src/bridge/codex-cdp.mjs";
+import {
+  debugPortsFromCommandLines,
+  discoverDebugPort,
+  discoverWindowsCodexExecutables
+} from "../src/bridge/platform.mjs";
+import { bridgeRequestAuthorized } from "../src/bridge/auth.mjs";
 
 const UUID = "f6805b8a-332a-43a0-a118-52d3e59542f6";
+
+test("Bridge write authorization fails closed and accepts only the installed token", () => {
+  const token = "fixture-local-capability-token";
+  assert.equal(bridgeRequestAuthorized("", `Bearer ${token}`), false);
+  assert.equal(bridgeRequestAuthorized(token, ""), false);
+  assert.equal(bridgeRequestAuthorized(token, "Bearer wrong-token"), false);
+  assert.equal(bridgeRequestAuthorized(token, `Bearer ${token}`), true);
+});
+
+test("CDP discovery probes the fixed loopback port before platform process inspection", async () => {
+  const requests = [];
+  let processInspections = 0;
+  const port = await discoverDebugPort({
+    platform: "win32",
+    execute: async () => { processInspections += 1; throw new Error("process inspection denied"); },
+    fetchImpl: async (url) => {
+      requests.push(url);
+      return { ok: true, json: async () => ({ Browser: "Chrome" }) };
+    }
+  });
+  assert.equal(port, 9222);
+  assert.deepEqual(requests, ["http://127.0.0.1:9222/json/version"]);
+  assert.equal(processInspections, 0);
+});
+
+test("Windows CDP and Appx discovery accept Stable and Beta process shapes", async () => {
+  assert.deepEqual(debugPortsFromCommandLines([
+    '"ChatGPT.exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222',
+    '"ChatGPT (Beta).exe" --remote-debugging-address=127.0.0.1 --remote-debugging-port 9333'
+  ].join("\n")), [9222, 9333]);
+  const installs = await discoverWindowsCodexExecutables({
+    execute: async () => ({
+      stdout: JSON.stringify([
+        { channel: "stable", packageName: "OpenAI.Codex", executable: "C:\\WindowsApps\\Stable\\app\\ChatGPT.exe" },
+        { channel: "beta", packageName: "OpenAI.CodexBeta", executable: "C:\\WindowsApps\\Beta\\app\\ChatGPT (Beta).exe" }
+      ])
+    })
+  });
+  assert.deepEqual(installs.map((item) => item.channel), ["stable", "beta"]);
+});
 
 test("accepts formal and explicit temporary Codex thread ids", () => {
   assert.equal(validateThreadId(UUID), UUID);

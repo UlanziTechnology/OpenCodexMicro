@@ -8,72 +8,63 @@ Codex Desktop <-> Codex Bridge sidecar <-> Ulanzi Studio plugin <-> D200
 
 ## Dependencies
 
-- macOS;
-- Codex Desktop;
-- Ulanzi Studio with a supported keypad device;
-- Node.js 20 or newer only for repository-based manual installation.
+- Windows 10+ or macOS 13+;
+- Codex Desktop Stable or Beta;
+- Ulanzi Studio 3.0.1+ with a supported D200 Series device;
+- Node.js 20+ only for repository-based installation.
 
-## 1. Set up Codex Bridge.app in Ulanzi Studio
+## Install from Ulanzi Studio
 
-Drag any Codex Micro action onto a key and select it. In the shared
-**Codex Bridge Setup** page, choose **Install / Repair**. The plugin installs
-its bundled Bridge runtime, wrapper app, and user LaunchAgent without requiring
-a repository path, npm, or administrator access. Then choose
-**Launch Codex Bridge** and wait for the CDP status to become connected.
+Drag any Codex Micro Action onto a key and select it. In the shared **Codex
+Bridge Setup** page, choose **Install / Repair**, then **Launch Codex Bridge**.
+The bundled installer requires no repository path, npm directory, administrator
+service, or fixed Codex package version.
 
-## 2. Set up Codex Bridge.app from the repository
+Windows installs Bridge data under:
 
-From the repository root:
+```text
+%LOCALAPPDATA%\OpenCodexMicro
+```
 
-```bash
+The Ulanzi plugin starts and supervises the user-level Bridge process. The
+launcher reads Appx metadata for `OpenAI.Codex` and `OpenAI.CodexBeta`, preferring
+Stable unless `CODEX_DESKTOP_CHANNEL=beta` is configured.
+
+macOS keeps the wrapper and LaunchAgent flow:
+
+```text
+~/Applications/Codex Bridge.app
+~/Library/Application Support/OpenCodexMicro
+~/Library/LaunchAgents/io.opencodexmicro.bridge.plist
+```
+
+## Install from the repository
+
+From `plugins/codex-console`:
+
+```text
 npm install
+npm run install:plugin
 npm run setup
 ```
 
-The installer builds the sidecar, writes and starts
-`io.opencodexmicro.bridge`, and ad-hoc signs:
+Quit Ulanzi Studio before replacing a loaded plugin. `install:plugin` validates
+the manifest, entry point, Property Inspector, icons, banners, locales, and
+bundled Bridge resources before atomically replacing the installed directory.
+
+Plugin destinations are:
 
 ```text
-~/Applications/Codex Bridge.app
+Windows: %APPDATA%\Ulanzi\UlanziDeck\Plugins\com.ulanzi.codexmicro.ulanziPlugin
+macOS:   ~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/com.ulanzi.codexmicro.ulanziPlugin
 ```
 
-To install without starting the sidecar LaunchAgent:
+Use `npm run setup -- --no-start` to install Bridge without launching Codex, or
+`npm run bridge:start` to launch an existing installation.
 
-```bash
-npm run setup -- --no-start
-```
+## Codex and CDP lifecycle
 
-## 3. Install the Ulanzi Studio plugin
-
-Quit Ulanzi Studio before replacing a plugin that is currently loaded, then
-run:
-
-```bash
-npm run install:plugin
-```
-
-The repository ships the prebuilt `dist/app.js`. The command validates that
-the manifest entry point exists and atomically replaces:
-
-```text
-~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/com.ulanzi.codexmicro.ulanziPlugin
-```
-
-Restart Ulanzi Studio and confirm the **Codex Micro** category and actions are
-visible.
-
-Plugin development still uses `npm run build:plugin` and `npm run check`; commit
-the updated `dist/app.js` and `dist/package.json` with source changes.
-
-## Starting Codex
-
-Quit a normally launched Codex instance, then open:
-
-```text
-~/Applications/Codex Bridge.app
-```
-
-The wrapper launches `/Applications/ChatGPT.app/Contents/MacOS/ChatGPT` with:
+Codex must be launched with:
 
 ```text
 --remote-debugging-address=127.0.0.1
@@ -81,77 +72,63 @@ The wrapper launches `/Applications/ChatGPT.app/Contents/MacOS/ChatGPT` with:
 --remote-allow-origins=http://127.0.0.1:9222
 ```
 
-CDP binds to `127.0.0.1:9222` and the sidecar API to `127.0.0.1:17373`.
-Neither endpoint is reachable from the LAN.
+Bridge probes `127.0.0.1:9222` first. If it is already available, Launch only
+focuses Codex. If it is unavailable on Windows, Launch dynamically resolves the
+selected Appx package, stops only that channel's main process, and starts its
+current executable with the arguments above. No versioned WindowsApps path is
+stored.
 
-## Installed files and service
-
-```text
-~/Applications/Codex Bridge.app
-~/Library/Application Support/OpenCodexMicro/bridge.mjs
-~/Library/Application Support/OpenCodexMicro/bridge.log
-~/Library/Application Support/OpenCodexMicro/bridge-error.log
-~/Library/LaunchAgents/io.opencodexmicro.bridge.plist
-~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/com.ulanzi.codexmicro.ulanziPlugin
-```
-
-Inspect or restart the Bridge sidecar:
-
-```bash
-launchctl print "gui/$(id -u)/io.opencodexmicro.bridge"
-launchctl kickstart -k "gui/$(id -u)/io.opencodexmicro.bridge"
-```
+CDP binds to `127.0.0.1:9222` and Bridge to `127.0.0.1:17373`. Bridge `POST`
+actions require the random capability token stored in the user data directory;
+the plugin reads it locally and never sends it to the Property Inspector.
 
 ## Diagnostics
 
-```bash
-curl http://127.0.0.1:17373/health
-curl http://127.0.0.1:17373/state
-tail -f "$HOME/Library/Application Support/OpenCodexMicro/bridge.log"
-tail -f "$HOME/Library/Application Support/OpenCodexMicro/bridge-error.log"
+Read-only health endpoints remain available on loopback:
+
+```text
+http://127.0.0.1:17373/health
+http://127.0.0.1:17373/state
+http://127.0.0.1:9222/json/version
+http://127.0.0.1:9222/json/list
 ```
+
+Windows logs can be inspected from the Ulanzi Studio plugin log and the Bridge
+status page. macOS sidecar logs remain under
+`~/Library/Application Support/OpenCodexMicro`.
 
 | Symptom | Check |
 | --- | --- |
-| Plugin category is missing | Confirm the installed plugin directory contains `manifest.json` and `dist/app.js`, then restart Ulanzi Studio |
-| Plugin keys show offline | Start Codex with `Codex Bridge.app` and check `/health` and `/state` |
-| A task key does not switch | Check `bridge-error.log` and confirm `/state` contains the displayed thread |
-| Steer does nothing | Confirm a running task exposes the visible composer Steer action |
-| An action has no effect | Confirm the plugin can reach `127.0.0.1:17373` and inspect the Bridge log |
+| Plugin category is missing | Confirm the platform plugin directory contains `manifest.json` and `dist/app.js`, then restart Ulanzi Studio |
+| Bridge is not installed | Use **Install / Repair** and confirm the user data directory contains `bridge.mjs`, `bridge-token`, and `install.json` |
+| Bridge is offline | Use **Launch Codex Bridge**; on Windows confirm no endpoint security product blocked the user-level Node process |
+| CDP is disconnected | Confirm Codex was launched with the three loopback arguments and `/json/version` responds |
+| A task key does not switch | Confirm `/state` contains the displayed thread and the current Codex renderer still exposes Micro handlers |
+| Usage is blank | Treat `rate-limit-status: null` as unavailable account data, not as a Windows transport failure |
 
-## Update
+## Update and uninstall
 
-```bash
-git pull
+```text
 npm install
 npm run check
 npm run setup
 npm run install:plugin
 ```
 
-Restart Ulanzi Studio after updating the plugin.
+Restart Ulanzi Studio after updating the plugin. Remove Bridge and the installed
+plugin only when explicitly intended:
 
-## Uninstall
-
-```bash
+```text
 npm run uninstall
 ```
 
-This stops and removes the Bridge LaunchAgent, Bridge runtime, wrapper app, and
-installed Codex Micro plugin directory.
+The Windows uninstaller stops only the Bridge process whose command line points
+to the installed `bridge.mjs`; it does not remove or terminate Codex Desktop.
 
 ## Development
 
-```bash
-npm install
-npm run check
-```
-
-Main entry points:
-
-- `src/bridge/`: Codex renderer bridge;
-- `scripts/build-bridge.mjs`: bundle the loopback sidecar;
-- `scripts/install.mjs`: install the sidecar and wrapper app;
-- `scripts/install-plugin.mjs`: validate and install the prebuilt Ulanzi plugin;
-- `integration/com.ulanzi.codexmicro.ulanziPlugin/`: Ulanzi Studio plugin;
-- `scripts/uninstall.mjs`: remove both installed components.
+The committed release entry points are
+`integration/com.ulanzi.codexmicro.ulanziPlugin/dist/app.js` and
+`integration/com.ulanzi.codexmicro.ulanziPlugin/installer/bridge.mjs`. Run the
+repository verification gate after platform, installer, manifest, localization,
+or build changes.

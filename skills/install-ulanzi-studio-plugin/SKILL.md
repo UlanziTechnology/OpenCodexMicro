@@ -1,6 +1,6 @@
 ---
 name: install-ulanzi-studio-plugin
-description: Install, update, verify, or diagnose the repository's prebuilt Codex Micro .ulanziPlugin directory in Ulanzi Studio on macOS. Use for local Ulanzi Studio plugin installation, not plugin development or Codex Bridge.app setup.
+description: Install, update, verify, or diagnose the prebuilt Codex Micro .ulanziPlugin directory in Ulanzi Studio on Windows or macOS. Use for local plugin installation, not plugin development or Codex Bridge setup.
 ---
 
 # Install the Ulanzi Studio Plugin
@@ -13,7 +13,7 @@ Resolve the project root as two directories above this file. Require
 
 1. Inspect `git status --short`, the plugin `manifest.json`, and its committed
    `CodePath`. Preserve unrelated worktree changes.
-2. Verify macOS, Node.js 20+, and `/Applications/Ulanzi Studio.app`.
+2. Verify Windows 10+ or macOS 13+, Node.js 20+, and Ulanzi Studio 3.0.1+.
 3. If Ulanzi Studio is running, ask the user to quit it before replacing the
    loaded plugin. Do not terminate the app without permission.
 4. From the project root, run:
@@ -25,17 +25,10 @@ Resolve the project root as two directories above this file. Require
    The installer validates the prebuilt manifest entry point, then atomically
    replaces the installed directory. It must not rebuild the plugin during
    installation.
-5. Verify:
-
-   ```bash
-   plugin="$HOME/Library/Application Support/Ulanzi/UlanziDeck/Plugins/com.ulanzi.codexmicro.ulanziPlugin"
-   test -f "$plugin/manifest.json"
-   test -f "$plugin/dist/app.js"
-   test -f "$plugin/dist/package.json"
-   for locale in en zh_CN zh_HK ja_JP de_DE ko_KR pt_PT es_ES; do
-     test -f "$plugin/$locale.json"
-   done
-   ```
+5. Verify the platform-specific destination: `%APPDATA%\Ulanzi\UlanziDeck\Plugins`
+   on Windows or `~/Library/Application Support/Ulanzi/UlanziDeck/Plugins` on
+   macOS. Confirm `manifest.json`, `dist/app.js`, `dist/package.json`, all eight
+   locale files, icons, banners, Property Inspector, and installer resources.
 
 6. Ask the user to reopen Ulanzi Studio and confirm that the **Codex Micro**
    category and actions appear. If actions show offline, verify the Bridge with

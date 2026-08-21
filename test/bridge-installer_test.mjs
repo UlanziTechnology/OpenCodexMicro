@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  bridgeDataRoot,
   createBridgeInstaller,
   selectBridgeNodeRuntime
 } from "../integration/com.ulanzi.codexmicro.ulanziPlugin/plugin/bridge-installer.js";
@@ -107,6 +108,92 @@ test("bundled installer falls back when the system Node is older than version 20
     });
     assert.equal(runtime.executable, fallbackNode);
     assert.equal(runtime.source, "ulanzi");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Windows installer uses LocalAppData, a capability token, and user-level processes", async () => {
+  const home = await mkdtemp(join(tmpdir(), "codex-micro-windows-installer-"));
+  const localAppData = join(home, "LocalAppData");
+  const bin = join(home, "bin");
+  const systemNode = join(bin, "node.exe");
+  const codexExecutable = join(home, "WindowsApps", "OpenAI.Codex_1.2.3.4_x64", "app", "ChatGPT.exe");
+  await mkdir(bin, { recursive: true });
+  await writeFile(systemNode, "fake node");
+  const commands = [];
+  const children = [];
+  const execute = async (command, args, options) => {
+    commands.push([command, args, options]);
+    if (args[0] === "--version") return { stdout: "v22.14.0\n", stderr: "" };
+    if (command === "powershell.exe" && args.join(" ").includes("Get-AppxPackage")) {
+      return {
+        stdout: JSON.stringify({
+          channel: "stable",
+          packageName: "OpenAI.Codex",
+          packageFullName: "OpenAI.Codex_1.2.3.4_x64__test",
+          executable: codexExecutable
+        }),
+        stderr: ""
+      };
+    }
+    return { stdout: "", stderr: "" };
+  };
+  const spawnProcess = (command, args, options) => {
+    children.push({ command, args, options });
+    return { unref() {} };
+  };
+  const installer = createBridgeInstaller({
+    pluginRoot,
+    bridgeUrl: "http://127.0.0.1:59999",
+    version: "9.8.7",
+    home,
+    localAppData,
+    platform: "win32",
+    nodeExecutable: process.execPath,
+    environmentPath: bin,
+    execute,
+    spawnProcess,
+    fetchImpl: async () => { throw new Error("offline fixture"); }
+  });
+
+  try {
+    assert.equal(
+      bridgeDataRoot({ platform: "win32", home, localAppData }),
+      join(localAppData, "OpenCodexMicro")
+    );
+    const installed = await installer.install();
+    assert.equal(installed.supported, true);
+    assert.equal(installed.installed, true);
+    const dataRoot = join(localAppData, "OpenCodexMicro");
+    await access(join(dataRoot, "bridge.mjs"));
+    const token = (await readFile(join(dataRoot, "bridge-token"), "utf8")).trim();
+    assert.match(token, /^[A-Za-z0-9_-]{40,}$/);
+    assert.match((await installer.authorizationHeaders()).Authorization, /^Bearer /);
+    assert.equal(children[0].command, await realpath(systemNode));
+    assert.equal(children[0].options.windowsHide, true);
+    assert.equal(children[0].options.env.CODEX_BRIDGE_TOKEN, token);
+
+    await installer.launch();
+    assert.equal(children[1].command, codexExecutable);
+    assert.deepEqual(children[1].args, [
+      "--remote-debugging-address=127.0.0.1",
+      "--remote-debugging-port=9222",
+      "--remote-allow-origins=http://127.0.0.1:9222"
+    ]);
+    assert.equal(children[1].options.windowsHide, false);
+    assert.ok(commands.some(([command, args]) =>
+      command === "powershell.exe" && args.join(" ").includes("Stop-Process")
+    ));
+    assert.ok(commands.some(([command, args, options]) =>
+      command === "powershell.exe" &&
+      args.join(" ").includes("Wait-Process") &&
+      options?.env?.CODEX_BRIDGE_TARGET_EXECUTABLE === codexExecutable
+    ));
+
+    const uninstalled = await installer.uninstall();
+    assert.equal(uninstalled.installed, false);
+    await assert.rejects(access(dataRoot));
   } finally {
     await rm(home, { recursive: true, force: true });
   }

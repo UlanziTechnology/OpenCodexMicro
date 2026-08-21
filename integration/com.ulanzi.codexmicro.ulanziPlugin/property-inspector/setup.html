@@ -9,37 +9,26 @@
     html, body { margin: 0; background: transparent; color: #e8e8e8; font-size: 13px; }
     * { box-sizing: border-box; }
     main { padding: 12px 14px 10px; }
-    h1 { margin: 0 0 5px; font-size: 15px; font-weight: 650; }
-    .intro { margin: 0 0 10px; color: #aeb3ba; line-height: 1.35; }
-    .panel { border: 1px solid rgba(255,255,255,.12); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,.035); }
-    .row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; min-height: 37px; padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
+    h1 { margin: 0 0 5px; font-size: 15px; }
+    .intro, .message, .info-body { color: #aeb3ba; line-height: 1.4; }
+    .intro { margin: 0 0 10px; }
+    .panel, details { border: 1px solid rgba(255,255,255,.12); border-radius: 8px; background: rgba(255,255,255,.035); }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
     .row:last-child { border-bottom: 0; }
-    .value { display: inline-flex; align-items: center; gap: 6px; color: #aeb3ba; text-align: right; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: #72777f; box-shadow: 0 0 0 2px rgba(114,119,127,.15); }
-    .value.good { color: #75d6a3; }
-    .value.good .dot { background: #42c985; box-shadow: 0 0 0 2px rgba(66,201,133,.15); }
-    .value.warn { color: #f0bc68; }
-    .value.warn .dot { background: #e6a84b; box-shadow: 0 0 0 2px rgba(230,168,75,.15); }
-    .value.bad { color: #ef8585; }
-    .value.bad .dot { background: #e45f5f; box-shadow: 0 0 0 2px rgba(228,95,95,.15); }
-    .message { min-height: 18px; margin: 8px 1px 4px; color: #aeb3ba; line-height: 1.35; }
-    .message.error { color: #ef8585; }
-    .message.success { color: #75d6a3; }
+    .value { display: inline-flex; align-items: center; gap: 6px; text-align: right; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #72777f; }
+    .good { color: #75d6a3; } .good .dot { background: #42c985; }
+    .warn { color: #f0bc68; } .warn .dot { background: #e6a84b; }
+    .bad, .error { color: #ef8585; } .bad .dot { background: #e45f5f; }
+    .success { color: #75d6a3; }
+    .message { min-height: 18px; margin: 8px 1px 4px; }
     .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
     button { min-height: 33px; border: 1px solid rgba(255,255,255,.14); border-radius: 6px; color: #f3f3f3; background: rgba(255,255,255,.08); cursor: pointer; }
-    button:hover:not(:disabled) { background: rgba(255,255,255,.13); }
-    button.primary { border-color: #3f78bd; background: #2867ad; }
-    button.primary:hover:not(:disabled) { background: #3276bf; }
-    button.danger { grid-column: 1 / -1; color: #ef9a9a; border-color: rgba(228,95,95,.35); background: rgba(228,95,95,.08); }
-    button.danger:hover:not(:disabled) { background: rgba(228,95,95,.16); }
-    button:disabled { cursor: default; opacity: .45; }
-    details.info { margin-top: 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 7px; background: rgba(255,255,255,.025); }
-    details.info summary { padding: 9px 10px; color: #d5d8dc; cursor: pointer; font-weight: 600; }
-    .info-body { padding: 0 10px 10px; color: #9fa5ad; line-height: 1.45; }
-    .info-body p { margin: 7px 0; }
-    .info-body code { display: block; margin: 7px 0; padding: 7px 8px; overflow-wrap: anywhere; border-radius: 5px; color: #dce7f6; background: rgba(0,0,0,.28); user-select: text; }
-    .runtime { color: #c7d3e2; }
-    .signature-note { color: #e3b971; }
+    button.primary { background: #2867ad; } button.danger { grid-column: 1 / -1; color: #ef9a9a; }
+    button:disabled { opacity: .45; cursor: default; }
+    details { margin-top: 10px; } summary { padding: 9px 10px; cursor: pointer; font-weight: 600; }
+    .info-body { padding: 0 10px 10px; }
+    .info-body code { display: block; margin: 7px 0; padding: 7px 8px; border-radius: 5px; background: rgba(0,0,0,.28); user-select: text; }
     .version { margin-top: 7px; color: #777e87; font-size: 11px; text-align: right; }
   </style>
 </head>
@@ -54,13 +43,13 @@
     </section>
     <div id="message" class="message"></div>
     <div class="actions">
-      <button id="install" class="primary"></button>
+      <button id="install" class="primary">Install / Repair</button>
       <button id="launch"></button>
       <button id="refresh"></button>
       <button id="guide"></button>
       <button id="uninstall" class="danger"></button>
     </div>
-    <details class="info">
+    <details>
       <summary id="bridgeAppInfoTitle"></summary>
       <div class="info-body">
         <p id="bridgeAppDescription"></p>
@@ -68,153 +57,94 @@
         <p id="bridgeAppSafety"></p>
       </div>
     </details>
-    <details class="info">
+    <details>
       <summary id="backgroundTitle"></summary>
       <div class="info-body">
         <p id="launchAgentDescription"></p>
         <p id="nodeSelectionStrategy"></p>
-        <p id="nodeInstallRecommendation"></p>
-        <code>brew install node</code>
-        <p id="ulanziNodeSignatureNotice" class="signature-note"></p>
-        <p id="currentNodeRuntime" class="runtime"></p>
+        <p id="ulanziNodeSignatureNotice"></p>
+        <p id="currentNodeRuntime"></p>
       </div>
     </details>
     <div id="version" class="version"></div>
   </main>
   <script>
-    const TEXT = {
-      en: { title:"Codex Bridge Setup", intro:"Install, launch, and check the local Codex connection.", app:"Codex Bridge.app", service:"Bridge service", cdp:"CDP connection", checking:"Checking…", installed:"Installed", update:"Update available", notInstalled:"Not installed", online:"Online", offline:"Offline", connected:"Connected", disconnected:"Disconnected", install:"Install / Repair", installing:"Installing…", launch:"Launch Codex Bridge", launching:"Launching…", uninstall:"Uninstall Codex Bridge", uninstalling:"Uninstalling…", refresh:"Check again", guide:"Installation guide", ready:"Codex Micro is ready.", needInstall:"Install Codex Bridge to continue.", needLaunch:"Launch Codex through Codex Bridge.app.", serviceOffline:"The Bridge service is offline. Use Install / Repair.", installDone:"Codex Bridge was installed. Launch it to connect CDP.", launchDone:"Codex Bridge was launched. Waiting for CDP…", uninstallDone:"Codex Bridge was uninstalled. The Ulanzi plugin and Codex Desktop were kept.", failed:"Operation failed", unsupported:"Automatic installation is available on macOS only.", confirm:"Install or repair Codex Bridge in your user Applications folder?", uninstallConfirm:"Uninstall Codex Bridge and its background service? The Ulanzi plugin and Codex Desktop will not be removed.", bridgeAppInfoTitle:"What is Codex Bridge.app?", bridgeAppDescription:"Codex Bridge.app is a local launcher. If Codex is already running, it asks Codex to quit, then starts the official Codex Desktop executable with these loopback-only CDP arguments:", bridgeAppSafety:"The launcher does not modify Codex Desktop, accounts, projects, or user files, and it does not expose CDP outside this Mac. It performs no other privileged or destructive operation. The separate Bridge service handles local status and Action communication.", backgroundTitle:"Background activity and Node.js", launchAgentDescription:"The LaunchAgent starts the local Codex Bridge service when you sign in and restarts it if it exits. The service listens only on this Mac through a loopback address.", nodeSelectionStrategy:"Install / Repair first selects a system Node.js 20 or later from your login environment, PATH, Homebrew, or common install paths. It uses Ulanzi Studio's bundled Node only as a fallback.", nodeInstallRecommendation:"Recommended: install the latest Node.js from Terminal, then run Install / Repair again:", ulanziNodeSignatureNotice:"If the Ulanzi Studio Node fallback is used, macOS Background Items may show an activity carrying the Ulanzi Studio signature. This is the Codex Bridge service running with Ulanzi Studio's Node executable.", currentNode:"Current runtime: {runtime} {version}", systemNode:"System Node.js", ulanziNode:"Ulanzi Studio Node", unknownNode:"Not installed or not recorded", version:"Installed {installed} · Bundled {bundled}" },
-      zh_CN: { title:"Codex Bridge 设置", intro:"安装、启动并检查本机 Codex 连接。", app:"Codex Bridge.app", service:"Bridge 后台服务", cdp:"CDP 连接", checking:"正在检测…", installed:"已安装", update:"可更新", notInstalled:"未安装", online:"在线", offline:"离线", connected:"已连接", disconnected:"未连接", install:"安装 / 修复", installing:"正在安装…", launch:"启动 Codex Bridge", launching:"正在启动…", uninstall:"卸载 Codex Bridge", uninstalling:"正在卸载…", refresh:"重新检测", guide:"安装说明", ready:"Codex Micro 已可使用。", needInstall:"请先安装 Codex Bridge。", needLaunch:"请通过 Codex Bridge.app 启动 Codex。", serviceOffline:"Bridge 后台服务离线，请使用“安装 / 修复”。", installDone:"Codex Bridge 已安装，请启动以连接 CDP。", launchDone:"Codex Bridge 已启动，正在等待 CDP…", uninstallDone:"Codex Bridge 已卸载，Ulanzi 插件和 Codex Desktop 保留不变。", failed:"操作失败", unsupported:"自动安装仅支持 macOS。", confirm:"是否将 Codex Bridge 安装或修复到用户 Applications 目录？", uninstallConfirm:"是否卸载 Codex Bridge 及其后台服务？不会删除 Ulanzi 插件和 Codex Desktop。", bridgeAppInfoTitle:"什么是 Codex Bridge.app？", bridgeAppDescription:"Codex Bridge.app 是一个本地启动器。如果 Codex 已在运行，它会先请求 Codex 正常退出，再使用以下仅限本机回环地址的 CDP 启动参数打开官方 Codex Desktop 可执行文件：", bridgeAppSafety:"该启动器不会修改 Codex Desktop、账户、项目或用户文件，也不会把 CDP 开放到本机之外；它不执行其他提权或破坏性操作。独立的 Bridge 服务负责本地状态和 Action 通信。", backgroundTitle:"后台活动与 Node.js", launchAgentDescription:"LaunchAgent 会在用户登录时启动本机 Codex Bridge 服务，并在服务退出后自动重启。该服务只通过回环地址在本机监听，不向外部网络开放。", nodeSelectionStrategy:"“安装 / 修复”会优先从登录环境、PATH、Homebrew 和常见安装路径选择系统 Node.js 20 或更高版本，仅在找不到合适版本时使用 Ulanzi Studio 内置 Node。", nodeInstallRecommendation:"建议通过 Terminal 安装最新 Node.js，然后再次执行“安装 / 修复”：", ulanziNodeSignatureNotice:"如果降级使用 Ulanzi Studio Node，macOS“后台项目”中可能显示一个携带 Ulanzi Studio 签名的活动。这是 Codex Bridge 服务正在使用 Ulanzi Studio 的 Node 可执行文件。", currentNode:"当前运行环境：{runtime} {version}", systemNode:"系统 Node.js", ulanziNode:"Ulanzi Studio Node", unknownNode:"未安装或未记录", version:"已安装 {installed} · 内置 {bundled}" },
-      zh_HK: { title:"Codex Bridge 設定", intro:"安裝、啟動並檢查本機 Codex 連線。", app:"Codex Bridge.app", service:"Bridge 背景服務", cdp:"CDP 連線", checking:"正在檢查…", installed:"已安裝", update:"有可用更新", notInstalled:"未安裝", online:"在線", offline:"離線", connected:"已連線", disconnected:"未連線", install:"安裝 / 修復", installing:"正在安裝…", launch:"啟動 Codex Bridge", launching:"正在啟動…", refresh:"重新檢查", guide:"安裝說明", ready:"Codex Micro 已可使用。", needInstall:"請先安裝 Codex Bridge。", needLaunch:"請透過 Codex Bridge.app 啟動 Codex。", serviceOffline:"Bridge 背景服務離線，請使用「安裝 / 修復」。", installDone:"Codex Bridge 已安裝，請啟動以連接 CDP。", launchDone:"Codex Bridge 已啟動，正在等待 CDP…", failed:"操作失敗", unsupported:"自動安裝僅支援 macOS。", confirm:"是否將 Codex Bridge 安裝或修復到使用者 Applications 目錄？", version:"已安裝 {installed} · 內置 {bundled}" },
-      ja: { title:"Codex Bridge 設定", intro:"ローカルの Codex 接続をインストール、起動、確認します。", app:"Codex Bridge.app", service:"Bridge サービス", cdp:"CDP 接続", checking:"確認中…", installed:"インストール済み", update:"更新あり", notInstalled:"未インストール", online:"オンライン", offline:"オフライン", connected:"接続済み", disconnected:"未接続", install:"インストール / 修復", installing:"インストール中…", launch:"Codex Bridge を起動", launching:"起動中…", refresh:"再確認", guide:"インストールガイド", ready:"Codex Micro を使用できます。", needInstall:"Codex Bridge をインストールしてください。", needLaunch:"Codex Bridge.app から Codex を起動してください。", serviceOffline:"Bridge サービスがオフラインです。インストール / 修復を実行してください。", installDone:"Codex Bridge をインストールしました。CDP 接続のため起動してください。", launchDone:"Codex Bridge を起動しました。CDP を待機中です…", failed:"操作に失敗しました", unsupported:"自動インストールは macOS のみ対応しています。", confirm:"Codex Bridge をユーザーの Applications フォルダにインストールまたは修復しますか？", version:"インストール済み {installed} · 内蔵 {bundled}" },
-      de: { title:"Codex Bridge einrichten", intro:"Lokale Codex-Verbindung installieren, starten und prüfen.", app:"Codex Bridge.app", service:"Bridge-Dienst", cdp:"CDP-Verbindung", checking:"Wird geprüft…", installed:"Installiert", update:"Update verfügbar", notInstalled:"Nicht installiert", online:"Online", offline:"Offline", connected:"Verbunden", disconnected:"Nicht verbunden", install:"Installieren / Reparieren", installing:"Wird installiert…", launch:"Codex Bridge starten", launching:"Wird gestartet…", refresh:"Erneut prüfen", guide:"Installationsanleitung", ready:"Codex Micro ist bereit.", needInstall:"Installieren Sie zuerst Codex Bridge.", needLaunch:"Starten Sie Codex über Codex Bridge.app.", serviceOffline:"Der Bridge-Dienst ist offline. Verwenden Sie Installieren / Reparieren.", installDone:"Codex Bridge wurde installiert. Starten Sie es für die CDP-Verbindung.", launchDone:"Codex Bridge wurde gestartet. CDP wird erwartet…", failed:"Vorgang fehlgeschlagen", unsupported:"Die automatische Installation ist nur unter macOS verfügbar.", confirm:"Codex Bridge im Benutzerordner Applications installieren oder reparieren?", version:"Installiert {installed} · Enthalten {bundled}" },
-      ko: { title:"Codex Bridge 설정", intro:"로컬 Codex 연결을 설치하고 실행한 뒤 확인합니다.", app:"Codex Bridge.app", service:"Bridge 서비스", cdp:"CDP 연결", checking:"확인 중…", installed:"설치됨", update:"업데이트 가능", notInstalled:"설치되지 않음", online:"온라인", offline:"오프라인", connected:"연결됨", disconnected:"연결되지 않음", install:"설치 / 복구", installing:"설치 중…", launch:"Codex Bridge 실행", launching:"실행 중…", refresh:"다시 확인", guide:"설치 안내", ready:"Codex Micro를 사용할 수 있습니다.", needInstall:"먼저 Codex Bridge를 설치하세요.", needLaunch:"Codex Bridge.app을 통해 Codex를 실행하세요.", serviceOffline:"Bridge 서비스가 오프라인입니다. 설치 / 복구를 사용하세요.", installDone:"Codex Bridge가 설치되었습니다. CDP 연결을 위해 실행하세요.", launchDone:"Codex Bridge를 실행했습니다. CDP를 기다리는 중…", failed:"작업 실패", unsupported:"자동 설치는 macOS에서만 지원됩니다.", confirm:"사용자 Applications 폴더에 Codex Bridge를 설치하거나 복구할까요?", version:"설치됨 {installed} · 내장 {bundled}" },
-      pt: { title:"Configuração do Codex Bridge", intro:"Instale, inicie e verifique a ligação local ao Codex.", app:"Codex Bridge.app", service:"Serviço Bridge", cdp:"Ligação CDP", checking:"A verificar…", installed:"Instalado", update:"Atualização disponível", notInstalled:"Não instalado", online:"Online", offline:"Offline", connected:"Ligado", disconnected:"Desligado", install:"Instalar / Reparar", installing:"A instalar…", launch:"Iniciar Codex Bridge", launching:"A iniciar…", refresh:"Verificar novamente", guide:"Guia de instalação", ready:"O Codex Micro está pronto.", needInstall:"Instale primeiro o Codex Bridge.", needLaunch:"Inicie o Codex através da Codex Bridge.app.", serviceOffline:"O serviço Bridge está offline. Use Instalar / Reparar.", installDone:"O Codex Bridge foi instalado. Inicie-o para ligar o CDP.", launchDone:"O Codex Bridge foi iniciado. A aguardar o CDP…", failed:"A operação falhou", unsupported:"A instalação automática está disponível apenas no macOS.", confirm:"Instalar ou reparar o Codex Bridge na pasta Applications do utilizador?", version:"Instalado {installed} · Incluído {bundled}" },
-      es: { title:"Configuración de Codex Bridge", intro:"Instala, inicia y comprueba la conexión local de Codex.", app:"Codex Bridge.app", service:"Servicio Bridge", cdp:"Conexión CDP", checking:"Comprobando…", installed:"Instalado", update:"Actualización disponible", notInstalled:"No instalado", online:"En línea", offline:"Sin conexión", connected:"Conectado", disconnected:"Desconectado", install:"Instalar / Reparar", installing:"Instalando…", launch:"Iniciar Codex Bridge", launching:"Iniciando…", refresh:"Comprobar de nuevo", guide:"Guía de instalación", ready:"Codex Micro está listo.", needInstall:"Instala primero Codex Bridge.", needLaunch:"Inicia Codex mediante Codex Bridge.app.", serviceOffline:"El servicio Bridge está sin conexión. Usa Instalar / Reparar.", installDone:"Codex Bridge se ha instalado. Inícialo para conectar CDP.", launchDone:"Codex Bridge se ha iniciado. Esperando CDP…", failed:"La operación ha fallado", unsupported:"La instalación automática solo está disponible en macOS.", confirm:"¿Instalar o reparar Codex Bridge en la carpeta Applications del usuario?", version:"Instalado {installed} · Incluido {bundled}" }
+    const t = {
+      title:"Codex Bridge Setup", intro:"Install, launch, and check the local Codex connection.",
+      app:"Codex Bridge", service:"Bridge service", cdp:"CDP connection", checking:"Checking…",
+      installed:"Installed", update:"Update available", notInstalled:"Not installed", online:"Online",
+      offline:"Offline", connected:"Connected", disconnected:"Disconnected", install:"Install / Repair",
+      installing:"Installing…", launch:"Launch Codex Bridge", launching:"Launching…", uninstall:"Uninstall Codex Bridge",
+      uninstalling:"Uninstalling…", refresh:"Check again", guide:"Installation guide", ready:"Codex Micro is ready.",
+      needInstall:"Install Codex Bridge to continue.", needLaunch:"Start Codex through Codex Bridge.",
+      serviceOffline:"The Bridge service is offline. Use Install / Repair.", installDone:"Codex Bridge was installed.",
+      launchDone:"Launch requested. Waiting for CDP…", uninstallDone:"Codex Bridge was uninstalled.",
+      failed:"Operation failed", unsupported:"Automatic installation is available on Windows and macOS only.",
+      confirm:"Install or repair Codex Bridge in your user data directory?",
+      uninstallConfirm:"Uninstall Codex Bridge and its user-level service? Codex Desktop and the Ulanzi plugin are kept.",
+      bridgeAppInfoTitle:"How does Codex Bridge start Codex?",
+      bridgeAppDescription:"Windows dynamically discovers Codex Stable or Beta. macOS uses the local wrapper. Both launch the official executable with loopback-only CDP arguments.",
+      bridgeAppSafety:"The launcher does not modify accounts, projects, or user files. Bridge write actions require a local capability token.",
+      backgroundTitle:"Background activity and Node.js",
+      launchAgentDescription:"Windows uses a plugin-supervised user process; macOS uses a user LaunchAgent. Neither installs an administrator service.",
+      nodeSelectionStrategy:"Install / Repair selects Node.js 20+ from PATH, then uses Ulanzi Studio Node as a fallback.",
+      ulanziNodeSignatureNotice:"Bridge and CDP listen only on loopback addresses.",
+      currentNode:"Current runtime: {runtime} {version}", systemNode:"System Node.js",
+      ulanziNode:"Ulanzi Studio Node", unknownNode:"Not installed or not recorded", version:"Installed {installed} · Bundled {bundled}"
     };
-
     const query = new URLSearchParams(location.search);
     const rawLanguage = query.get("language") || "en-US";
     const locale = rawLanguage.startsWith("zh-HK") || rawLanguage.startsWith("zh-TW") ? "zh_HK" : rawLanguage.startsWith("zh") ? "zh_CN" : rawLanguage.split(/[-_]/)[0];
-    const t = { ...TEXT.en, ...(TEXT[locale] || {}) };
-    const connection = {
-      address: query.get("address") || "127.0.0.1",
-      port: query.get("port") || "3906",
-      uuid: query.get("uuid") || "com.ulanzi.ulanzistudio.codexmicro.task1",
-      actionid: query.get("actionid") || "",
-      key: query.get("key") || ""
-    };
-    let socket;
-    let latestStatus;
-    let busy = false;
-    let pollTimer;
+    const resource = { en:"en", zh_CN:"zh_CN", zh_HK:"zh_HK", ja:"ja_JP", de:"de_DE", ko:"ko_KR", pt:"pt_PT", es:"es_ES" }[locale] || "en";
+    const connection = { address:query.get("address") || "127.0.0.1", port:query.get("port") || "3906", uuid:query.get("uuid") || "com.ulanzi.ulanzistudio.codexmicro.task1", actionid:query.get("actionid") || "", key:query.get("key") || "" };
+    let socket; let busy = false; let pollTimer;
 
     async function loadLocalizedResources() {
-      const resource = { en:"en", zh_CN:"zh_CN", zh_HK:"zh_HK", ja:"ja_JP", de:"de_DE", ko:"ko_KR", pt:"pt_PT", es:"es_ES" }[locale] || "en";
       try {
-        const response = await fetch(`../${resource}.json`);
-        const localized = (await response.json()).Localization || {};
-        Object.assign(t, {
-          title: localized.BridgeSetup || t.title,
-          intro: localized.BridgeSetupDescription || t.intro,
-          app: localized.BridgeApp || t.app,
-          service: localized.BridgeService || t.service,
-          cdp: localized.CDPConnection || t.cdp,
-          install: localized.InstallRepair || t.install,
-          launch: localized.LaunchBridge || t.launch,
-          uninstall: localized.UninstallBridge || t.uninstall,
-          uninstalling: localized.UninstallingBridge || t.uninstalling,
-          uninstallDone: localized.UninstallBridgeDone || t.uninstallDone,
-          uninstallConfirm: localized.UninstallBridgeConfirm || t.uninstallConfirm,
-          bridgeAppInfoTitle: localized.BridgeAppInfoTitle || t.bridgeAppInfoTitle,
-          bridgeAppDescription: localized.BridgeAppDescription || t.bridgeAppDescription,
-          bridgeAppSafety: localized.BridgeAppSafety || t.bridgeAppSafety,
-          backgroundTitle: localized.BackgroundActivityTitle || t.backgroundTitle,
-          launchAgentDescription: localized.LaunchAgentDescription || t.launchAgentDescription,
-          nodeSelectionStrategy: localized.NodeSelectionStrategy || t.nodeSelectionStrategy,
-          nodeInstallRecommendation: localized.NodeInstallRecommendation || t.nodeInstallRecommendation,
-          ulanziNodeSignatureNotice: localized.UlanziNodeSignatureNotice || t.ulanziNodeSignatureNotice,
-          currentNode: localized.CurrentNodeRuntime || t.currentNode,
-          systemNode: localized.SystemNode || t.systemNode,
-          ulanziNode: localized.UlanziNode || t.ulanziNode,
-          unknownNode: localized.UnknownNode || t.unknownNode,
-          refresh: localized.CheckAgain || t.refresh,
-          guide: localized.InstallationGuide || t.guide
-        });
-      } catch {
-        // The embedded translations remain available when local fetch is unavailable.
-      }
+        const localized = (await (await fetch(`../${resource}.json`)).json()).Localization || {};
+        const fields = { BridgeSetup:"title", BridgeSetupDescription:"intro", BridgeApp:"app", BridgeService:"service", CDPConnection:"cdp", InstallRepair:"install", LaunchBridge:"launch", UninstallBridge:"uninstall", UninstallingBridge:"uninstalling", UninstallBridgeDone:"uninstallDone", UninstallBridgeConfirm:"uninstallConfirm", BridgeAppInfoTitle:"bridgeAppInfoTitle", BridgeAppDescription:"bridgeAppDescription", BridgeAppSafety:"bridgeAppSafety", BackgroundActivityTitle:"backgroundTitle", LaunchAgentDescription:"launchAgentDescription", NodeSelectionStrategy:"nodeSelectionStrategy", UlanziNodeSignatureNotice:"ulanziNodeSignatureNotice", CurrentNodeRuntime:"currentNode", SystemNode:"systemNode", UlanziNode:"ulanziNode", UnknownNode:"unknownNode", CheckAgain:"refresh", InstallationGuide:"guide" };
+        for (const [source, target] of Object.entries(fields)) if (localized[source]) t[target] = localized[source];
+      } catch {}
     }
-
     function text(id, value) { document.getElementById(id).textContent = value; }
-    function setValue(id, value, level) {
-      const element = document.getElementById(id);
-      element.className = `value ${level || ""}`;
-      element.querySelector("span").textContent = value;
-    }
     function format(template, values) { return template.replace(/\{(\w+)\}/g, (_, key) => values[key] || "—"); }
-    function send(action) {
-      if (socket?.readyState !== WebSocket.OPEN) return;
-      socket.send(JSON.stringify({ cmd:"sendToPlugin", uuid:connection.uuid, actionid:connection.actionid, key:connection.key, payload:{ type:"bridgeSetup", action } }));
-    }
+    function setValue(id, value, level = "") { const element = document.getElementById(id); element.className = `value ${level}`; element.querySelector("span").textContent = value; }
+    function send(action) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ cmd:"sendToPlugin", uuid:connection.uuid, actionid:connection.actionid, key:connection.key, payload:{ type:"bridgeSetup", action } })); }
     function render(status, payload = {}) {
-      latestStatus = status;
       busy = Boolean(payload.busy);
       setValue("appValue", status.installed ? (status.needsUpdate ? t.update : t.installed) : t.notInstalled, status.installed ? (status.needsUpdate ? "warn" : "good") : "bad");
       setValue("serviceValue", status.serviceOnline ? t.online : t.offline, status.serviceOnline ? "good" : "bad");
       setValue("cdpValue", status.cdpConnected ? t.connected : t.disconnected, status.cdpConnected ? "good" : "warn");
-      const install = document.getElementById("install");
-      const launch = document.getElementById("launch");
-      const uninstall = document.getElementById("uninstall");
+      const install = document.getElementById("install"); const launch = document.getElementById("launch"); const uninstall = document.getElementById("uninstall");
       install.textContent = busy && payload.operation === "install" ? t.installing : t.install;
       launch.textContent = busy && payload.operation === "launch" ? t.launching : t.launch;
       uninstall.textContent = busy && payload.operation === "uninstall" ? t.uninstalling : t.uninstall;
-      install.disabled = busy || !status.supported;
-      launch.disabled = busy || !status.installed || status.cdpConnected;
-      uninstall.disabled = busy || !status.supported || !status.installed;
-      document.getElementById("refresh").disabled = busy;
+      install.disabled = busy || !status.supported; launch.disabled = busy || !status.installed || status.cdpConnected; uninstall.disabled = busy || !status.supported || !status.installed;
       let message = !status.supported ? t.unsupported : !status.installed || status.needsUpdate ? t.needInstall : !status.serviceOnline ? t.serviceOffline : !status.cdpConnected ? t.needLaunch : t.ready;
       let level = status.cdpConnected && status.installed && !status.needsUpdate ? "success" : "";
       if (payload.result === "install") { message = t.installDone; level = "success"; }
       if (payload.result === "launch") { message = t.launchDone; level = "success"; }
       if (payload.result === "uninstall") { message = t.uninstallDone; level = "success"; }
       if (payload.error) { message = `${t.failed}: ${payload.error}`; level = "error"; }
-      text("message", message);
-      document.getElementById("message").className = `message ${level}`;
+      text("message", message); document.getElementById("message").className = `message ${level}`;
       text("version", format(t.version, { installed:status.installedVersion, bundled:status.bundledVersion }));
       const runtime = status.nodeSource === "system" ? t.systemNode : status.nodeSource === "ulanzi" ? t.ulanziNode : t.unknownNode;
       text("currentNodeRuntime", format(t.currentNode, { runtime, version:status.nodeVersion }));
     }
     function connect() {
       socket = new WebSocket(`ws://${connection.address}:${connection.port}`);
-      socket.addEventListener("open", () => {
-        socket.send(JSON.stringify({ code:0, cmd:"connected", uuid:connection.uuid }));
-        send("status");
-        clearInterval(pollTimer);
-        pollTimer = setInterval(() => send("status"), 2000);
-      });
-      socket.addEventListener("message", event => {
-        const message = JSON.parse(event.data);
-        if (message.cmd === "sendToPropertyInspector" && message.payload?.type === "bridgeSetupStatus") render(message.payload.status, message.payload);
-      });
-      socket.addEventListener("close", () => {
-        clearInterval(pollTimer);
-        setTimeout(connect, 1000);
-      });
+      socket.addEventListener("open", () => { socket.send(JSON.stringify({ code:0, cmd:"connected", uuid:connection.uuid })); send("status"); clearInterval(pollTimer); pollTimer = setInterval(() => send("status"), 2000); });
+      socket.addEventListener("message", event => { const message = JSON.parse(event.data); if (message.cmd === "sendToPropertyInspector" && message.payload?.type === "bridgeSetupStatus") render(message.payload.status, message.payload); });
+      socket.addEventListener("close", () => { clearInterval(pollTimer); setTimeout(connect, 1000); });
     }
-
     async function start() {
       await loadLocalizedResources();
-      text("title", t.title); text("intro", t.intro); text("appLabel", t.app); text("serviceLabel", t.service); text("cdpLabel", t.cdp);
-      text("bridgeAppInfoTitle", t.bridgeAppInfoTitle); text("bridgeAppDescription", t.bridgeAppDescription); text("bridgeAppSafety", t.bridgeAppSafety); text("backgroundTitle", t.backgroundTitle); text("launchAgentDescription", t.launchAgentDescription); text("nodeSelectionStrategy", t.nodeSelectionStrategy); text("nodeInstallRecommendation", t.nodeInstallRecommendation); text("ulanziNodeSignatureNotice", t.ulanziNodeSignatureNotice); text("currentNodeRuntime", format(t.currentNode, { runtime:t.unknownNode }));
-      text("install", t.install); text("launch", t.launch); text("uninstall", t.uninstall); text("refresh", t.refresh); text("guide", t.guide); text("message", t.checking);
+      for (const [id, key] of [["title","title"],["intro","intro"],["appLabel","app"],["serviceLabel","service"],["cdpLabel","cdp"],["bridgeAppInfoTitle","bridgeAppInfoTitle"],["bridgeAppDescription","bridgeAppDescription"],["bridgeAppSafety","bridgeAppSafety"],["backgroundTitle","backgroundTitle"],["launchAgentDescription","launchAgentDescription"],["nodeSelectionStrategy","nodeSelectionStrategy"],["ulanziNodeSignatureNotice","ulanziNodeSignatureNotice"],["install","install"],["launch","launch"],["uninstall","uninstall"],["refresh","refresh"],["guide","guide"],["message","checking"]]) text(id, t[key]);
       setValue("appValue", t.checking); setValue("serviceValue", t.checking); setValue("cdpValue", t.checking);
       document.getElementById("install").addEventListener("click", () => { if (confirm(t.confirm)) send("install"); });
       document.getElementById("launch").addEventListener("click", () => send("launch"));
       document.getElementById("uninstall").addEventListener("click", () => { if (confirm(t.uninstallConfirm)) send("uninstall"); });
-      document.getElementById("refresh").addEventListener("click", () => send("status"));
-      document.getElementById("guide").addEventListener("click", () => send("openGuide"));
-      connect();
+      document.getElementById("refresh").addEventListener("click", () => send("status")); document.getElementById("guide").addEventListener("click", () => send("openGuide")); connect();
     }
     void start();
   </script>

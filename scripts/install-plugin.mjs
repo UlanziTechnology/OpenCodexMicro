@@ -23,14 +23,9 @@ const localizationFiles = [
   "es_ES.json"
 ];
 const pluginName = basename(source);
-const pluginsRoot = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "Ulanzi",
-  "UlanziDeck",
-  "Plugins"
-);
+const pluginsRoot = process.platform === "win32"
+  ? join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "Ulanzi", "UlanziDeck", "Plugins")
+  : join(homedir(), "Library", "Application Support", "Ulanzi", "UlanziDeck", "Plugins");
 const destination = join(pluginsRoot, pluginName);
 const staging = join(pluginsRoot, `.${pluginName}.installing-${process.pid}`);
 const backup = join(pluginsRoot, `.${pluginName}.backup-${process.pid}`);
@@ -57,6 +52,11 @@ if (!manifest.CodePath || !await exists(join(source, manifest.CodePath))) {
 for (const action of manifest.Actions || []) {
   if (action.PropertyInspectorPath && !await exists(join(source, action.PropertyInspectorPath))) {
     throw new Error(`Action PropertyInspectorPath is missing: ${action.PropertyInspectorPath}`);
+  }
+}
+for (const banner of manifest.Banner || []) {
+  if (!await exists(join(source, banner))) {
+    throw new Error(`Manifest Banner is missing: ${banner}`);
   }
 }
 for (const relative of [
@@ -88,6 +88,7 @@ for (const relative of [
   "manifest.json",
   ...localizationFiles,
   "assets/icons",
+  "assets/banners",
   "dist",
   "installer",
   "property-inspector"

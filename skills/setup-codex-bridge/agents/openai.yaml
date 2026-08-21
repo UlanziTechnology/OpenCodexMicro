@@ -1,4 +1,4 @@
 interface:
   display_name: "Setup Codex Bridge"
-  short_description: "Install and verify Codex Bridge.app on macOS"
-  default_prompt: "Use $setup-codex-bridge to install and verify Codex Bridge.app."
+  short_description: "Install Codex Bridge on Windows or macOS"
+  default_prompt: "Use $setup-codex-bridge to install and verify the local Codex Bridge."

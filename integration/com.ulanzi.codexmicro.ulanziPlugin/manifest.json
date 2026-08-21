@@ -2,7 +2,7 @@
   "Author": "OpenCodexMicro",
   "Name": "Codex Micro",
   "Overview": "Control Codex Desktop tasks and actions from Ulanzi D200 Series in Ulanzi Studio.",
-  "Description": "Turn Ulanzi D200 Series into a dedicated Codex Desktop control surface through Ulanzi Studio.\n\nFEATURES\n- View five recent Codex tasks with live status and open the exact selected task.\n- Use Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit actions.\n- Use the Latest Task & Scroll Encoder action to open task 1 and scroll Codex.\n- Install, repair, launch, and check Codex Bridge from every Action setup page.\n- Keep communication local through Codex Bridge.app and loopback-only endpoints.\n\nINSTALLATION ENVIRONMENT\n- macOS 13 or later\n- Codex Desktop\n- Ulanzi Studio 3.0.1 or later\n- Ulanzi D200 Series connected in Ulanzi Studio\n- Node.js 20 or later only for manual repository setup\n\nLLM / AGENT INSTALLATION\nIn your Agent, enter:\nInstall the Ulanzi Studio plugin for me: [https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation](https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation)\n\nMANUAL INSTALLATION\n1. Clone https://github.com/UlanziTechnology/OpenCodexMicro and open the repository directory.\n2. Quit Ulanzi Studio.\n3. Run: npm install\n4. Run: npm run install:plugin\n5. Run: npm run setup\n6. Reopen Ulanzi Studio, quit Codex Desktop, and launch ~/Applications/Codex Bridge.app.\n7. Add the Codex Micro actions to your keys in Ulanzi Studio.\n8. Select any Action to check Bridge installation, service, and CDP status.\n\nIMPORTANT\nWhen using Codex Micro, always launch Codex through ~/Applications/Codex Bridge.app. Do not open Codex Desktop directly.\nLaunch command: open ~/Applications/Codex\\ Bridge.app",
+  "Description": "Turn Ulanzi D200 Series into a dedicated Codex Desktop control surface through Ulanzi Studio.\n\nFEATURES\n- View five recent Codex tasks with live status and open the exact selected task.\n- Use Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit actions.\n- Use the Latest Task & Scroll Encoder action to open task 1 and scroll Codex.\n- Install, repair, launch, and check Codex Bridge from every Action setup page.\n- Keep Bridge and CDP communication on authenticated loopback-only endpoints.\n\nINSTALLATION ENVIRONMENT\n- Windows 10 or later, or macOS 13 or later\n- Codex Desktop Stable or Beta\n- Ulanzi Studio 3.0.1 or later\n- Ulanzi D200 Series connected in Ulanzi Studio\n- Node.js 20 or later only for manual repository setup\n\nMANUAL INSTALLATION\n1. Clone the repository and open plugins/codex-console.\n2. Quit Ulanzi Studio.\n3. Run: npm install\n4. Run: npm run install:plugin\n5. Run: npm run setup\n6. Reopen Ulanzi Studio and select any Action to check Bridge, service, and CDP status.\n\nIMPORTANT\nOn Windows, Codex Bridge dynamically locates the installed Stable or Beta Appx package and starts Codex with loopback-only CDP arguments. It does not use a version-pinned WindowsApps path.",
   "Icon": "assets/icons/plugin.png",
   "Category": "AI",
   "CategoryIcon": "assets/icons/plugin.png",
@@ -11,7 +11,7 @@
     "assets/banners/codex-micro-banner-2.png",
     "assets/banners/codex-micro-banner-3.png"
   ],
-  "Version": "0.4.0",
+  "Version": "0.5.0",
   "UUID": "com.ulanzi.ulanzistudio.codexmicro",
   "Type": "JavaScript",
   "CodePath": "dist/app.js",
@@ -22,6 +22,10 @@
     {
       "Platform": "mac",
       "MinimumVersion": "13.0"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10.0"
     }
   ],
   "Actions": [

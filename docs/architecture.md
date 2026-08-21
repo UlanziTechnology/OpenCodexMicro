@@ -19,8 +19,10 @@ Codex renderer Micro store
 
 ## Codex Bridge
 
-`Codex Bridge.app` launches the real Codex executable with CDP restricted to
-`127.0.0.1:9222`. The sidecar keeps a persistent renderer connection and
+Codex Bridge launches the real Codex executable with CDP restricted to
+`127.0.0.1:9222`. Windows discovers Stable or Beta through Appx metadata and the
+Ulanzi plugin supervises the user-level sidecar; macOS retains the wrapper app
+and user LaunchAgent. The sidecar keeps a persistent renderer connection and
 refreshes an in-memory snapshot every 500 ms. `/state` reads that cache rather
 than triggering a fresh renderer scan for every plugin poll.
 
@@ -52,6 +54,6 @@ development, or maintenance of CDP or Codex's CDP implementation.
 ## Installation boundary
 
 - `scripts/install.mjs` installs only the Bridge sidecar and
-  `~/Applications/Codex Bridge.app`.
+  its platform-specific user-level launcher/lifecycle files.
 - `scripts/install-plugin.mjs` installs only the Ulanzi Studio plugin directory.
 - `scripts/uninstall.mjs` removes those two installed components.

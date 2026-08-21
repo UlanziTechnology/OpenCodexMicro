@@ -1,27 +1,13 @@
-import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createBridgeInstaller } from "../integration/com.ulanzi.codexmicro.ulanziPlugin/plugin/bridge-installer.js";
 
 const pluginRoot = resolve("integration/com.ulanzi.codexmicro.ulanziPlugin");
 const packageMetadata = JSON.parse(await readFile(resolve("package.json"), "utf8"));
-const start = !process.argv.slice(2).includes("--no-start");
-
-execFileSync(process.execPath, [resolve(pluginRoot, "build.mjs")], {
-  cwd: pluginRoot,
-  stdio: "inherit"
-});
-
 const installer = createBridgeInstaller({
   pluginRoot,
   bridgeUrl: process.env.CODEX_BRIDGE_URL || "http://127.0.0.1:17373",
   version: String(packageMetadata.version)
 });
-const installed = await installer.install();
-console.log(`Codex Bridge installed at: ${installed.appPath}`);
-if (start) {
-  await installer.launch();
-  console.log("Codex Bridge and Codex Desktop launch requested.");
-} else {
-  console.log("Codex Bridge installed; launch skipped.");
-}
+await installer.launch();
+console.log("Codex Bridge and Codex Desktop launch requested.");

@@ -310,6 +310,7 @@ function renderAll() {
 async function bridgeRequest(path, method = "GET") {
   const response = await fetch(`${BRIDGE_URL}${path}`, {
     method,
+    headers: await bridgeSetup.authorizationHeaders(),
     signal: AbortSignal.timeout(1200)
   });
   const payload = await response.json();
@@ -451,6 +452,9 @@ function connect() {
   socket = new WebSocket(HOST_URL);
   socket.on("open", () => {
     send({ code: 0, cmd: "connected", uuid: PLUGIN_UUID });
+    if (process.env.CODEX_BRIDGE_AUTOSTART !== "0") {
+      void bridgeSetup.ensureService().catch(() => {});
+    }
     clearInterval(pollTimer);
     pollTimer = setInterval(() => void pollBridge(), 500);
     pollTimer.unref();

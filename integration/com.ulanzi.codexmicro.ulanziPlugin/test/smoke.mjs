@@ -11,9 +11,10 @@ const navigateAction = manifest.Actions.find(action =>
 );
 assert.deepEqual(navigateAction?.Controllers, ["Encoder"]);
 assert.equal(navigateAction?.Encoder?.layout, "$UA1");
-assert.equal(manifest.Version, "0.4.0");
+assert.equal(manifest.Version, "0.5.0");
 assert.equal(manifest.Software?.MinVersion, "3.0.1");
 assert.equal(manifest.OS?.find(item => item.Platform === "mac")?.MinimumVersion, "13.0");
+assert.equal(manifest.OS?.find(item => item.Platform === "windows")?.MinimumVersion, "10.0");
 assert.ok(
   manifest.Actions.every(action => action.PropertyInspectorPath === "property-inspector/setup.html"),
   "every action must expose the shared Bridge setup inspector"
@@ -34,17 +35,15 @@ for (const asset of [
 ]) {
   assert.ok((await readFile(new URL(asset, packageRootUrl))).length > 0, `${asset} must be bundled`);
 }
+for (const banner of manifest.Banner || []) {
+  assert.ok((await readFile(new URL(banner, packageRootUrl))).length > 0, `${banner} must be bundled`);
+}
 assert.match(manifest.Overview, /Ulanzi D200 Series/);
-assert.match(manifest.Description, /INSTALLATION ENVIRONMENT/);
-assert.match(manifest.Description, /LLM \/ AGENT INSTALLATION/);
 assert.match(manifest.Description, /MANUAL INSTALLATION/);
 assert.match(manifest.Description, /Latest Task & Scroll Encoder/);
-assert.match(
-  manifest.Description,
-  /Install the Ulanzi Studio plugin for me: \[https:\/\/github\.com\/UlanziTechnology\/OpenCodexMicro#1-llm--agent-installation\]\(https:\/\/github\.com\/UlanziTechnology\/OpenCodexMicro#1-llm--agent-installation\)/
-);
-assert.match(manifest.Description, /always launch Codex through ~\/Applications\/Codex Bridge\.app/i);
-assert.match(manifest.Description, /open ~\/Applications\/Codex\\ Bridge\.app$/);
+assert.match(manifest.Description, /Windows 10/);
+assert.match(manifest.Description, /Stable or Beta/);
+assert.match(manifest.Description, /does not use a version-pinned WindowsApps path/i);
 
 const localizedActionNames = {
   "en.json": ["Codex Task 1", "Latest Task & Scroll", "Submit to Codex"],
@@ -56,21 +55,6 @@ const localizedActionNames = {
   "pt_PT.json": ["Tarefa Codex 1", "Tarefa recente e deslocamento", "Enviar para o Codex"],
   "es_ES.json": ["Tarea Codex 1", "Tarea reciente y desplazamiento", "Enviar a Codex"]
 };
-
-const localizedInstallPrompts = {
-  "en.json": "Install the Ulanzi Studio plugin for me:",
-  "zh_CN.json": "替我安装一下UlanziStudio插件：",
-  "zh_HK.json": "請替我安裝 Ulanzi Studio 外掛程式：",
-  "ja_JP.json": "Ulanzi Studio プラグインをインストールしてください：",
-  "de_DE.json": "Installiere bitte das Ulanzi-Studio-Plugin für mich:",
-  "ko_KR.json": "Ulanzi Studio 플러그인을 설치해 주세요:",
-  "pt_PT.json": "Instala o plugin do Ulanzi Studio por mim:",
-  "es_ES.json": "Instálame el plugin de Ulanzi Studio:"
-};
-
-const llmInstallationLink =
-  "[https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation]" +
-  "(https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation)";
 
 for (const locale of [
   "en.json",
@@ -85,10 +69,9 @@ for (const locale of [
   const messages = JSON.parse(await readFile(new URL(locale, packageRootUrl)));
   assert.equal(messages.Name, "Codex Micro", `${locale} must localize Name`);
   assert.ok(messages.Overview?.length > 20, `${locale} must localize Overview`);
-  assert.match(messages.Description, /https:\/\/github\.com\/UlanziTechnology\/OpenCodexMicro/);
   assert.match(messages.Description, /npm run install:plugin/);
   assert.match(messages.Description, /npm run setup/);
-  assert.match(messages.Description, /Latest Task & Scroll/);
+  assert.doesNotMatch(messages.Description, /Codex Bridge\.app/);
   assert.ok(messages.Localization?.BridgeSetup?.length > 0, `${locale} must localize the setup page`);
   assert.ok(messages.Localization?.InstallRepair?.length > 0, `${locale} must localize Bridge installation`);
   assert.ok(messages.Localization?.UninstallBridge?.length > 0, `${locale} must localize Bridge uninstallation`);
@@ -96,12 +79,6 @@ for (const locale of [
   assert.ok(messages.Localization?.BackgroundActivityTitle?.length > 0, `${locale} must explain background activity`);
   assert.ok(messages.Localization?.NodeSelectionStrategy?.length > 0, `${locale} must explain Node selection`);
   assert.ok(messages.Localization?.UlanziNodeSignatureNotice?.length > 0, `${locale} must explain the Ulanzi Node signature`);
-  assert.ok(
-    messages.Description.includes(`${localizedInstallPrompts[locale]}${
-      locale.startsWith("zh_") || locale === "ja_JP.json" ? "" : " "
-    }${llmInstallationLink}`),
-    `${locale} must localize the anchored LLM installation prompt`
-  );
   assert.equal(messages.Actions?.length, manifest.Actions.length, `${locale} must localize every action`);
   assert.ok(
     messages.Actions.every(action => action.Name?.length > 0 && action.Tooltip?.length > 0),
@@ -112,11 +89,8 @@ for (const locale of [
     localizedActionNames[locale],
     `${locale} action localization must follow manifest action order`
   );
-  assert.match(
-    messages.Description.split("\n\n").at(-1),
-    /open ~\/Applications\/Codex\\ Bridge\.app$/,
-    `${locale} must end with the Bridge launch command`
-  );
+  assert.equal(messages.Localization.BridgeApp, "Codex Bridge");
+  assert.doesNotMatch(messages.Localization.BridgeAppDescription, /Codex Bridge\.app/);
 }
 
 const bridgeRequests = [];
@@ -155,7 +129,11 @@ const nodeBinary = process.env.PLUGIN_NODE_BINARY || process.execPath;
 const pluginRoot = process.env.PLUGIN_RUNTIME_ROOT || new URL("..", import.meta.url);
 const child = spawn(nodeBinary, ["dist/app.js", "127.0.0.1", String(hostPort), "en-US", "3.0.0"], {
   cwd: pluginRoot,
-  env: { ...process.env, CODEX_BRIDGE_URL: `http://127.0.0.1:${bridgePort}` },
+  env: {
+    ...process.env,
+    CODEX_BRIDGE_URL: `http://127.0.0.1:${bridgePort}`,
+    CODEX_BRIDGE_AUTOSTART: "0"
+  },
   stdio: ["ignore", "pipe", "pipe"]
 });
 
@@ -184,7 +162,7 @@ try {
   );
   assert.equal(setupStatus?.payload?.status?.serviceOnline, true);
   assert.equal(setupStatus?.payload?.status?.cdpConnected, true);
-  assert.equal(setupStatus?.payload?.status?.bundledVersion, "0.4.0");
+  assert.equal(setupStatus?.payload?.status?.bundledVersion, "0.5.0");
 
   const taskPaths = [
     "assets/icons/task-working.png",
