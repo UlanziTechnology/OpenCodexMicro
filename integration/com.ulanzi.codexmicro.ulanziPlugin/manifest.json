@@ -2,7 +2,7 @@
   "Author": "OpenCodexMicro",
   "Name": "Codex Micro",
   "Overview": "Control Codex Desktop tasks and actions from Ulanzi D200 Series in Ulanzi Studio.",
-  "Description": "Turn Ulanzi D200 Series into a dedicated Codex Desktop control surface through Ulanzi Studio.\n\nFEATURES\n- View five recent Codex tasks with live status and open the exact selected task.\n- Use Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit actions.\n- Use the Latest Task & Scroll Encoder action to open task 1 and scroll Codex.\n- Install, repair, launch, and check Codex Bridge from every Action setup page.\n- Keep communication local through Codex Bridge.app and loopback-only endpoints.\n\nINSTALLATION ENVIRONMENT\n- macOS 13 or later\n- Codex Desktop\n- Ulanzi Studio 3.0.1 or later\n- Ulanzi D200 Series connected in Ulanzi Studio\n- Node.js 20 or later only for manual repository setup\n\nLLM / AGENT INSTALLATION\nIn your Agent, enter:\nInstall the Ulanzi Studio plugin for me: [https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation](https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation)\n\nMANUAL INSTALLATION\n1. Clone https://github.com/UlanziTechnology/OpenCodexMicro and open the repository directory.\n2. Quit Ulanzi Studio.\n3. Run: npm install\n4. Run: npm run install:plugin\n5. Run: npm run setup\n6. Reopen Ulanzi Studio, quit Codex Desktop, and launch ~/Applications/Codex Bridge.app.\n7. Add the Codex Micro actions to your keys in Ulanzi Studio.\n8. Select any Action to check Bridge installation, service, and CDP status.\n\nIMPORTANT\nWhen using Codex Micro, always launch Codex through ~/Applications/Codex Bridge.app. Do not open Codex Desktop directly.\nLaunch command: open ~/Applications/Codex\\ Bridge.app",
+  "Description": "Turn Ulanzi D200 Series into a dedicated Codex Desktop control surface through Ulanzi Studio.\n\nFEATURES\n- View five recent Codex tasks with live status and open the exact selected task.\n- Use Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit actions.\n- Switch the visible Codex task to Sol High, Luna Max, or Sol Medium.\n- Use the Latest Task & Scroll Encoder action to open task 1 and scroll Codex.\n- Install, repair, launch, and check Codex Bridge from every Action setup page.\n- Keep Bridge and CDP communication on authenticated loopback-only endpoints.\n\nINSTALLATION ENVIRONMENT\n- Windows 10 or later, or macOS 13 or later\n- Codex Desktop Stable or Beta\n- Ulanzi Studio 3.0.1 or later\n- Ulanzi D200 Series connected in Ulanzi Studio\n- Node.js 20 or later only for manual repository setup\n\nMANUAL INSTALLATION\n1. Clone the repository and open the OpenCodexMicro directory.\n2. Quit Ulanzi Studio.\n3. Run: npm install\n4. Run: npm run install:plugin\n5. Run: npm run setup\n6. Reopen Ulanzi Studio and select any Action to check Bridge, service, and CDP status.\n\nIMPORTANT\nOn Windows, Codex Bridge dynamically locates the installed Stable or Beta Appx package and starts Codex with loopback-only CDP arguments. It does not use a version-pinned WindowsApps path.",
   "Icon": "assets/icons/plugin.png",
   "Category": "AI",
   "CategoryIcon": "assets/icons/plugin.png",
@@ -11,7 +11,7 @@
     "assets/banners/codex-micro-banner-2.png",
     "assets/banners/codex-micro-banner-3.png"
   ],
-  "Version": "0.4.0",
+  "Version": "0.6.1",
   "UUID": "com.ulanzi.ulanzistudio.codexmicro",
   "Type": "JavaScript",
   "CodePath": "dist/app.js",
@@ -22,58 +22,62 @@
     {
       "Platform": "mac",
       "MinimumVersion": "13.0"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10.0"
     }
   ],
   "Actions": [
     {
       "Name": "Codex Task 1",
-      "Icon": "assets/icons/task-idle.png",
+      "Icon": "assets/icons/task-idle.svg",
       "PropertyInspectorPath": "property-inspector/setup.html",
       "UUID": "com.ulanzi.ulanzistudio.codexmicro.task1",
       "Tooltip": "Open recent Codex task slot 1 and show its live status.",
       "Controllers": ["Keypad"],
       "DisableAutomaticStates": true,
-      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.svg" }]
     },
     {
       "Name": "Codex Task 2",
-      "Icon": "assets/icons/task-idle.png",
+      "Icon": "assets/icons/task-idle.svg",
       "PropertyInspectorPath": "property-inspector/setup.html",
       "UUID": "com.ulanzi.ulanzistudio.codexmicro.task2",
       "Tooltip": "Open recent Codex task slot 2 and show its live status.",
       "Controllers": ["Keypad"],
       "DisableAutomaticStates": true,
-      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.svg" }]
     },
     {
       "Name": "Codex Task 3",
-      "Icon": "assets/icons/task-idle.png",
+      "Icon": "assets/icons/task-idle.svg",
       "PropertyInspectorPath": "property-inspector/setup.html",
       "UUID": "com.ulanzi.ulanzistudio.codexmicro.task3",
       "Tooltip": "Open recent Codex task slot 3 and show its live status.",
       "Controllers": ["Keypad"],
       "DisableAutomaticStates": true,
-      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.svg" }]
     },
     {
       "Name": "Codex Task 4",
-      "Icon": "assets/icons/task-idle.png",
+      "Icon": "assets/icons/task-idle.svg",
       "PropertyInspectorPath": "property-inspector/setup.html",
       "UUID": "com.ulanzi.ulanzistudio.codexmicro.task4",
       "Tooltip": "Open recent Codex task slot 4 and show its live status.",
       "Controllers": ["Keypad"],
       "DisableAutomaticStates": true,
-      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.svg" }]
     },
     {
       "Name": "Codex Task 5",
-      "Icon": "assets/icons/task-idle.png",
+      "Icon": "assets/icons/task-idle.svg",
       "PropertyInspectorPath": "property-inspector/setup.html",
       "UUID": "com.ulanzi.ulanzistudio.codexmicro.task5",
       "Tooltip": "Open recent Codex task slot 5 and show its live status.",
       "Controllers": ["Keypad"],
       "DisableAutomaticStates": true,
-      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.png" }]
+      "States": [{ "Name": "Task", "Image": "assets/icons/task-idle.svg" }]
     },
     {
       "Name": "Codex Fast",
@@ -117,14 +121,14 @@
     },
     {
       "Name": "Latest Task & Scroll",
-      "Icon": "assets/icons/task-idle.png",
+      "Icon": "assets/icons/task-idle.svg",
       "PropertyInspectorPath": "property-inspector/setup.html",
       "UUID": "com.ulanzi.ulanzistudio.codexmicro.navigate",
       "Tooltip": "Press to open the latest Codex task. Turn left to scroll up and right to scroll down.",
       "Controllers": ["Encoder"],
       "Encoder": { "layout": "$UA1" },
       "DisableAutomaticStates": true,
-      "States": [{ "Name": "Latest Task", "Image": "assets/icons/task-idle.png" }]
+      "States": [{ "Name": "Latest Task", "Image": "assets/icons/task-idle.svg" }]
     },
     {
       "Name": "Fork Codex Task",
@@ -165,6 +169,36 @@
       "Controllers": ["Keypad"],
       "DisableAutomaticStates": true,
       "States": [{ "Name": "Submit", "Image": "assets/icons/submit.png" }]
+    },
+    {
+      "Name": "Codex Sol High",
+      "Icon": "assets/icons/model-sol-high.svg",
+      "PropertyInspectorPath": "property-inspector/setup.html",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.model-sol-high",
+      "Tooltip": "Switch the visible Codex task to GPT-5.6 Sol with high reasoning effort.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Sol High", "Image": "assets/icons/model-sol-high.svg" }]
+    },
+    {
+      "Name": "Codex Luna Max",
+      "Icon": "assets/icons/model-luna-max.svg",
+      "PropertyInspectorPath": "property-inspector/setup.html",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.model-luna-max",
+      "Tooltip": "Switch the visible Codex task to GPT-5.6 Luna with maximum reasoning effort.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Luna Max", "Image": "assets/icons/model-luna-max.svg" }]
+    },
+    {
+      "Name": "Codex Sol Medium",
+      "Icon": "assets/icons/model-sol-medium.svg",
+      "PropertyInspectorPath": "property-inspector/setup.html",
+      "UUID": "com.ulanzi.ulanzistudio.codexmicro.model-sol-medium",
+      "Tooltip": "Switch the visible Codex task to GPT-5.6 Sol with medium reasoning effort.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "Sol Medium", "Image": "assets/icons/model-sol-medium.svg" }]
     }
   ]
 }

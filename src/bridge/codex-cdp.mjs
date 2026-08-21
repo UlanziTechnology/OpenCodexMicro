@@ -1,9 +1,7 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { discoverDebugEndpoint, fetchJson } from "./platform.mjs";
 import WebSocket from "ws";
 import { localThreadKey } from "./thread-key.mjs";
 
-const execFileAsync = promisify(execFile);
 const USAGE_REFRESH_MS = Math.max(
   15000,
   Number(process.env.CODEX_KEYBOARD_USAGE_REFRESH_SECONDS || 600) * 1000
@@ -20,7 +18,12 @@ const MICRO_ACTION_KEYS = Object.freeze({
   mic: "ACT10",
   submit: "ACT12"
 });
-const RENDERER_ACTIONS = new Set(["pin", "new"]);
+const MODEL_PRESETS = Object.freeze({
+  "model-sol-high": Object.freeze({ model: "gpt-5.6-sol", displayName: "5.6 Sol", effort: "high" }),
+  "model-luna-max": Object.freeze({ model: "gpt-5.6-luna", displayName: "5.6 Luna", effort: "max" }),
+  "model-sol-medium": Object.freeze({ model: "gpt-5.6-sol", displayName: "5.6 Sol", effort: "medium" })
+});
+const RENDERER_ACTIONS = new Set(["pin", "new", ...Object.keys(MODEL_PRESETS)]);
 const PIN_ACTION_LABELS = Object.freeze([
   "Pin chat",
   "Unpin chat",
@@ -88,6 +91,12 @@ export function rendererActionExpression(action) {
     target.click();
     return true;
   })()`;
+}
+
+export function modelPreset(action) {
+  const preset = MODEL_PRESETS[action];
+  if (!preset) throw new Error(`Unknown Codex model preset: ${action}`);
+  return preset;
 }
 
 export function composerSteerExpression() {
@@ -347,48 +356,125 @@ function selectMainTarget(targets) {
   }) ?? pages.find((target) => !/avatar-overlay|composition-surface/i.test(target.url || ""));
 }
 
-async function fetchJson(url, timeout = 1200) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeout) });
-  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}`);
-  return response.json();
+function traceErrorCategory(error) {
+  const name = String(error?.name || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  if (name.includes("timeout") || message.includes("timed out") || message.includes("timeout")) return "timeout";
+  if (message.includes("disconnected") || message.includes("not running")) return "cdp-unavailable";
+  if (message.includes("window")) return "focus-failed";
+  if (message.includes("menu") || message.includes("model") || message.includes("reasoning")) return "renderer-state";
+  return "cdp-operation";
 }
 
-async function discoverDebugPort() {
-  const { stdout } = await execFileAsync("/bin/ps", ["-axo", "command="], { timeout: 4000 });
-  for (const line of stdout.split("\n")) {
-    if (!line.includes("--remote-debugging-address=127.0.0.1")) continue;
-    const port = Number(line.match(/--remote-debugging-port(?:=|\s+)(\d+)/)?.[1]);
-    if (!Number.isInteger(port)) continue;
-    try {
-      await fetchJson(`http://127.0.0.1:${port}/json/version`, 500);
-      return port;
-    } catch {}
+async function runTraceStage(trace, stage, operation, fields = {}) {
+  const startedAt = performance.now();
+  trace?.record("cdp.stage", { stage, outcome: "started", ...fields });
+  try {
+    const result = await operation();
+    trace?.record("cdp.stage", {
+      stage,
+      outcome: "succeeded",
+      durationMs: Math.round(performance.now() - startedAt),
+      ...fields
+    });
+    return result;
+  } catch (error) {
+    trace?.record("cdp.stage", {
+      stage,
+      outcome: "failed",
+      category: traceErrorCategory(error),
+      durationMs: Math.round(performance.now() - startedAt),
+      ...fields
+    });
+    throw error;
   }
-  throw new Error("Codex is not running with the local debug bridge");
 }
 
 export class CodexCdpClient {
   socket = null;
+  connectPromise = null;
+  connectionGeneration = 0;
   nextId = 0;
   pending = new Map();
   lastSnapshot = null;
+  connectionIdentity = null;
+  modelActionQueue = Promise.resolve();
+  modelPickerLayout = null;
+
+  constructor({
+    discoverPort = discoverDebugEndpoint,
+    fetchTargets = fetchJson,
+    createSocket = url => new WebSocket(url)
+  } = {}) {
+    this.discoverPort = discoverPort;
+    this.fetchTargets = fetchTargets;
+    this.createSocket = createSocket;
+  }
 
   async connect() {
     if (this.socket?.readyState === WebSocket.OPEN) return;
-    const port = await discoverDebugPort();
-    const target = selectMainTarget(await fetchJson(`http://127.0.0.1:${port}/json/list`));
+    if (this.connectPromise) return this.connectPromise;
+    const generation = ++this.connectionGeneration;
+    const operation = this.openConnection(generation);
+    this.connectPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      if (this.connectPromise === operation) this.connectPromise = null;
+    }
+  }
+
+  async openConnection(generation) {
+    const discovery = await this.discoverPort();
+    const identity = Number.isInteger(discovery)
+      ? { port: discovery, processId: null, executable: null, channel: null }
+      : discovery;
+    const port = Number(identity?.port);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      throw new Error("Codex debug endpoint identity was invalid");
+    }
+    const target = selectMainTarget(await this.fetchTargets(`http://127.0.0.1:${port}/json/list`));
     if (!target?.webSocketDebuggerUrl) throw new Error("Codex main renderer was not found");
-    const socket = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Timed out connecting to Codex")), 3000);
-      socket.once("open", () => { clearTimeout(timer); resolve(); });
-      socket.once("error", reject);
-    });
-    socket.on("message", (raw) => this.handleMessage(String(raw)));
-    socket.on("close", () => this.disconnect());
-    socket.on("error", () => this.disconnect());
+    if (generation !== this.connectionGeneration) throw new Error("Codex bridge connection was cancelled");
+    const socket = this.createSocket(target.webSocketDebuggerUrl);
     this.socket = socket;
-    await this.evaluate(ENABLE_EXPRESSION);
+    this.connectionIdentity = {
+      port,
+      processId: Number.isInteger(identity?.processId) ? identity.processId : null,
+      executable: typeof identity?.executable === "string" ? identity.executable : null,
+      channel: ["stable", "beta"].includes(identity?.channel) ? identity.channel : null
+    };
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error("Timed out connecting to Codex"));
+        }, 3000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off("open", onOpen);
+          socket.off("error", onError);
+        };
+        const onOpen = () => { cleanup(); resolve(); };
+        const onError = error => { cleanup(); reject(error); };
+        socket.once("open", onOpen);
+        socket.once("error", onError);
+      });
+      if (generation !== this.connectionGeneration || this.socket !== socket) {
+        throw new Error("Codex bridge connection was cancelled");
+      }
+      socket.on("message", (raw) => this.handleMessage(String(raw)));
+      socket.on("close", () => {
+        if (this.socket === socket) this.disconnect();
+      });
+      socket.on("error", () => {
+        if (this.socket === socket) this.disconnect();
+      });
+      await this.evaluate(ENABLE_EXPRESSION);
+    } catch (error) {
+      if (this.socket === socket) this.disconnect();
+      throw error;
+    }
   }
 
   async snapshot() {
@@ -410,23 +496,58 @@ export class CodexCdpClient {
     return this.clickThreadKey(agent.threadKey, slot);
   }
 
-  async clickThread(threadId, slot = 0) {
-    await this.connect();
-    return this.clickThreadKey(localThreadKey(threadId), slot);
+  async clickThread(threadId, slot = 0, trace = null) {
+    await runTraceStage(trace, "task.connect", () => this.connect(), { slot: slot + 1 });
+    return this.clickThreadKey(localThreadKey(threadId), slot, trace);
   }
 
-  async clickThreadKey(threadKey, slot) {
+  async clickThreadKey(threadKey, slot, trace = null) {
     // Use the same native HID path as Codex Micro. The DOM click introduced
     // perceptible navigation scheduling; it is now only a non-blocking fallback.
     try {
-      await this.dispatchAgent(slot, threadKey, 1);
+      await runTraceStage(
+        trace,
+        "task.native-act1",
+        () => this.dispatchAgent(slot, threadKey, 1),
+        { slot: slot + 1 }
+      );
+      const finishBackground = trace?.defer?.();
+      trace?.record("task.background", { stage: "scheduled", background: true, slot: slot + 1 });
       void (async () => {
         await new Promise((resolve) => setTimeout(resolve, 35));
-        await this.dispatchAgent(slot, threadKey, 0);
-        await this.activateThread(threadKey);
-      })().catch(() => {});
-    } catch {
-      await this.activateThread(threadKey);
+        await runTraceStage(
+          trace,
+          "task.native-act0",
+          () => this.dispatchAgent(slot, threadKey, 0),
+          { background: true, slot: slot + 1 }
+        );
+        await runTraceStage(
+          trace,
+          "task.dom-activate",
+          () => this.activateThread(threadKey),
+          { background: true, slot: slot + 1 }
+        );
+      })().catch((error) => {
+        trace?.record("task.background", {
+          stage: "complete",
+          background: true,
+          outcome: "failed",
+          category: traceErrorCategory(error),
+          slot: slot + 1
+        });
+      }).finally(() => finishBackground?.());
+    } catch (error) {
+      trace?.record("task.fallback", {
+        outcome: "started",
+        category: traceErrorCategory(error),
+        slot: slot + 1
+      });
+      await runTraceStage(
+        trace,
+        "task.dom-activate-fallback",
+        () => this.activateThread(threadKey),
+        { slot: slot + 1 }
+      );
     }
   }
 
@@ -444,21 +565,328 @@ export class CodexCdpClient {
     }, "codex-micro-hid-event");
   }
 
-  async dispatchNamedAction(action, pressed) {
+  async dispatchNamedAction(action, pressed, trace = null) {
     const key = MICRO_ACTION_KEYS[action];
     if (key) return this.dispatchAction(key, pressed ? 1 : 0);
     if (!RENDERER_ACTIONS.has(action)) {
       throw new Error(`Unsupported Codex bridge action: ${action}`);
     }
     if (!pressed) return true;
-    return this.dispatchRendererAction(action);
+    return this.dispatchRendererAction(action, trace);
   }
 
-  async dispatchRendererAction(action) {
-    await this.connect();
+  async dispatchRendererAction(action, trace = null) {
+    if (MODEL_PRESETS[action]) {
+      const operation = this.modelActionQueue.then(async () => {
+        await runTraceStage(trace, "model.connect", () => this.connect(), { action });
+        return this.dispatchModelPreset(action, trace);
+      });
+      this.modelActionQueue = operation.catch(() => {});
+      await operation;
+      return true;
+    }
+    await runTraceStage(trace, "model.connect", () => this.connect(), { action });
     const invoked = await this.evaluate(rendererActionExpression(action));
     if (!invoked) throw new Error(`Codex ${action} action is not available`);
     return true;
+  }
+
+  async dispatchModelPreset(action, trace = null) {
+    const preset = MODEL_PRESETS[action];
+    if (!preset) throw new Error(`Unknown Codex model preset: ${action}`);
+    const presetStartedAt = performance.now();
+    trace?.record("model.preset", {
+      action,
+      stage: "start",
+      outcome: "started",
+      targetEffort: preset.effort
+    });
+    const effortOrder = ["low", "medium", "high", "xhigh", "max"];
+    const targetEffortIndex = effortOrder.indexOf(preset.effort);
+    const readState = async () => {
+      const state = await runTraceStage(trace, "model.read-state", () => this.evaluate(`(() => {
+        const visible = (element) => {
+          const rect = element?.getBoundingClientRect?.();
+          return element && (element.offsetParent !== null || (rect?.width > 0 && rect?.height > 0));
+        };
+        const triggers = [...document.querySelectorAll("[data-codex-intelligence-trigger]")].filter(visible);
+        if (triggers.length !== 1) return { error: \`Expected one visible intelligence trigger, found \${triggers.length}\` };
+        return {
+          text: String(triggers[0].textContent ?? "").replace(/\\s+/g, " ").trim(),
+          effort: triggers[0].getAttribute("data-selected-reasoning-effort"),
+          expanded: triggers[0].getAttribute("aria-expanded") === "true"
+        };
+      })()`));
+      if (state?.error) throw new Error(state.error);
+      trace?.record("model.state", {
+        currentEffort: state.effort || "unknown",
+        effortMatched: state.effort === preset.effort,
+        modelMatched: state.text.includes(preset.displayName)
+      });
+      return state;
+    };
+    const closeMenus = async () => {
+      let attempts = 0;
+      for (; attempts < 3 && (await readState()).expanded; attempts += 1) {
+        await this.pressRendererEscape(trace, "model.close-menu");
+      }
+      if ((await readState()).expanded) throw new Error("Codex intelligence menu did not close");
+      trace?.record("model.menu-close", { attempts, outcome: "succeeded" });
+    };
+    const openMain = async () => {
+      if (!(await readState()).expanded) {
+        await this.clickRendererCandidates(
+          '[...document.querySelectorAll("[data-codex-intelligence-trigger]")]',
+          "Codex intelligence trigger",
+          trace,
+          "model.open-trigger"
+        );
+      }
+      await this.waitForRenderer(`(() => {
+        const visible = (element) => {
+          const rect = element?.getBoundingClientRect?.();
+          return element && (element.offsetParent !== null || (rect?.width > 0 && rect?.height > 0));
+        };
+        return [...document.querySelectorAll('[role="menu"][data-state="open"]')].filter(
+          (menu) => visible(menu) && (
+            menu.querySelector("[data-model-picker-view-toggle]") ||
+            menu.querySelector("[data-reasoning-slider]")
+          )
+        ).length === 1;
+      })()`, "Codex intelligence menu", trace, "model.wait-main-menu");
+      const toggleState = await runTraceStage(trace, "model.read-menu-shape", () => this.evaluate(`(() => {
+        const menus = [...document.querySelectorAll('[role="menu"][data-state="open"]')].filter(
+          (menu) => menu.querySelector("[data-model-picker-view-toggle]") || menu.querySelector("[data-reasoning-slider]")
+        );
+        const toggles = menus.length === 1
+          ? [...menus[0].querySelectorAll("[data-model-picker-view-toggle]")]
+          : [];
+        return {
+          count: toggles.length,
+          expanded: toggles[0]?.getAttribute("aria-expanded") === "true",
+          rowCount: menus[0]?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0
+        };
+      })()`));
+      trace?.record("model.menu-shape", {
+        rowCount: toggleState.rowCount,
+        outcome: toggleState.expanded ? "expanded" : "collapsed"
+      });
+      if (toggleState.count === 0 && toggleState.rowCount === 2) return;
+      if (toggleState.count !== 1) {
+        throw new Error(`Expected one model picker view toggle, found ${toggleState.count}`);
+      }
+      if (!toggleState.expanded) {
+        await this.clickRendererCandidates(
+          `(() => {
+            const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+              (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+            );
+            return menu ? [...menu.querySelectorAll("[data-model-picker-view-toggle]")] : [];
+          })()`,
+          "model picker view toggle",
+          trace,
+          "model.open-picker-view"
+        );
+        await this.waitForRenderer(`(() => {
+          const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+            (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+          );
+          return menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length === 2;
+        })()`, "expanded Codex model picker", trace, "model.wait-picker-view");
+      }
+    };
+    const rowExpression = (rowIndex) => `(() => {
+      const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+        (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+      );
+      const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
+      return rows[${rowIndex}] ? [rows[${rowIndex}]] : [];
+    })()`;
+    const submenuInfo = async (rowIndex) => this.waitForRenderer(`(() => {
+      const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+        (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+      );
+      const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
+      if (rows.length !== 2 || !rows[${rowIndex}]) return null;
+      const submenu = document.getElementById(rows[${rowIndex}].getAttribute("aria-controls"));
+      if (!submenu || submenu.getAttribute("data-state") !== "open") return null;
+      return [...submenu.querySelectorAll('[role="menuitem"]')].map((item) => ({
+        text: String(item.textContent ?? "").replace(/\\s+/g, " ").trim(),
+        checked: Boolean(item.querySelector("svg"))
+      }));
+    })()`, "Codex model picker submenu", trace, `model.wait-submenu-${rowIndex + 1}`);
+    const identifyRows = async () => {
+      if (this.modelPickerLayout?.connectionGeneration === this.connectionGeneration) {
+        trace?.record("model.rows-identified", {
+          rowCount: 2,
+          source: "cache",
+          outcome: "succeeded"
+        });
+        return this.modelPickerLayout;
+      }
+      this.modelPickerLayout = null;
+      const rowCount = await runTraceStage(trace, "model.read-row-count", () => this.evaluate(`(() => {
+        const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+          (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+        );
+        return menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0;
+      })()`));
+      if (rowCount !== 2) throw new Error(`Expected two Codex model picker rows, found ${rowCount}`);
+      let modelRowIndex = -1;
+      for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+        await openMain();
+        await this.clickRendererCandidates(
+          rowExpression(rowIndex),
+          `model picker row ${rowIndex + 1}`,
+          trace,
+          `model.open-row-${rowIndex + 1}`
+        );
+        const items = await submenuInfo(rowIndex);
+        if (items.filter((item) => item.text === preset.displayName).length === 1) {
+          modelRowIndex = rowIndex;
+        }
+        await this.pressRendererEscape(trace, `model.close-row-${rowIndex + 1}`);
+      }
+      if (modelRowIndex < 0) throw new Error(`Codex model ${preset.displayName} is not available`);
+      const result = {
+        connectionGeneration: this.connectionGeneration,
+        modelRowIndex,
+        effortRowIndex: modelRowIndex === 0 ? 1 : 0
+      };
+      this.modelPickerLayout = result;
+      trace?.record("model.rows-identified", {
+        rowCount,
+        source: "probe",
+        outcome: "succeeded"
+      });
+      return result;
+    };
+    const selectEffort = async () => {
+      const current = await readState();
+      if (current.effort === preset.effort) {
+        trace?.record("model.effort", {
+          currentEffort: current.effort,
+          targetEffort: preset.effort,
+          outcome: "skipped"
+        });
+        return;
+      }
+      trace?.record("model.effort", {
+        currentEffort: current.effort || "unknown",
+        targetEffort: preset.effort,
+        outcome: "changing"
+      });
+      const currentEffortIndex = effortOrder.indexOf(current.effort);
+      if (currentEffortIndex < 0 || targetEffortIndex < 0) {
+        throw new Error(`Unsupported Codex reasoning effort transition: ${current.effort} -> ${preset.effort}`);
+      }
+      await openMain();
+      const { effortRowIndex } = await identifyRows();
+      await openMain();
+      await this.clickRendererCandidates(
+        rowExpression(effortRowIndex),
+        "reasoning effort row",
+        trace,
+        "model.open-effort-row"
+      );
+      const items = await submenuInfo(effortRowIndex);
+      const checkedIndexes = items.flatMap((item, index) => item.checked ? [index] : []);
+      if (items.length !== effortOrder.length || checkedIndexes.length !== 1 || checkedIndexes[0] !== currentEffortIndex) {
+        throw new Error("Codex reasoning effort order or selected state changed");
+      }
+      await this.clickRendererCandidates(`(() => {
+        const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+          (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+        );
+        const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
+        const submenu = rows[${effortRowIndex}]
+          ? document.getElementById(rows[${effortRowIndex}].getAttribute("aria-controls"))
+          : null;
+        const items = submenu ? [...submenu.querySelectorAll('[role="menuitem"]')] : [];
+        return items[${targetEffortIndex}] ? [items[${targetEffortIndex}]] : [];
+      })()`, `reasoning effort ${preset.effort}`, trace, "model.select-effort-option");
+      await this.waitForRenderer(
+        `document.querySelector("[data-codex-intelligence-trigger]")?.getAttribute("data-selected-reasoning-effort") === ${JSON.stringify(preset.effort)}`,
+        `reasoning effort ${preset.effort}`,
+        trace,
+        "model.wait-effort-selected"
+      );
+      trace?.record("model.effort", {
+        targetEffort: preset.effort,
+        outcome: "succeeded"
+      });
+    };
+    const selectModel = async () => {
+      if ((await readState()).text.includes(preset.displayName)) {
+        trace?.record("model.model", { modelMatched: true, outcome: "skipped" });
+        return;
+      }
+      trace?.record("model.model", { modelMatched: false, outcome: "changing" });
+      await openMain();
+      const { modelRowIndex } = await identifyRows();
+      await openMain();
+      await this.clickRendererCandidates(
+        rowExpression(modelRowIndex),
+        "model row",
+        trace,
+        "model.open-model-row"
+      );
+      const items = await submenuInfo(modelRowIndex);
+      if (items.filter((item) => item.text === preset.displayName).length !== 1) {
+        throw new Error(`Expected one available ${preset.displayName} model option`);
+      }
+      await this.clickRendererCandidates(`(() => {
+        const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
+          (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
+        );
+        const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
+        const submenu = rows[${modelRowIndex}]
+          ? document.getElementById(rows[${modelRowIndex}].getAttribute("aria-controls"))
+          : null;
+        return submenu
+          ? [...submenu.querySelectorAll('[role="menuitem"]')].filter(
+              (item) => String(item.textContent ?? "").replace(/\\s+/g, " ").trim() === ${JSON.stringify(preset.displayName)}
+            )
+          : [];
+      })()`, `model ${preset.displayName}`, trace, "model.select-model-option");
+      await this.waitForRenderer(
+        `String(document.querySelector("[data-codex-intelligence-trigger]")?.textContent ?? "").includes(${JSON.stringify(preset.displayName)})`,
+        `model ${preset.displayName}`,
+        trace,
+        "model.wait-model-selected"
+      );
+      trace?.record("model.model", { modelMatched: true, outcome: "succeeded" });
+    };
+
+    try {
+      await runTraceStage(trace, "model.select-model", selectModel, { action });
+      await runTraceStage(trace, "model.select-effort", selectEffort, { targetEffort: preset.effort });
+      const selected = await runTraceStage(trace, "model.validate", readState, { action });
+      if (!selected.text.includes(preset.displayName) || selected.effort !== preset.effort) {
+        throw new Error(`Codex did not select ${preset.displayName} / ${preset.effort}`);
+      }
+      await runTraceStage(trace, "model.close-menus", closeMenus, { action });
+      trace?.record("model.preset", {
+        action,
+        stage: "complete",
+        outcome: "succeeded",
+        targetEffort: preset.effort,
+        durationMs: Math.round(performance.now() - presetStartedAt)
+      });
+      return { model: preset.model, effort: preset.effort };
+    } catch (error) {
+      this.modelPickerLayout = null;
+      trace?.record("model.preset", {
+        action,
+        stage: "complete",
+        outcome: "failed",
+        category: traceErrorCategory(error),
+        targetEffort: preset.effort,
+        durationMs: Math.round(performance.now() - presetStartedAt)
+      });
+      try { await runTraceStage(trace, "model.cleanup-menus", closeMenus, { action }); } catch {}
+      throw error;
+    }
   }
 
   async dispatchComposerSteer() {
@@ -539,7 +967,7 @@ export class CodexCdpClient {
     })()`);
   }
 
-  evaluate(expression) {
+  sendCommand(method, params, returnValue = false) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error("Codex bridge is disconnected"));
     }
@@ -549,13 +977,80 @@ export class CodexCdpClient {
         this.pending.delete(id);
         reject(new Error("Codex runtime response timed out"));
       }, 7000);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, returnValue });
       this.socket.send(JSON.stringify({
         id,
-        method: "Runtime.evaluate",
-        params: { expression, awaitPromise: true, returnByValue: true }
+        method,
+        params
       }));
     });
+  }
+
+  evaluate(expression) {
+    return this.sendCommand("Runtime.evaluate", {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    }, true);
+  }
+
+  async clickRendererCandidates(candidatesExpression, description, trace = null, stage = "renderer.click") {
+    await runTraceStage(trace, stage, () => this.evaluate(`(() => {
+      const visible = (element) => {
+        const rect = element?.getBoundingClientRect?.();
+        return element && (element.offsetParent !== null || (rect?.width > 0 && rect?.height > 0));
+      };
+      const candidates = [...(${candidatesExpression})].filter(visible);
+      if (candidates.length !== 1) {
+        throw new Error(\`Expected one ${description}, found \${candidates.length}\`);
+      }
+      for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+        const EventType = type.startsWith("pointer") ? PointerEvent : MouseEvent;
+        candidates[0].dispatchEvent(new EventType(type, {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          buttons: type.endsWith("down") ? 1 : 0,
+          view: window
+        }));
+      }
+      return true;
+    })()`));
+  }
+
+  async pressRendererEscape(trace = null, stage = "renderer.escape") {
+    await runTraceStage(trace, stage, () => this.evaluate(`(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", {
+        key: "Escape", code: "Escape", bubbles: true, cancelable: true
+      }));
+      return true;
+    })()`));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  async waitForRenderer(expression, description, trace = null, stage = "renderer.wait") {
+    const startedAt = performance.now();
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const result = await this.evaluate(expression);
+      if (result) {
+        trace?.record("renderer.poll", {
+          stage,
+          outcome: "succeeded",
+          attempts: attempt + 1,
+          durationMs: Math.round(performance.now() - startedAt)
+        });
+        return result;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    trace?.record("renderer.poll", {
+      stage,
+      outcome: "failed",
+      category: "timeout",
+      attempts: 20,
+      durationMs: Math.round(performance.now() - startedAt)
+    });
+    throw new Error(`Timed out waiting for ${description}`);
   }
 
   handleMessage(raw) {
@@ -573,13 +1068,21 @@ export class CodexCdpClient {
         ?? "Codex evaluation failed"
       ));
     }
-    pending.resolve(message.result?.result?.value);
+    pending.resolve(
+      pending.returnValue ? message.result?.result?.value : message.result
+    );
   }
 
   disconnect() {
+    this.connectionGeneration += 1;
+    this.connectPromise = null;
+    this.modelPickerLayout = null;
+    this.connectionIdentity = null;
     const socket = this.socket;
     this.socket = null;
-    if (socket?.readyState === WebSocket.OPEN) socket.close();
+    if (socket && socket.readyState !== WebSocket.CLOSED) {
+      try { socket.close(); } catch { socket.terminate?.(); }
+    }
     for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
       reject(new Error("Codex bridge disconnected"));

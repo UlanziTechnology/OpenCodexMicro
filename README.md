@@ -24,8 +24,8 @@ Steer, Mic, Submit, and Latest Task & Scroll Encoder actions.
 | Local-only transport | Bind CDP and the Bridge API to loopback addresses only |
 
 This Ulanzi-maintained project is an unofficial integration with Codex Desktop
-for **macOS, Ulanzi Studio, and Ulanzi D200 Series**. It is not affiliated with or
-endorsed by OpenAI. The entire project was vibe-coded with Codex.
+for **Windows or macOS, Ulanzi Studio, and Ulanzi D200 Series**. It is not
+affiliated with or endorsed by OpenAI.
 
 Ulanzi's implementation and maintenance scope is limited to
 `integration/com.ulanzi.codexmicro.ulanziPlugin/`. The plugin only consumes
@@ -38,8 +38,8 @@ responsibility boundary.
 
 ### Installation environment
 
-- macOS 13 or later;
-- Codex Desktop;
+- Windows 10 or later, or macOS 13 or later;
+- Codex Desktop Stable or Beta;
 - Ulanzi Studio 3.0.1 or later;
 - Ulanzi D200 Series connected to Ulanzi Studio;
 - Node.js 20 or newer only for repository-based manual installation.
@@ -49,7 +49,8 @@ responsibility boundary.
 An LLM or coding agent must follow these steps:
 
 1. Read [AGENTS.md](AGENTS.md) and inspect the installed Ulanzi Studio plugin
-   manifests under `~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/`.
+   manifests under `%APPDATA%\Ulanzi\UlanziDeck\Plugins` on Windows or
+   `~/Library/Application Support/Ulanzi/UlanziDeck/Plugins` on macOS.
 2. Treat Codex Micro as installed only when manifest UUID
    `com.ulanzi.ulanzistudio.codexmicro` is present and its `CodePath` exists.
 3. If it is missing or invalid, load
@@ -57,7 +58,7 @@ An LLM or coding agent must follow these steps:
    install the plugin, and verify its manifest and entry point.
 4. After the plugin is verified, load
    [`$setup-codex-bridge`](skills/setup-codex-bridge/SKILL.md), install or repair
-   `Codex Bridge.app` and its sidecar, and verify the local health endpoint.
+   Codex Bridge and its sidecar, and verify the local health endpoint.
 5. Report plugin installation and Bridge connectivity separately. Do not
    reinstall a valid plugin unless an update or repair was requested.
 
@@ -66,13 +67,14 @@ An LLM or coding agent must follow these steps:
 After installing the Codex Micro plugin, drag any Codex Micro action onto a
 key and select it. Its shared **Codex Bridge Setup** page can:
 
-- show whether `Codex Bridge.app`, the Bridge service, and CDP are available;
+- show whether Codex Bridge, its user-level service, and CDP are available;
 - install or repair the bundled Bridge without a repository or npm directory;
-- launch `~/Applications/Codex Bridge.app`; and
+- launch Codex with loopback-only CDP arguments; and
 - recheck the connection or open the full installation guide.
 
-The installer writes only to the current user's Applications, Application
-Support, and LaunchAgents directories and does not require `sudo`.
+The installer uses `%LOCALAPPDATA%\OpenCodexMicro` on Windows. On macOS it uses
+the current user's Applications, Application Support, and LaunchAgents
+directories. Neither path requires administrator access.
 
 ### 3. Manual installation
 
@@ -85,13 +87,15 @@ npm run setup
 ```
 
 Quit Ulanzi Studio before running `npm run install:plugin`. The command
-validates and atomically installs the prebuilt plugin. `npm run setup` builds
-the loopback Bridge sidecar, registers its user LaunchAgent, and installs
-`Codex Bridge.app` in `~/Applications`.
+validates and atomically installs the prebuilt plugin. If Bridge is already
+installed, the command also verifies its version and runtime hash, then safely
+updates and restarts it when needed. `npm run setup` performs the initial Bridge
+installation or an explicit repair.
 
-Reopen Ulanzi Studio. Quit Codex Desktop, then open
-`~/Applications/Codex Bridge.app`; the wrapper starts Codex with a
-loopback-only CDP endpoint. Confirm the connection with:
+Reopen Ulanzi Studio and use **Launch Codex Bridge** in any Action setup page,
+or run `npm run bridge:start`. On Windows the launcher discovers the current
+Stable or Beta Appx package dynamically; it never pins a versioned WindowsApps
+directory. Confirm the connection with:
 
 ```bash
 curl http://127.0.0.1:17373/health
@@ -102,14 +106,9 @@ In Ulanzi Studio, drag the Codex Micro actions onto the desired keys. See
 [Setup and operations](docs/setup-and-operations.md) for installed paths,
 diagnostics, updates, and uninstall instructions.
 
-> **Important:** When using Codex Micro, always launch Codex through
-> `~/Applications/Codex Bridge.app`. Do not open Codex Desktop directly.
->
-> Launch command:
->
-> ```bash
-> open ~/Applications/Codex\ Bridge.app
-> ```
+> **Important:** Codex must be started with the loopback CDP arguments shown in
+> the setup page. If `9222` is already available, Launch only focuses the current
+> Codex instance; otherwise it starts the configured Stable or Beta channel.
 
 ## Configure
 
@@ -132,7 +131,7 @@ The repository includes two reusable Codex skills:
 
 | Skill | Purpose |
 | --- | --- |
-| [`setup-codex-bridge`](skills/setup-codex-bridge/SKILL.md) | Install, update, verify, or repair `Codex Bridge.app` and its sidecar |
+| [`setup-codex-bridge`](skills/setup-codex-bridge/SKILL.md) | Install, update, verify, or repair Codex Bridge and its sidecar |
 | [`install-ulanzi-studio-plugin`](skills/install-ulanzi-studio-plugin/SKILL.md) | Install the repository's prebuilt plugin directory into Ulanzi Studio |
 
 ## Documentation

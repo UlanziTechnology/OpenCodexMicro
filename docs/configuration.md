@@ -23,11 +23,22 @@ No repository or npm working directory is required for this flow.
 | Steer | Send the visible composer text as steering input to a running task |
 | Mic | Press and release the Codex Micro microphone action |
 | Submit | Submit or queue the composer text |
+| Sol High | Switch the visible task to GPT-5.6 Sol with high reasoning effort |
+| Luna Max | Switch the visible task to GPT-5.6 Luna with maximum reasoning effort |
+| Sol Medium | Switch the visible task to GPT-5.6 Sol with medium reasoning effort |
 
-Task actions dynamically use the plugin's idle, working, complete, attention,
-error, and offline artwork. Usage is rendered at runtime from the allowance
-returned by the Bridge. The Encoder action mirrors task 1's current title and
-status artwork.
+Task actions render a compact 196×196 SVG at runtime. A colored outer frame and
+accent identify idle, blue working, flashing green complete, attention, or error
+state. The high-contrast inner surface reserves most of the key for the task
+title, which Ulanzi Studio overlays in as many as four short lines with safe
+horizontal margins.
+Usage is rendered at runtime from the allowance returned by the Bridge. The
+Encoder action mirrors task 1's current title and status color.
+
+Model presets operate the visible Codex Desktop intelligence picker. They
+validate the target model, the current reasoning-effort ordering, and the final
+selection. A running turn is not moved to another model; the preset applies to
+the next turn submitted from the visible task.
 
 ## Recommended layout
 
@@ -37,10 +48,12 @@ placed on more than one key.
 
 ## Runtime requirements
 
-- Start Codex through `~/Applications/Codex Bridge.app`.
+- Start Codex from the Bridge setup page or with `npm run bridge:start`; Windows
+  resolves the current Stable or Beta Appx package dynamically.
 - Keep the Bridge sidecar running at `127.0.0.1:17373`.
-- Allow Ulanzi Studio under macOS System Settings > Privacy & Security >
-  Accessibility so the Encoder can emit mouse-wheel events.
+- On macOS, allow Ulanzi Studio under System Settings > Privacy & Security >
+  Accessibility so the Encoder can emit mouse-wheel events. On Windows, confirm
+  Ulanzi Studio is allowed to send the configured hotkey events.
 - Restart Ulanzi Studio after installing a new plugin build.
 
 The plugin does not require a separate device service, shortcut file, or theme

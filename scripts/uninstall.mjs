@@ -1,38 +1,19 @@
-import { mkdir, rm } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
+import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { createBridgeInstaller } from "../integration/com.ulanzi.codexmicro.ulanziPlugin/plugin/bridge-installer.js";
 
-const home = homedir();
-const uid = process.getuid();
-const appRoot = join(home, "Library", "Application Support", "OpenCodexMicro");
-const bridgeApp = join(home, "Applications", "Codex Bridge.app");
-const agentsRoot = join(home, "Library", "LaunchAgents");
-const plugin = join(
-  home,
-  "Library",
-  "Application Support",
-  "Ulanzi",
-  "UlanziDeck",
-  "Plugins",
-  "com.ulanzi.codexmicro.ulanziPlugin"
-);
-await mkdir(agentsRoot, { recursive: true });
-const agents = [
-  join(agentsRoot, "io.opencodexmicro.bridge.plist")
-];
+const pluginRoot = resolve("integration/com.ulanzi.codexmicro.ulanziPlugin");
+const packageMetadata = JSON.parse(await readFile(resolve("package.json"), "utf8"));
+const installer = createBridgeInstaller({
+  pluginRoot,
+  bridgeUrl: process.env.CODEX_BRIDGE_URL || "http://127.0.0.1:17373",
+  version: String(packageMetadata.version)
+});
+await installer.uninstall();
 
-for (const agent of agents) {
-  try {
-    execFileSync("/bin/launchctl", ["bootout", `gui/${uid}`, agent], {
-      stdio: "ignore"
-    });
-  } catch {
-    // Already stopped or never installed.
-  }
-  await rm(agent, { force: true });
-}
-await rm(appRoot, { recursive: true, force: true });
-await rm(bridgeApp, { recursive: true, force: true });
-await rm(plugin, { recursive: true, force: true });
+const pluginsRoot = process.platform === "win32"
+  ? join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "Ulanzi", "UlanziDeck", "Plugins")
+  : join(homedir(), "Library", "Application Support", "Ulanzi", "UlanziDeck", "Plugins");
+await rm(join(pluginsRoot, "com.ulanzi.codexmicro.ulanziPlugin"), { recursive: true, force: true });
 console.log("OpenCodexMicro removed.");

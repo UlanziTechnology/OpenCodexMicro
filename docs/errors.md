@@ -32,8 +32,10 @@
 
 - Keep the last usable display during routine refreshes; use offline artwork
   only when the Bridge is actually unavailable.
-- Task updates use relative-path icons and must not send a state index when the
-  manifest disables automatic states.
+- Task updates use self-contained runtime SVG backgrounds and the protocol
+  `textData` overlay for the title. They must not send a state index when the
+  manifest disables automatic states. The legacy lowercase `textdata` field is
+  sent with the same value for compatibility with older raw-protocol hosts.
 - Usage refreshes must not block task input or action dispatch.
 - Runtime assets referenced by the manifest or plugin code must exist in the
   installed `.ulanziPlugin` directory.
