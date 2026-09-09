@@ -72,9 +72,12 @@ key and select it. Its shared **Codex Bridge Setup** page can:
 - launch Codex with loopback-only CDP arguments; and
 - recheck the connection or open the full installation guide.
 
-The installer uses `%LOCALAPPDATA%\OpenCodexMicro` on Windows. On macOS it uses
-the current user's Applications, Application Support, and LaunchAgents
-directories. Neither path requires administrator access.
+The installer uses `%LOCALAPPDATA%\OpenCodexMicro` for Windows user data and a
+hash-verified protected runtime under `%PROGRAMDATA%\OpenCodexMicro\Bridge`.
+Windows requests administrator approval for first installation and protected
+Bridge code updates; normal starts remain silent. On macOS it uses the current
+user's Applications, Application Support, and LaunchAgents directories without
+administrator access.
 
 ### 3. Manual installation
 
@@ -92,10 +95,13 @@ installed, the command also verifies its version and runtime hash, then safely
 updates and restarts it when needed. `npm run setup` performs the initial Bridge
 installation or an explicit repair.
 
-Reopen Ulanzi Studio and use **Launch Codex Bridge** in any Action setup page,
-or run `npm run bridge:start`. On Windows the launcher discovers the current
-Stable or Beta Appx package dynamically; it never pins a versioned WindowsApps
-directory. Confirm the connection with:
+Reopen Ulanzi Studio. **Launch Codex Bridge** and `npm run bridge:start` remain
+available for manual startup and diagnostics, but a configured Task key also
+invokes the same launch path whenever ChatGPT/CDP is unavailable. On Windows the
+launcher discovers the current Stable or Beta Appx package dynamically; it never
+pins a versioned WindowsApps directory. A desktop shortcut whose target points
+at a version-specific `WindowsApps` directory is neither required nor used.
+Confirm the connection with:
 
 ```bash
 curl http://127.0.0.1:17373/health
@@ -107,8 +113,11 @@ In Ulanzi Studio, drag the Codex Micro actions onto the desired keys. See
 diagnostics, updates, and uninstall instructions.
 
 > **Important:** Codex must be started with the loopback CDP arguments shown in
-> the setup page. If `9222` is already available, Launch only focuses the current
-> Codex instance; otherwise it starts the configured Stable or Beta channel.
+> the setup page. If `9222` is already available, a Task key or Launch only
+> focuses the current Codex instance. If it is unavailable, the first Task press
+> may restart that channel's main ChatGPT process once with the required
+> arguments, wait for Bridge state to become connected, and then continue the
+> requested task activation.
 
 ## Configure
 
@@ -116,6 +125,17 @@ The physical layout is managed in Ulanzi Studio. The plugin ships these
 actions: Codex Task 1–5, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit, and
 Latest Task & Scroll for Encoder controls.
 No separate device daemon or shortcut mapping is required.
+
+On Windows, focus stays bound to the PID that owns the active CDP listener. The
+adapter revalidates cached windows, prefers unowned displayed top-level windows,
+and falls back to another displayed window from that same PID without relying on
+window titles, versioned Appx paths, or a global keyboard hook.
+
+A Task press is successful only after both the requested renderer task is
+confirmed active and the matching ChatGPT window is confirmed in the foreground.
+Native Micro navigation is attempted first; DOM activation is a bounded fallback,
+and a focus or activation failure is reported instead of being logged as partial
+success.
 
 Select any configured action to open the shared **Codex Bridge Setup** page.
 It shows Bridge installation, service, and CDP status and provides Install /

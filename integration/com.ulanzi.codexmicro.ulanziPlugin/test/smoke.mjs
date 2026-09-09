@@ -28,6 +28,8 @@ assert.match(String(bundledBridgeSource), /BRIDGE_VERSION = .*"0\.6\.1"/);
 assert.doesNotMatch(String(bundledBridgeSource), /process\.env\.CODEX_BRIDGE_VERSION/);
 assert.match(pluginBundleSource, /scheduleBridgeReconcileRetry\(\);/);
 assert.match(pluginBundleSource, /bridgeReconcilePromise === running\) bridgeReconcilePromise = null/);
+assert.match(pluginBundleSource, /ChatGPT is unavailable; starting the current installed app build/);
+assert.match(pluginBundleSource, /await ensureCodexDesktopReady\(\);/);
 assert.equal(manifest.Software?.MinVersion, "3.0.1");
 assert.equal(manifest.OS?.find(item => item.Platform === "mac")?.MinimumVersion, "13.0");
 assert.equal(manifest.OS?.find(item => item.Platform === "windows")?.MinimumVersion, "10.0");
@@ -58,6 +60,19 @@ const setupInspector = await readFile(new URL("property-inspector/setup.html", p
 assert.match(setupInspector, /Codex Bridge Setup/);
 assert.match(setupInspector, /Install \/ Repair/);
 assert.match(setupInspector, /bridgeSetup/);
+assert.match(setupInspector, /id="forceFocus"/);
+assert.match(setupInspector, /getGlobalSettings/);
+assert.match(setupInspector, /setGlobalSettings/);
+assert.equal(
+  setupInspector.match(/\bsetInterval\s*\(/g)?.length,
+  1,
+  "force focus must not add an Inspector idle timer beyond the existing Bridge status poll"
+);
+assert.doesNotMatch(
+  String(bundledBridgeSource),
+  /SetWindowsHookEx|RegisterHotKey/,
+  "force focus must stay request-scoped and must not install a Windows hook or global hotkey"
+);
 const setupScript = setupInspector.match(/<script>([\s\S]*)<\/script>/)?.[1];
 assert.ok(setupScript, "setup inspector must contain its client script");
 assert.doesNotThrow(() => new Function(setupScript), "setup inspector script must parse");
@@ -126,6 +141,8 @@ for (const locale of [
   assert.ok(messages.Localization?.BackgroundActivityTitle?.length > 0, `${locale} must explain background activity`);
   assert.ok(messages.Localization?.NodeSelectionStrategy?.length > 0, `${locale} must explain Node selection`);
   assert.ok(messages.Localization?.UlanziNodeSignatureNotice?.length > 0, `${locale} must explain the Ulanzi Node signature`);
+  assert.ok(messages.Localization?.ForceFocus?.length > 0, `${locale} must localize the Windows force-focus option`);
+  assert.ok(messages.Localization?.ForceFocusDescription?.length > 0, `${locale} must explain the force-focus idle-cost boundary`);
   assert.equal(messages.Actions?.length, manifest.Actions.length, `${locale} must localize every action`);
   assert.ok(
     messages.Actions.every(action => action.Name?.length > 0 && action.Tooltip?.length > 0),
@@ -147,8 +164,16 @@ for (const locale of [
 
 const bridgeRequests = [];
 const bridgeTraceRoutes = new Map();
-const bridge = createServer((request, response) => {
+const modelSelections = [];
+const bridge = createServer(async (request, response) => {
   bridgeRequests.push(`${request.method} ${request.url}`);
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  const rawBody = Buffer.concat(chunks).toString("utf8");
+  const settings = rawBody ? JSON.parse(rawBody) : undefined;
+  if (request.url?.startsWith("/action/model-") && request.url.endsWith("/down")) {
+    modelSelections.push(settings);
+  }
   const traceId = String(request.headers["x-codex-trace-id"] || "");
   if (traceId && request.url !== "/diagnostics/trace") {
     bridgeTraceRoutes.set(traceId, request.url?.startsWith("/thread/") ? "thread-click" : "action");
@@ -189,6 +214,22 @@ const bridge = createServer((request, response) => {
         events: route === "thread-click"
           ? [
               { event: "server.request", offsetMs: 0, route, slot: 1 },
+              {
+                event: "focus.stage",
+                offsetMs: 10,
+                stage: "initial-foreground",
+                outcome: "observed",
+                accepted: false,
+                cacheHit: true,
+                cacheValid: true,
+                targetFound: true,
+                source: "cache",
+                windowTitle: "private-window-title",
+                hwnd: "private-hwnd",
+                pid: 9876,
+                threadId: 42
+              },
+              { event: "focus.stage", offsetMs: 11, stage: "aggressive-foreground", outcome: "observed", forceFocus: true, modifierStateClear: true, inputEventsInserted: 2, inputErrorCode: 0, releaseAccepted: true },
               { event: "focus.native", offsetMs: 12, outcome: "succeeded", channel: "beta", reused: false },
               { event: "cdp.stage", offsetMs: 51, stage: "task.dom-activate", outcome: "succeeded", durationMs: 9, background: true }
             ]
@@ -206,6 +247,14 @@ const bridge = createServer((request, response) => {
       ok: false,
       error: "Authorization Bearer synthetic-secret; task title: private user text"
     }));
+    return;
+  }
+  if (settings?.model === "Delayed Model") {
+    setTimeout(() => response.end(JSON.stringify({ ok: true, bridge: true })), 1400);
+    return;
+  }
+  if (request.url?.startsWith("/thread/")) {
+    response.end(JSON.stringify({ ok: true, bridge: true, focusOk: true, attentionRequested: false }));
     return;
   }
   response.end(JSON.stringify({ ok: true, bridge: true }));
@@ -243,6 +292,14 @@ try {
   client.on("message", raw => messages.push(JSON.parse(String(raw))));
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(messages[0]?.cmd, "connected");
+  assert.ok(messages.some(message => message.cmd === "getGlobalSettings" && message.uuid === "com.ulanzi.ulanzistudio.codexmicro"));
+  client.send(JSON.stringify({
+    cmd: "didReceiveGlobalSettings",
+    uuid: "com.ulanzi.ulanzistudio.codexmicro",
+    actionid: "",
+    key: "",
+    settings: { forceFocus: true }
+  }));
 
   client.send(JSON.stringify({
     cmd: "sendToPlugin",
@@ -251,12 +308,16 @@ try {
     key: "0_0",
     payload: { type: "bridgeSetup", action: "status" }
   }));
-  await new Promise(resolve => setTimeout(resolve, 150));
-  const setupStatus = messages.find(message =>
-    message.cmd === "sendToPropertyInspector" &&
-    message.actionid === "setup-action" &&
-    message.payload?.type === "bridgeSetupStatus"
-  );
+  let setupStatus = null;
+  const setupDeadline = Date.now() + 8000;
+  while (!setupStatus && Date.now() < setupDeadline) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    setupStatus = messages.find(message =>
+      message.cmd === "sendToPropertyInspector" &&
+      message.actionid === "setup-action" &&
+      message.payload?.type === "bridgeSetupStatus"
+    );
+  }
   assert.equal(setupStatus?.payload?.status?.serviceOnline, true);
   assert.equal(setupStatus?.payload?.status?.cdpConnected, true);
   assert.equal(setupStatus?.payload?.status?.bundledVersion, "0.6.1");
@@ -343,6 +404,7 @@ try {
     const threadKey = `${digit.repeat(8)}-${digit.repeat(4)}-${digit.repeat(4)}-${digit.repeat(4)}-${digit.repeat(12)}`;
     const threadRequests = bridgeRequests.filter(item => item.includes(`/thread/${threadKey}/click?slot=${index}`));
     assert.equal(threadRequests.length, 1, `task ${index + 1} run must not duplicate its keydown invocation`);
+    assert.match(threadRequests[0], /&forceFocus=1$/, `task ${index + 1} must pass the enabled force-focus setting only on keydown`);
     const taskLogs = messages.filter(message =>
       message.cmd === "logMessage" && message.message?.includes(`name=task-${index + 1}`)
     );
@@ -353,7 +415,7 @@ try {
     ), "Studio log messages must use the main-service identity");
     assert.ok(taskLogs.some(message => /event=received .*phase=down .*target=slot-[1-5]/.test(message.message)));
     assert.ok(taskLogs.some(message => /event=dispatching .*phase=down .*transport=bridge-http/.test(message.message)));
-    assert.ok(taskLogs.some(message => /event=succeeded .*phase=down .*durationMs=\d+/.test(message.message)));
+    assert.ok(taskLogs.some(message => /event=succeeded .*phase=down .*focusOk=true/.test(message.message)));
     assert.ok(taskLogs.some(message => /event=ignored .*phase=up .*reason=keydown-only/.test(message.message)));
   }
 
@@ -373,6 +435,11 @@ try {
     bridgeRequests.filter(item => item.includes("/thread/11111111-1111-1111-1111-111111111111/click?slot=0")).length,
     2,
     "Encoder press must open task slot 1"
+  );
+  assert.equal(
+    bridgeRequests.filter(item => item === "POST /thread/11111111-1111-1111-1111-111111111111/click?slot=0").length,
+    1,
+    "Encoder press must keep force focus disabled"
   );
   assert.deepEqual(
     messages.filter(message => message.cmd === "hotkey").map(message => message.keylist),
@@ -442,14 +509,73 @@ try {
     message.message?.includes("event=failed")
   );
   assert.match(failedPresetLog?.message || "", /category=bridge-rejected/);
+  const beforeCustom = modelSelections.length;
+  const customKey = {
+    uuid: "com.ulanzi.ulanzistudio.codexmicro.model-sol-high", actionid: "custom-model-key", key: "7_0"
+  };
+  const defaultKey = { ...customKey, actionid: "default-model-key", key: "7_1" };
+  client.send(JSON.stringify({ cmd: "add", ...customKey, param: { model: "Custom Model", effort: "low" } }));
+  client.send(JSON.stringify({ cmd: "add", ...defaultKey, param: {} }));
+  client.send(JSON.stringify({ cmd: "keydown", ...customKey }));
+  client.send(JSON.stringify({ cmd: "keydown", ...defaultKey }));
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.deepEqual(modelSelections.slice(beforeCustom), [
+    { model: "Custom Model", effort: "low" }, { model: "gpt-5.6-sol", effort: "high" }
+  ], "settings must be isolated by action context");
+  client.send(JSON.stringify({ cmd: "didReceiveSettings", ...customKey, settings: { model: "Delayed Model", effort: "medium" } }));
+  client.send(JSON.stringify({ cmd: "keydown", ...customKey }));
+  await new Promise(resolve => setTimeout(resolve, 1650));
+  assert.deepEqual(modelSelections.at(-1), { model: "Delayed Model", effort: "medium" });
+  assert.equal(messages.some(message => message.cmd === "showAlert" && message.actionid === customKey.actionid), false,
+    "model requests longer than the old 1200ms timeout must finish normally");
+  client.send(JSON.stringify({ cmd: "paramfromplugin", ...customKey, param: { model: "Custom Model", effort: "unknown" } }));
+  client.send(JSON.stringify({ cmd: "keydown", ...customKey }));
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(modelSelections.length, beforeCustom + 3, "invalid effort must not reach the bridge");
+  assert.ok(messages.some(message => message.cmd === "showAlert" && message.actionid === customKey.actionid));
+  client.send(JSON.stringify({ cmd: "clear", param: [customKey] }));
+  client.send(JSON.stringify({ cmd: "add", ...customKey, param: { model: "Restored Model", effort: "minimal" } }));
+  client.send(JSON.stringify({ cmd: "keydown", ...customKey }));
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.deepEqual(modelSelections.at(-1), { model: "Restored Model", effort: "minimal" });
+
+  const astraKey = {
+    uuid: "com.ulanzi.ulanzistudio.codexmicro.model-sol-high", actionid: "astra-model-key", key: "7_2"
+  };
+  client.send(JSON.stringify({ cmd: "add", ...astraKey, param: { model: "gpt-6-astra", effort: "low" } }));
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const astraState = messages.filter(message =>
+    message.cmd === "state" && message.param?.statelist?.[0]?.actionid === astraKey.actionid
+  ).at(-1);
+  assert.equal(astraState?.param?.statelist?.[0]?.textdata, "ASTRA LOW");
+
+  const geminiKey = {
+    uuid: "com.ulanzi.ulanzistudio.codexmicro.model-sol-high", actionid: "gemini-model-key", key: "7_3"
+  };
+  client.send(JSON.stringify({ cmd: "add", ...geminiKey, param: { model: "gemini-3.8-flash-high", effort: "high" } }));
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const geminiState = messages.filter(message =>
+    message.cmd === "state" && message.param?.statelist?.[0]?.actionid === geminiKey.actionid
+  ).at(-1);
+  assert.equal(geminiState?.param?.statelist?.[0]?.textdata, "GEMINI HIGH");
+
+  assert.equal(messages.some(message => message.cmd === "logMessage"
+    && /Custom Model|Delayed Model|Restored Model/.test(message.message || "")), false);
   const serializedLogs = JSON.stringify(messages.filter(message => message.cmd === "logMessage"));
   assert.match(serializedLogs, /bridgeEvent=focus\.native/);
+  assert.match(serializedLogs, /bridgeEvent=focus\.stage/);
+  assert.match(serializedLogs, /stage=initial-foreground/);
+  assert.match(serializedLogs, /accepted=false/);
+  assert.match(serializedLogs, /cacheHit=true/);
+  assert.match(serializedLogs, /stage=aggressive-foreground/);
+  assert.match(serializedLogs, /forceFocus=true/);
+  assert.match(serializedLogs, /inputEventsInserted=2/);
   assert.match(serializedLogs, /channel=beta/);
   assert.match(serializedLogs, /stage=task\.dom-activate/);
   assert.match(serializedLogs, /bridgeEvent=renderer\.poll/);
   assert.match(serializedLogs, /stage=model\.wait-main-menu/);
   assert.ok([...bridgeTraceRoutes.keys()].every(traceId => /^[a-f0-9-]{36}$/.test(traceId)));
-  assert.doesNotMatch(serializedLogs, /synthetic-secret|private user text|11111111-1111-1111-1111-111111111111/);
+  assert.doesNotMatch(serializedLogs, /synthetic-secret|private user text|private-window-title|private-hwnd|\b9876\b|11111111-1111-1111-1111-111111111111/);
   const serializedConsole = `${childStdout.join("")}\n${childStderr.join("")}`;
   for (const shortcut of [
     "task-1", "task-2", "task-3", "task-4", "task-5",

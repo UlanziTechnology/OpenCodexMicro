@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,10 @@ import {
   createBridgeInstaller,
   selectBridgeNodeRuntime
 } from "../integration/com.ulanzi.codexmicro.ulanziPlugin/plugin/bridge-installer.js";
+import {
+  createWindowsElevatedTaskManager,
+  WINDOWS_BRIDGE_TASK_NAME
+} from "../integration/com.ulanzi.codexmicro.ulanziPlugin/plugin/windows-elevated-task.js";
 
 const pluginRoot = fileURLToPath(new URL(
   "../integration/com.ulanzi.codexmicro.ulanziPlugin/",
@@ -28,6 +32,48 @@ const bundledNativeRuntimeHash = JSON.parse(await readFile(
 
 async function sha256(path) {
   return createHash("sha256").update(await readFile(path)).digest("hex");
+}
+
+function createFakeWindowsTaskManager({
+  programData,
+  dataRoot,
+  onDeploy = () => {},
+  onStart = () => {},
+  onStop = () => {}
+}) {
+  const secureRoot = join(programData, "OpenCodexMicro", "Bridge");
+  let installed = false;
+  let starts = 0;
+  return {
+    async status() {
+      return { installed, runLevel: installed ? "highest" : null };
+    },
+    async deploy({ nodeSource, launcherSource, runtimeSource, runtimeHash, nativeSource, nativeRuntimeHash, takeOverExistingBridge }) {
+      await mkdir(join(secureRoot, "runtimes", runtimeHash), { recursive: true });
+      await mkdir(join(secureRoot, "native-runtimes"), { recursive: true });
+      await copyFile(nodeSource, join(secureRoot, "node.exe"));
+      await copyFile(launcherSource, join(secureRoot, "elevated-launcher.mjs"));
+      await copyFile(runtimeSource, join(secureRoot, "runtimes", runtimeHash, "bridge.mjs"));
+      await rm(join(secureRoot, "native-runtimes", nativeRuntimeHash), { recursive: true, force: true });
+      await cp(nativeSource, join(secureRoot, "native-runtimes", nativeRuntimeHash), { recursive: true });
+      onDeploy({ takeOverExistingBridge });
+      installed = true;
+    },
+    async start() {
+      if (!installed) throw new Error("fake elevated task is not installed");
+      starts += 1;
+      await writeFile(join(dataRoot, "bridge.pid"), `${5000 + starts}\n`);
+      onStart(starts);
+    },
+    async stop() {
+      onStop();
+    },
+    async uninstall() {
+      installed = false;
+      await rm(secureRoot, { recursive: true, force: true });
+    },
+    get starts() { return starts; }
+  };
 }
 
 test("filesystem locks stay owned and live owners are not treated as stale", async () => {
@@ -211,22 +257,132 @@ test("bundled installer falls back when the system Node is older than version 20
   }
 });
 
-test("Windows installer uses LocalAppData, a capability token, and user-level processes", async () => {
+test("highest-privilege task registration pins protected files and never serializes the capability token", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-micro-elevated-task-"));
+  const dataRoot = join(root, "Local & Data", "OpenCodexMicro");
+  const secureRoot = join(root, "Program Data", "OpenCodexMicro", "Bridge");
+  const calls = [];
+  const secureNode = join(secureRoot, "node.exe");
+  const secureLauncher = join(secureRoot, "elevated-launcher.mjs");
+  const execute = async (command, args, options) => {
+    calls.push({ command, args, options });
+    if (command === "powershell.exe" && args.join(" ").includes("ConvertTo-Json")) {
+      return {
+        stdout: JSON.stringify({ runLevel: "Highest", execute: secureNode, arguments: `"${secureLauncher}" "${dataRoot}"` }),
+        stderr: ""
+      };
+    }
+    return { stdout: "", stderr: "" };
+  };
+  const manager = createWindowsElevatedTaskManager({ execute, dataRoot, secureRoot });
+
+  try {
+    assert.deepEqual(await manager.status(), { installed: true, runLevel: "highest" });
+    await manager.deploy({
+      nodeSource: join(root, "node-source.exe"),
+      nodeHash: "1".repeat(64),
+      launcherSource: join(root, "launcher-source.mjs"),
+      launcherHash: "2".repeat(64),
+      runtimeSource: join(root, "bridge-source.mjs"),
+      runtimeHash: "3".repeat(64),
+      nativeSource: join(root, "native-source"),
+      nativeRuntimeHash: "4".repeat(64),
+      nativeFiles: [{ path: "node_modules/koffi/index.cjs", sha256: "5".repeat(64) }],
+      takeOverExistingBridge: true
+    });
+    const elevationCall = calls.find(call => call.command === "powershell.exe" && call.options?.env?.CODEX_BRIDGE_ELEVATED_SCRIPT);
+    assert.ok(elevationCall);
+    assert.equal(elevationCall.options.windowsHide, true);
+    const elevatedScript = Buffer.from(
+      elevationCall.options.env.CODEX_BRIDGE_ELEVATED_SCRIPT,
+      "base64"
+    ).toString("utf16le");
+    assert.match(elevatedScript, /Register-ScheduledTask/);
+    assert.match(elevatedScript, /-RunLevel Highest/);
+    assert.match(elevatedScript, /Get-FileHash/);
+    assert.match(elevatedScript, /Set-Acl/);
+    assert.match(elevatedScript, /SetAccessRuleProtection/);
+    assert.match(elevatedScript, /FileSystemAccessRule/);
+    assert.match(elevatedScript, /Get-NetTCPConnection/);
+    assert.match(elevatedScript, /Stop-Process/);
+    assert.match(elevatedScript, new RegExp(WINDOWS_BRIDGE_TASK_NAME));
+    assert.doesNotMatch(elevatedScript, /CODEX_BRIDGE_TOKEN|Authorization|Bearer/);
+    assert.doesNotMatch(JSON.stringify(calls), /synthetic-test-token/);
+
+    await manager.start();
+    await manager.stop();
+    assert.ok(calls.some(call => call.command === "schtasks.exe" && call.args[0] === "/Run"));
+    assert.ok(calls.some(call => call.command === "schtasks.exe" && call.args[0] === "/End"));
+
+    await manager.uninstall();
+    const uninstallCall = calls.filter(call => call.command === "powershell.exe" && call.options?.env?.CODEX_BRIDGE_ELEVATED_SCRIPT).at(-1);
+    const uninstallScript = Buffer.from(
+      uninstallCall.options.env.CODEX_BRIDGE_ELEVATED_SCRIPT,
+      "base64"
+    ).toString("utf16le");
+    assert.match(uninstallScript, /Unregister-ScheduledTask/);
+    assert.match(uninstallScript, /Remove-Item/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("elevated launcher selects only hash-addressed protected runtimes and self-reports its PID", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-micro-elevated-launcher-"));
+  const secureRoot = join(root, "protected");
+  const dataRoot = join(root, "data");
+  const marker = join(root, "launched.json");
+  const launcher = join(secureRoot, "elevated-launcher.mjs");
+  const bridgeSource = `import { writeFileSync } from "node:fs"; writeFileSync(process.env.TEST_MARKER, JSON.stringify({ dataRoot: process.env.CODEX_BRIDGE_DATA_ROOT, nativeRoot: process.env.CODEX_BRIDGE_NATIVE_ROOT, nativeHash: process.env.CODEX_BRIDGE_NATIVE_HASH }));`;
+  const runtimeHash = createHash("sha256").update(bridgeSource).digest("hex");
+  const nativeRuntimeHash = createHash("sha256").update("").digest("hex");
+  const runtimeRoot = join(secureRoot, "runtimes", runtimeHash);
+  const nativeRoot = join(secureRoot, "native-runtimes", nativeRuntimeHash);
+  await mkdir(runtimeRoot, { recursive: true });
+  await mkdir(nativeRoot, { recursive: true });
+  await mkdir(dataRoot, { recursive: true });
+  await copyFile(join(repositoryRoot, "src", "bridge", "elevated-launcher.mjs"), launcher);
+  await writeFile(join(runtimeRoot, "bridge.mjs"), bridgeSource);
+  await writeFile(join(nativeRoot, "native-runtime.json"), `${JSON.stringify({
+    version: 1,
+    runtimeHash: nativeRuntimeHash,
+    files: []
+  })}\n`);
+  await writeFile(join(dataRoot, "install.json"), `${JSON.stringify({ runtimeHash, nativeRuntimeHash })}\n`);
+
+  try {
+    await execFileAsync(process.execPath, [launcher, dataRoot], {
+      env: { ...process.env, TEST_MARKER: marker }
+    });
+    const launched = JSON.parse(await readFile(marker, "utf8"));
+    assert.equal(launched.dataRoot, dataRoot);
+    assert.equal(launched.nativeRoot, nativeRoot);
+    assert.equal(launched.nativeHash, nativeRuntimeHash);
+    await assert.rejects(access(join(dataRoot, "bridge.pid")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Windows installer uses a protected highest-privilege task without exposing its capability token", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-micro-windows-installer-"));
   const localAppData = join(home, "LocalAppData");
+  const programData = join(home, "ProgramData");
   const bin = join(home, "bin");
   const systemNode = join(bin, "node.exe");
   const codexExecutable = join(home, "WindowsApps", "OpenAI.Codex_1.2.3.4_x64", "app", "ChatGPT.exe");
-  const bridgeRuntime = join(localAppData, "OpenCodexMicro", "bridge.mjs");
+  const dataRoot = join(localAppData, "OpenCodexMicro");
   const bundledRuntimeHash = await sha256(join(pluginRoot, "installer", "bridge.mjs"));
   await mkdir(bin, { recursive: true });
   await writeFile(systemNode, "fake node");
   const commands = [];
   const children = [];
-  let serviceOnline = false;
-  let runningVersion = "9.8.7";
-  let runningRuntimeHash = bundledRuntimeHash;
-  let runningNativeRuntimeHash = bundledNativeRuntimeHash;
+  let serviceOnline = true;
+  let runningVersion = "0.6.0";
+  let runningRuntimeHash = "legacy-elevated-runtime";
+  let runningNativeRuntimeHash = null;
+  let denyLegacyStop = true;
+  let deployments = 0;
   const execute = async (command, args, options) => {
     commands.push([command, args, options]);
     if (args[0] === "--version") return { stdout: "v22.14.0\n", stderr: "" };
@@ -242,31 +398,45 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
       };
     }
     if (command === "powershell.exe" && args.join(" ").includes("CODEX_BRIDGE_TARGET_RUNTIME")) {
+      if (denyLegacyStop) throw new Error("Access is denied");
       serviceOnline = false;
     }
     return { stdout: "", stderr: "" };
   };
   const spawnProcess = (command, args, options) => {
     children.push({ command, args, options });
-    if (args[0] === bridgeRuntime) {
+    return { pid: 1000 + children.length, unref() {} };
+  };
+  const windowsTaskManager = createFakeWindowsTaskManager({
+    programData,
+    dataRoot,
+    onDeploy({ takeOverExistingBridge }) {
+      deployments += 1;
+      assert.equal(takeOverExistingBridge, deployments === 1);
+      denyLegacyStop = false;
+      serviceOnline = false;
+    },
+    onStart() {
       serviceOnline = true;
       runningVersion = "9.8.7";
       runningRuntimeHash = bundledRuntimeHash;
       runningNativeRuntimeHash = bundledNativeRuntimeHash;
-    }
-    return { pid: 1000 + children.length, unref() {} };
-  };
+    },
+    onStop() { serviceOnline = false; }
+  });
   const installer = createBridgeInstaller({
     pluginRoot,
     bridgeUrl: "http://127.0.0.1:59999",
     version: "9.8.7",
     home,
     localAppData,
+    programData,
     platform: "win32",
     nodeExecutable: process.execPath,
     environmentPath: bin,
     execute,
     spawnProcess,
+    windowsTaskManager,
     fetchImpl: async url => {
       if (String(url).endsWith("/health") && serviceOnline) {
         return {
@@ -296,37 +466,37 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
     const installed = await installer.install();
     assert.equal(installed.supported, true);
     assert.equal(installed.installed, true);
-    const dataRoot = join(localAppData, "OpenCodexMicro");
     await access(join(dataRoot, "bridge.mjs"));
     const token = (await readFile(join(dataRoot, "bridge-token"), "utf8")).trim();
     assert.match(token, /^[A-Za-z0-9_-]{40,}$/);
     assert.deepEqual(await installer.authorizationHeaders(), { Authorization: `Bearer ${token}` });
-    assert.equal(children[0].command, await realpath(systemNode));
-    assert.equal(children[0].options.windowsHide, true);
-    assert.equal(children[0].options.env.CODEX_BRIDGE_TOKEN, token);
-    assert.equal(await readFile(join(dataRoot, "bridge.pid"), "utf8"), "1001\n");
+    assert.equal(children.length, 0);
+    assert.equal(await readFile(join(dataRoot, "bridge.pid"), "utf8"), "5001\n");
     const metadata = JSON.parse(await readFile(join(dataRoot, "install.json"), "utf8"));
     assert.equal(metadata.runtimeHash, bundledRuntimeHash);
     assert.equal(metadata.nativeRuntimeHash, bundledNativeRuntimeHash);
+    assert.equal(metadata.elevatedTask, true);
+    assert.equal(metadata.taskName, "OpenCodexMicro Codex Bridge");
+    assert.equal(installed.serviceRunLevel, "highest");
 
     runningVersion = "0.5.0";
     runningRuntimeHash = "stale-runtime";
     const reconciled = await installer.ensureCurrent();
     assert.equal(reconciled.needsUpdate, false);
-    assert.equal(children[1].command, await realpath(systemNode));
-    assert.equal(await readFile(join(dataRoot, "bridge.pid"), "utf8"), "1002\n");
+    assert.equal(windowsTaskManager.starts, 2);
+    assert.equal(await readFile(join(dataRoot, "bridge.pid"), "utf8"), "5002\n");
     assert.ok(commands.some(([command, args]) =>
       command === "powershell.exe" && args.join(" ").includes("CODEX_BRIDGE_TARGET_RUNTIME")
     ));
 
     await installer.launch();
-    assert.equal(children[2].command, codexExecutable);
-    assert.deepEqual(children[2].args, [
+    assert.equal(children[0].command, codexExecutable);
+    assert.deepEqual(children[0].args, [
       "--remote-debugging-address=127.0.0.1",
       "--remote-debugging-port=9222",
       "--remote-allow-origins=http://127.0.0.1:9222"
     ]);
-    assert.equal(children[2].options.windowsHide, false);
+    assert.equal(children[0].options.windowsHide, false);
     assert.ok(commands.some(([command, args]) =>
       command === "powershell.exe" && args.join(" ").includes("Stop-Process")
     ));
@@ -359,6 +529,7 @@ test("Windows installer uses LocalAppData, a capability token, and user-level pr
 test("a failed Windows Bridge restart restores the previous runtime and metadata", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-micro-windows-rollback-"));
   const localAppData = join(home, "LocalAppData");
+  const programData = join(home, "ProgramData");
   const dataRoot = join(localAppData, "OpenCodexMicro");
   const bridgeRuntime = join(dataRoot, "bridge.mjs");
   const systemNode = join(home, "bin", "node.exe");
@@ -387,6 +558,25 @@ test("a failed Windows Bridge restart restores the previous runtime and metadata
     installedAt: "2026-01-01T00:00:00.000Z"
   };
   await writeFile(join(dataRoot, "install.json"), "malformed previous metadata\n");
+  const recordBridgeStart = () => {
+    bridgeStarts += 1;
+    serviceOnline = true;
+    if (bridgeStarts === 1) {
+      runningVersion = "9.8.7";
+      runningRuntimeHash = "unexpected-runtime";
+      runningNativeRuntimeHash = bundledNativeRuntimeHash;
+    } else {
+      runningVersion = "1.0.0";
+      runningRuntimeHash = oldRuntimeHash;
+      runningNativeRuntimeHash = null;
+    }
+  };
+  const windowsTaskManager = createFakeWindowsTaskManager({
+    programData,
+    dataRoot,
+    onStart: recordBridgeStart,
+    onStop() { serviceOnline = false; }
+  });
 
   const installer = createBridgeInstaller({
     pluginRoot,
@@ -394,6 +584,7 @@ test("a failed Windows Bridge restart restores the previous runtime and metadata
     version: "9.8.7",
     home,
     localAppData,
+    programData,
     platform: "win32",
     nodeExecutable: process.execPath,
     environmentPath: join(home, "bin"),
@@ -406,20 +597,11 @@ test("a failed Windows Bridge restart restores the previous runtime and metadata
     },
     spawnProcess: (_command, args) => {
       if (args[0] === bridgeRuntime) {
-        bridgeStarts += 1;
-        serviceOnline = true;
-        if (bridgeStarts === 1) {
-          runningVersion = "9.8.7";
-          runningRuntimeHash = "unexpected-runtime";
-          runningNativeRuntimeHash = bundledNativeRuntimeHash;
-        } else {
-          runningVersion = "1.0.0";
-          runningRuntimeHash = oldRuntimeHash;
-          runningNativeRuntimeHash = null;
-        }
+        recordBridgeStart();
       }
       return { pid: 2000 + bridgeStarts, unref() {} };
     },
+    windowsTaskManager,
     fetchImpl: async url => {
       if (String(url).endsWith("/health") && serviceOnline) {
         return {
@@ -458,6 +640,7 @@ test("a failed Windows Bridge restart restores the previous runtime and metadata
 test("separate installer instances serialize the same Windows Bridge update", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-micro-windows-lock-"));
   const localAppData = join(home, "LocalAppData");
+  const programData = join(home, "ProgramData");
   const dataRoot = join(localAppData, "OpenCodexMicro");
   const bridgeRuntime = join(dataRoot, "bridge.mjs");
   const systemNode = join(home, "bin", "node.exe");
@@ -487,12 +670,25 @@ test("separate installer instances serialize the same Windows Bridge update", as
     installedAt: "2026-01-01T00:00:00.000Z"
   }, null, 2)}\n`);
 
+  const windowsTaskManager = createFakeWindowsTaskManager({
+    programData,
+    dataRoot,
+    onStart() {
+      bridgeStarts += 1;
+      serviceOnline = true;
+      runningVersion = "9.8.7";
+      runningRuntimeHash = bundledRuntimeHash;
+      runningNativeRuntimeHash = bundledNativeRuntimeHash;
+    },
+    onStop() { serviceOnline = false; }
+  });
   const dependencies = {
     pluginRoot,
     bridgeUrl: "http://127.0.0.1:59997",
     version: "9.8.7",
     home,
     localAppData,
+    programData,
     platform: "win32",
     nodeExecutable: process.execPath,
     environmentPath: join(home, "bin"),
@@ -503,14 +699,8 @@ test("separate installer instances serialize the same Windows Bridge update", as
       }
       return { stdout: "", stderr: "" };
     },
-    spawnProcess: () => {
-      bridgeStarts += 1;
-      serviceOnline = true;
-      runningVersion = "9.8.7";
-      runningRuntimeHash = bundledRuntimeHash;
-      runningNativeRuntimeHash = bundledNativeRuntimeHash;
-      return { pid: 3000 + bridgeStarts, unref() {} };
-    },
+    spawnProcess: () => ({ pid: 3000 + bridgeStarts, unref() {} }),
+    windowsTaskManager,
     fetchImpl: async url => {
       if (String(url).endsWith("/health") && serviceOnline) {
         return {
@@ -537,7 +727,7 @@ test("separate installer instances serialize the same Windows Bridge update", as
     const results = await Promise.all([first.ensureCurrent(), second.ensureCurrent()]);
     assert.ok(results.every(result => result.needsUpdate === false));
     assert.equal(bridgeStarts, 1);
-    assert.equal(await readFile(join(dataRoot, "bridge.pid"), "utf8"), "3001\n");
+    assert.equal(await readFile(join(dataRoot, "bridge.pid"), "utf8"), "5001\n");
 
     await rm(join(dataRoot, "bridge-token"), { force: true });
     const repaired = await first.ensureCurrent();
@@ -553,6 +743,7 @@ test("separate installer instances serialize the same Windows Bridge update", as
 test("an interrupted Windows update restores both backups when the new runtime cannot restart", async () => {
   const home = await mkdtemp(join(tmpdir(), "codex-micro-windows-interrupted-"));
   const localAppData = join(home, "LocalAppData");
+  const programData = join(home, "ProgramData");
   const dataRoot = join(localAppData, "OpenCodexMicro");
   const bridgeRuntime = join(dataRoot, "bridge.mjs");
   const installMetadata = join(dataRoot, "install.json");
@@ -597,12 +788,32 @@ test("an interrupted Windows update restores both backups when the new runtime c
   await writeFile(join(dataRoot, ".install.json.previous"), `${JSON.stringify(oldMetadata, null, 2)}\n`);
   await writeFile(join(dataRoot, "bridge-token"), "synthetic-test-token\n");
 
+  const recordBridgeStart = (kind) => {
+    bridgeStarts += 1;
+    serviceOnline = true;
+    if (kind === "legacy") {
+      runningVersion = "1.0.0";
+      runningRuntimeHash = oldRuntimeHash;
+      runningNativeRuntimeHash = null;
+    } else {
+      runningVersion = "9.8.7";
+      runningRuntimeHash = bundledRuntimeHash;
+      runningNativeRuntimeHash = bundledNativeRuntimeHash;
+    }
+  };
+  const windowsTaskManager = createFakeWindowsTaskManager({
+    programData,
+    dataRoot,
+    onStart() { recordBridgeStart("elevated"); },
+    onStop() { serviceOnline = false; }
+  });
   const installer = createBridgeInstaller({
     pluginRoot,
     bridgeUrl: "http://127.0.0.1:59996",
     version: "9.8.7",
     home,
     localAppData,
+    programData,
     platform: "win32",
     nodeExecutable: process.execPath,
     environmentPath: join(home, "bin"),
@@ -614,23 +825,10 @@ test("an interrupted Windows update restores both backups when the new runtime c
       return { stdout: "", stderr: "" };
     },
     spawnProcess: () => {
-      bridgeStarts += 1;
-      serviceOnline = true;
-      if (bridgeStarts === 1) {
-        runningVersion = "9.8.7";
-        runningRuntimeHash = "failed-new-runtime";
-        runningNativeRuntimeHash = bundledNativeRuntimeHash;
-      } else if (bridgeStarts === 2) {
-        runningVersion = "1.0.0";
-        runningRuntimeHash = oldRuntimeHash;
-        runningNativeRuntimeHash = null;
-      } else {
-        runningVersion = "9.8.7";
-        runningRuntimeHash = bundledRuntimeHash;
-        runningNativeRuntimeHash = bundledNativeRuntimeHash;
-      }
+      recordBridgeStart("legacy");
       return { pid: 4000 + bridgeStarts, unref() {} };
     },
+    windowsTaskManager,
     fetchImpl: async url => {
       if (String(url).endsWith("/health") && serviceOnline) {
         return {
@@ -657,7 +855,7 @@ test("an interrupted Windows update restores both backups when the new runtime c
     assert.equal(reconciled.needsUpdate, false);
     assert.deepEqual(await readFile(bridgeRuntime), bundledRuntime);
     assert.equal(JSON.parse(await readFile(installMetadata, "utf8")).version, "9.8.7");
-    assert.equal(bridgeStarts, 3);
+    assert.equal(bridgeStarts, 2);
     await assert.rejects(access(join(dataRoot, ".bridge.mjs.previous")));
     await assert.rejects(access(join(dataRoot, ".install.json.previous")));
   } finally {

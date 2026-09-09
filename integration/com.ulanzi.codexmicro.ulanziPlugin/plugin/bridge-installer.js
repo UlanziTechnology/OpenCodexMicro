@@ -21,6 +21,10 @@ import {
   discoverDebugEndpoint,
   launchWindowsCodex
 } from "../../../src/bridge/platform.mjs";
+import {
+  createWindowsElevatedTaskManager,
+  WINDOWS_BRIDGE_TASK_NAME
+} from "./windows-elevated-task.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -224,6 +228,7 @@ export function createBridgeInstaller({
   version,
   home = homedir(),
   localAppData = process.env.LOCALAPPDATA,
+  programData = process.env.PROGRAMDATA || "C:\\ProgramData",
   uid = process.getuid?.(),
   platform = process.platform,
   nodeExecutable = process.execPath,
@@ -232,6 +237,7 @@ export function createBridgeInstaller({
   execute = execFileAsync,
   spawnProcess = spawn,
   fetchImpl = fetch,
+  windowsTaskManager = null,
   serviceStartTimeoutMs = 8000,
   wait = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds))
 }) {
@@ -243,11 +249,28 @@ export function createBridgeInstaller({
   const lifecycleLock = join(dirname(appRoot), ".OpenCodexMicro.lifecycle.lock");
   const installerRoot = resolve(pluginRoot, "installer");
   const bundledRuntime = join(installerRoot, "bridge.mjs");
+  const bundledElevatedLauncher = join(installerRoot, "elevated-launcher.mjs");
   const bundledIcon = join(installerRoot, "CodexBridge.png");
   const bundledNativeRuntime = join(installerRoot, "native-runtime");
   const nativeRuntimesRoot = join(appRoot, "native-runtimes");
   const runtimeBackup = join(appRoot, ".bridge.mjs.previous");
   const metadataBackup = join(appRoot, ".install.json.previous");
+  const bridgePort = (() => {
+    try { return Number(new URL(bridgeUrl).port || 17373); }
+    catch { return 17373; }
+  })();
+  const elevatedRoot = join(programData, "OpenCodexMicro", "Bridge");
+  const elevatedNode = join(elevatedRoot, "node.exe");
+  const elevatedLauncher = join(elevatedRoot, "elevated-launcher.mjs");
+  const windowsTask = platform === "win32"
+    ? windowsTaskManager || createWindowsElevatedTaskManager({
+      execute,
+      dataRoot: appRoot,
+      secureRoot: elevatedRoot,
+      bridgePort,
+      taskName: WINDOWS_BRIDGE_TASK_NAME
+    })
+    : null;
 
   const userApplications = join(home, "Applications");
   const bridgeApp = join(userApplications, "Codex Bridge.app");
@@ -322,13 +345,26 @@ export function createBridgeInstaller({
   }
 
   async function status() {
-    const [runtimeInstalled, tokenInstalled, metadata, probe, bundledRuntimeHash, installedRuntimeHash] = await Promise.all([
+    const [
+      runtimeInstalled,
+      tokenInstalled,
+      metadata,
+      probe,
+      bundledRuntimeHash,
+      installedRuntimeHash,
+      bundledLauncherHash,
+      installedLauncherHash,
+      taskStatus
+    ] = await Promise.all([
       exists(bridgeRuntime),
       exists(tokenPath),
       readJson(installMetadata),
       probeBridge(),
       fileSha256(bundledRuntime),
-      fileSha256(bridgeRuntime)
+      fileSha256(bridgeRuntime),
+      platform === "win32" ? fileSha256(bundledElevatedLauncher) : null,
+      platform === "win32" ? fileSha256(elevatedLauncher) : null,
+      platform === "win32" ? windowsTask.status() : { installed: true, runLevel: null }
     ]);
     const bundledNativeRuntimeHash = platform === "win32"
       ? await verifiedNativeRuntimeHash(bundledNativeRuntime)
@@ -341,21 +377,47 @@ export function createBridgeInstaller({
       installedNativeRuntimeHash === bundledNativeRuntimeHash &&
       metadata?.nativeRuntimeHash === bundledNativeRuntimeHash
     );
+    const protectedRuntimeHash = platform === "win32" && metadata?.runtimeHash
+      ? await fileSha256(join(elevatedRoot, "runtimes", metadata.runtimeHash, "bridge.mjs"))
+      : null;
+    const protectedNativeRuntimeHash = platform === "win32" && metadata?.nativeRuntimeHash
+      ? await verifiedNativeRuntimeHash(join(elevatedRoot, "native-runtimes", metadata.nativeRuntimeHash))
+      : null;
+    const sourceNodeHash = platform === "win32" && metadata?.nodeExecutable
+      ? await fileSha256(metadata.nodeExecutable)
+      : null;
+    const protectedNodeHash = platform === "win32" ? await fileSha256(elevatedNode) : null;
     const macAppInstalled = platform === "darwin"
       ? await exists(bridgeExecutable, fsConstants.X_OK)
       : runtimeInstalled;
-    const agentInstalled = platform === "darwin" ? await exists(bridgeAgent) : true;
+    const agentInstalled = platform === "darwin"
+      ? await exists(bridgeAgent)
+      : platform === "win32" ? taskStatus.installed : true;
     const installed = macAppInstalled && runtimeInstalled && tokenInstalled && agentInstalled && nativeRuntimeInstalled;
     const installationDetected = Boolean(
       runtimeInstalled || tokenInstalled || metadata || probe.serviceOnline ||
-      (platform === "darwin" && (macAppInstalled || agentInstalled))
+      (platform === "darwin" && (macAppInstalled || agentInstalled)) ||
+      (platform === "win32" && taskStatus.installed)
     );
     const metadataMatchesBundle = Boolean(
       bundledRuntimeHash &&
       metadata?.version === version &&
       metadata?.runtimeHash === bundledRuntimeHash &&
       installedRuntimeHash === bundledRuntimeHash
-      && nativeRuntimeInstalled
+      && nativeRuntimeInstalled && (
+        platform !== "win32" || Boolean(
+          metadata?.elevatedTask === true &&
+          metadata?.taskName === WINDOWS_BRIDGE_TASK_NAME &&
+          metadata?.launcherHash === bundledLauncherHash &&
+          installedLauncherHash === bundledLauncherHash &&
+          protectedRuntimeHash === bundledRuntimeHash &&
+          protectedNativeRuntimeHash === bundledNativeRuntimeHash &&
+          metadata?.nodeHash &&
+          sourceNodeHash === metadata.nodeHash &&
+          protectedNodeHash === metadata.nodeHash &&
+          taskStatus.runLevel === "highest"
+        )
+      )
     );
     const runningMatchesBundle = !probe.serviceOnline || Boolean(
       bundledRuntimeHash &&
@@ -376,6 +438,11 @@ export function createBridgeInstaller({
       installedRuntimeHash,
       bundledNativeRuntimeHash,
       installedNativeRuntimeHash,
+      protectedRuntimeHash,
+      protectedNativeRuntimeHash,
+      taskInstalled: platform === "win32" ? taskStatus.installed : null,
+      serviceRunLevel: platform === "win32" ? taskStatus.runLevel : null,
+      administratorApprovalRequired: platform === "win32" && installationDetected && (!installed || !metadataMatchesBundle),
       needsUpdate: !installed || !metadataMatchesBundle || !runningMatchesBundle,
       appPath: platform === "darwin" ? bridgeApp : appRoot,
       nodeExecutable: metadata?.nodeExecutable || null,
@@ -491,15 +558,17 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
   }
 
   async function stopWindowsService() {
+    await windowsTask.stop();
     const recordedPid = Number((await readFile(pidPath, "utf8").catch(() => "")).trim());
-    const stopScript = "$target=$env:CODEX_BRIDGE_TARGET_RUNTIME; $targetPid=0; [void][int]::TryParse($env:CODEX_BRIDGE_TARGET_PID, [ref]$targetPid); $candidates=@(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.Name -like 'node*' -and $_.CommandLine -and ($_.CommandLine.TrimEnd().EndsWith($target, [System.StringComparison]::OrdinalIgnoreCase) -or $_.CommandLine.TrimEnd().EndsWith(('\"' + $target + '\"'), [System.StringComparison]::OrdinalIgnoreCase)) }); $processes=if ($targetPid -gt 0) { @($candidates | Where-Object { $_.ProcessId -eq $targetPid }) } else { $candidates }; $processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; $processes | ForEach-Object { try { Wait-Process -Id $_.ProcessId -Timeout 5 -ErrorAction Stop } catch {} }";
+    const stopScript = "$target=$env:CODEX_BRIDGE_TARGET_RUNTIME; $targetPid=0; [void][int]::TryParse($env:CODEX_BRIDGE_TARGET_PID, [ref]$targetPid); $targetPort=0; [void][int]::TryParse($env:CODEX_BRIDGE_TARGET_PORT, [ref]$targetPort); $processes=@(); if ($targetPid -gt 0) { $proc=Get-Process -Id $targetPid -ErrorAction SilentlyContinue; if ($proc -and $proc.ProcessName -like 'node*') { $processes += $proc } }; if ($processes.Count -eq 0 -and $targetPort -gt 0) { $portPids=@(Get-NetTCPConnection -LocalPort $targetPort -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique); foreach ($p in $portPids) { $proc=Get-Process -Id $p -ErrorAction SilentlyContinue; if ($proc -and $proc.ProcessName -like 'node*') { $processes += $proc } } }; if ($processes.Count -eq 0) { $candidates=@(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.Name -like 'node*' -and $_.CommandLine -and ($_.CommandLine.TrimEnd().EndsWith($target, [System.StringComparison]::OrdinalIgnoreCase) -or $_.CommandLine.TrimEnd().EndsWith(('\"' + $target + '\"'), [System.StringComparison]::OrdinalIgnoreCase)) }); $processes=$candidates }; $processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; $processes | ForEach-Object { try { Wait-Process -Id $_.ProcessId -Timeout 5 -ErrorAction Stop } catch {} }";
     await execute("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", stopScript], {
       timeout: 7000,
       windowsHide: true,
       env: {
         ...process.env,
         CODEX_BRIDGE_TARGET_RUNTIME: bridgeRuntime,
-        CODEX_BRIDGE_TARGET_PID: Number.isInteger(recordedPid) && recordedPid > 0 ? String(recordedPid) : ""
+        CODEX_BRIDGE_TARGET_PID: Number.isInteger(recordedPid) && recordedPid > 0 ? String(recordedPid) : "",
+        CODEX_BRIDGE_TARGET_PORT: String(bridgePort)
       }
     });
     await rm(pidPath, { force: true });
@@ -516,8 +585,8 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
   }
 
   async function stopService() {
+    const wasOnline = (await probeBridge()).serviceOnline;
     if (platform === "darwin") {
-      const wasOnline = (await probeBridge()).serviceOnline;
       if (await exists(bridgeAgent)) {
         try {
           await execute("/bin/launchctl", ["bootout", `gui/${uid}`, bridgeAgent]);
@@ -528,7 +597,10 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       if (wasOnline) await waitForServiceOffline();
       return;
     }
-    if (platform === "win32") await stopWindowsService();
+    if (platform === "win32") {
+      await stopWindowsService();
+      if (wasOnline) await waitForServiceOffline();
+    }
   }
 
   async function commitRuntime(stagedRuntime) {
@@ -666,6 +738,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
     }
     if (
       !await exists(bundledRuntime) ||
+      (platform === "win32" && !await exists(bundledElevatedLauncher)) ||
       !await exists(bundledIcon) ||
       (platform === "win32" && !await verifiedNativeRuntimeHash(bundledNativeRuntime))
     ) {
@@ -678,6 +751,11 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       platform,
       execute
     });
+    const nodeHash = platform === "win32" ? await fileSha256(nodeRuntime.executable) : null;
+    const launcherHash = platform === "win32" ? await fileSha256(bundledElevatedLauncher) : null;
+    if (platform === "win32" && (!nodeHash || !launcherHash)) {
+      throw new Error("The Windows elevated Bridge launch resources could not be verified.");
+    }
     const previousStatus = await status();
     const previousRuntime = await readFile(bridgeRuntime).catch(() => null);
     const previousRuntimeHash = previousRuntime
@@ -710,8 +788,18 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
     if (!runtimeHash) throw new Error("The bundled Codex Bridge runtime could not be verified.");
 
     console.log(`[Codex Bridge] ${previousStatus.installed ? "Updating" : "Installing"} ${version}; stopping only the managed Bridge process.`);
+    let elevatedTakeoverRequired = false;
     try {
-      await stopService();
+      try {
+        await stopService();
+      } catch (stopError) {
+        if (platform === "win32" && previousStatus.serviceOnline && !previousStatus.taskInstalled) {
+          elevatedTakeoverRequired = true;
+          console.log("[Codex Bridge] Existing higher-privilege Bridge will be stopped inside the approved task-registration transaction.");
+        } else {
+          throw stopError;
+        }
+      }
       await commitRuntime(stagedRuntime);
       for (const notice of ["LICENSE", "NOTICE.md", "THIRD_PARTY_NOTICES.md"]) {
         await copyFile(join(installerRoot, notice), join(appRoot, notice));
@@ -720,6 +808,22 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
         await writeFile(tokenPath, `${randomBytes(32).toString("base64url")}\n`, { mode: 0o600 });
       }
       resetAuthorizationCache();
+      if (platform === "win32") {
+        const nativeManifest = await readJson(join(bundledNativeRuntime, "native-runtime.json"));
+        await windowsTask.deploy({
+          nodeSource: nodeRuntime.executable,
+          nodeHash,
+          launcherSource: bundledElevatedLauncher,
+          launcherHash,
+          runtimeSource: bridgeRuntime,
+          runtimeHash,
+          nativeSource: bundledNativeRuntime,
+          nativeRuntimeHash,
+          nativeFiles: nativeManifest.files,
+          takeOverExistingBridge: elevatedTakeoverRequired
+        });
+        if (elevatedTakeoverRequired) await waitForServiceOffline();
+      }
       await commitMetadata(`${JSON.stringify({
         version,
         runtimeHash,
@@ -729,6 +833,13 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
         nodeExecutable: nodeRuntime.executable,
         nodeVersion: nodeRuntime.version,
         nodeSource: nodeRuntime.source,
+        ...(platform === "win32" ? {
+          elevatedTask: true,
+          taskName: WINDOWS_BRIDGE_TASK_NAME,
+          secureRoot: elevatedRoot,
+          launcherHash,
+          nodeHash
+        } : {}),
         installedAt: new Date().toISOString()
       }, null, 2)}\n`);
       if (platform === "darwin") await installMac(nodeRuntime);
@@ -776,6 +887,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
             await rm(bridgeAgent, { force: true });
             await rm(bridgeApp, { recursive: true, force: true });
           }
+          if (platform === "win32") await windowsTask.uninstall();
           await rm(appRoot, { recursive: true, force: true });
           resetAuthorizationCache();
         }
@@ -814,6 +926,15 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       !nativeRuntimeValid
     ) {
       throw new Error("Codex Bridge is not installed. Use Install / Repair first.");
+    }
+    if (metadata.elevatedTask === true) {
+      const taskStatus = await windowsTask.status();
+      if (!taskStatus.installed || taskStatus.runLevel !== "highest") {
+        throw new Error("Codex Bridge elevated task is missing or invalid. Use Install / Repair first.");
+      }
+      await windowsTask.start();
+      lastWindowsServiceStart = Date.now();
+      return status();
     }
     const token = (await readFile(tokenPath, "utf8")).trim();
     const child = spawnProcess(metadata.nodeExecutable, [bridgeRuntime], {
@@ -890,7 +1011,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       return status();
     }
     if (platform === "win32") {
-      await ensureService();
+      if (!current.serviceOnline) await ensureService();
       try {
         await discoverDebugEndpoint({ platform, execute, fetchImpl });
         const response = await fetchImpl(`${bridgeUrl}/focus`, {
@@ -906,7 +1027,7 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
         if (!/local debug bridge/.test(error.message)) throw error;
         await launchWindowsCodex({ channel: codexChannel, execute, spawnProcess });
       }
-      return status();
+      return current;
     }
     throw new Error(`Codex Bridge launch is not supported on ${platform}.`);
   }
@@ -920,7 +1041,14 @@ if /usr/bin/pgrep -x ChatGPT >/dev/null 2>&1; then exit 1; fi
       await rm(bridgeAgent, { force: true });
       await rm(bridgeApp, { recursive: true, force: true });
     } else {
-      try { await stopService(); } catch {}
+      await stopService();
+      const taskStatus = await windowsTask.status();
+      if (taskStatus.installed || (await readJson(installMetadata))?.elevatedTask === true) {
+        await windowsTask.uninstall();
+        if ((await windowsTask.status()).installed) {
+          throw new Error("The elevated Codex Bridge scheduled task could not be removed.");
+        }
+      }
     }
     await rm(appRoot, { recursive: true, force: true });
     resetAuthorizationCache();

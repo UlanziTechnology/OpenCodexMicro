@@ -21,8 +21,9 @@ Codex renderer Micro store
 
 Codex Bridge launches the real Codex executable with CDP restricted to
 `127.0.0.1:9222`. Windows discovers Stable or Beta through Appx metadata and the
-Ulanzi plugin supervises the user-level sidecar; macOS retains the wrapper app
-and user LaunchAgent. The sidecar keeps a persistent renderer connection and
+Ulanzi plugin supervises a current-user, on-demand scheduled task running at
+`HighestAvailable`; macOS retains the wrapper app and user LaunchAgent. The
+sidecar keeps a persistent renderer connection and
 refreshes an in-memory snapshot every 500 ms. `/state` reads that cache rather
 than triggering a fresh renderer scan for every plugin poll.
 
@@ -49,6 +50,12 @@ reconciles an existing Bridge when metadata, the installed file, or the running
 process differs from the bundled runtime; replacement uses a targeted Bridge-only
 stop, a cross-process lifecycle lock, a recoverable runtime swap, restart
 confirmation, and rollback on failure.
+On Windows, task code and its Node runtime are copied to an
+administrator-protected `%PROGRAMDATA%` root. The task has no automatic trigger
+and contains no capability token. A hash-validating protected launcher selects
+only previously approved, hash-addressed runtimes; this permits silent starts and
+rollback without making `%LOCALAPPDATA%` executable as administrator. Installing,
+updating, or removing protected code requires one UAC confirmation.
 Interrupted transactions restore runtime and metadata together before retrying;
 plugin startup also applies bounded backoff for transient reconciliation errors.
 
@@ -67,8 +74,9 @@ development, or maintenance of CDP or Codex's CDP implementation.
 
 ## Installation boundary
 
-- `scripts/install.mjs` installs only the Bridge sidecar and
-  its platform-specific user-level launcher/lifecycle files.
+- `scripts/install.mjs` installs only the Bridge sidecar and its
+  platform-specific launcher/lifecycle files. Windows additionally registers the
+  current-user highest-privilege scheduled task; macOS remains user-level.
 - `scripts/install-plugin.mjs` atomically installs the Ulanzi Studio plugin
   directory and reconciles an already-installed Bridge to the bundled runtime.
   It does not perform the initial Bridge installation.

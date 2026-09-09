@@ -9,11 +9,25 @@ service, and Codex CDP connection. It can install or repair the Bridge from
 resources bundled with the plugin, launch Codex Bridge, and recheck status.
 No repository or npm working directory is required for this flow.
 
+On Windows, the native adapter revalidates a cached window against the connected
+CDP process, visibility, and a non-empty title. When discovery is needed it
+enumerates every displayed top-level window for that PID, prefers unowned main
+window candidates, and uses an owned displayed window only as an uncached
+fallback. It never selects by title across processes.
+
+An access-denied input-queue attachment automatically allows one
+protected, complete Alt press/release after the first forced-focus verification
+fails. The shared page also provides a global **Force focus** option, off by
+default, that enables the same fallback for other bounded foreground denials on
+Task 1–5 key presses. Neither path adds an idle hook, timer, polling loop, or
+helper process. If Windows still denies focus, task navigation remains
+successful and the Codex taskbar button flashes briefly.
+
 ## Actions
 
 | Action | Behavior |
 | --- | --- |
-| Codex Task 1–5 | Show the matching Most Recent task title and state; press to open it |
+| Codex Task 1–5 | Show the matching Most Recent task title and state; press to open it and request focus, optionally using the global Windows Force focus mode |
 | Fast | Toggle Fast mode for the active task |
 | Usage | Show remaining usage; press to focus Codex |
 | Pin | Pin or unpin the active task |

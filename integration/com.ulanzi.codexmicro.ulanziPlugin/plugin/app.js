@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createBridgeInstaller } from "./bridge-installer.js";
+import { resolveModelSelection, modelDisplayLabel } from "../../../src/bridge/model-selection.mjs";
 
 const PLUGIN_UUID = "com.ulanzi.ulanzistudio.codexmicro";
 const BRIDGE_URL = process.env.CODEX_BRIDGE_URL || "http://127.0.0.1:17373";
@@ -40,6 +41,10 @@ function ensureBundledBridgeCurrent() {
       if (!before.installationDetected) return before;
       if (before.needsUpdate) {
         console.log(`[Codex Micro] Updating the installed Bridge to bundled version ${before.bundledVersion}.`);
+      }
+      if (before.administratorApprovalRequired) {
+        console.log("[Codex Micro] Bridge update requires one administrator confirmation from Install / Repair; automatic background reconciliation was deferred.");
+        return before;
       }
       const after = await bridgeSetup.ensureCurrent();
       if (before.needsUpdate) {
@@ -100,9 +105,11 @@ let reconnectTimer;
 let pollTimer;
 let pollInFlight = false;
 let latestState = null;
+let desktopReadyPromise = null;
 let setupOperation = null;
 let completeFlashOn = false;
 let shortcutInvocationSequence = 0;
+let globalSettings = Object.freeze({ forceFocus: false });
 const forwardedTraceEvents = new Map();
 
 function contextOf(message) {
@@ -258,7 +265,7 @@ function taskStatusKind(status) {
   return "idle";
 }
 
-function debugShortcut(uuid) {
+function debugShortcut(uuid, settings = {}) {
   const slot = taskSlot(uuid);
   if (slot !== null) {
     return Object.freeze({ name: `task-${slot + 1}`, kind: "task", target: `slot-${slot + 1}` });
@@ -269,7 +276,9 @@ function debugShortcut(uuid) {
   return Object.freeze({
     name: action,
     kind: "model-preset",
-    target: `model-${preset.model} effort-${preset.effort}`
+    target: settings.model || settings.effort
+      ? "custom-model-selection"
+      : `model-${preset.model} effort-${preset.effort}`
   });
 }
 
@@ -302,10 +311,14 @@ function logShortcut(instance, shortcut, level, event, fields = []) {
 
 function safeDiagnosticFields(event) {
   const allowed = new Set([
-    "action", "attempts", "background", "category", "channel", "complete", "connection",
-    "currentEffort", "durationMs", "effortMatched", "modelMatched", "outcome",
-    "focusOk", "path", "phase", "platform", "reused", "route", "rowCount", "slot", "stage",
-    "targetEffort"
+    "accepted", "action", "alreadyForeground", "alreadyMaximized", "attentionRequested", "attempts", "automatic", "background",
+    "bringToTopAccepted", "cacheHit", "cacheValid", "candidateCount", "category", "channel", "complete",
+    "connection", "currentEffort", "detachAccepted", "durationMs", "effortMatched", "focusOk",
+    "foregroundAttach", "foregroundAttachErrorCode", "forceFocus", "inputErrorCode", "inputEventsInserted",
+    "matchesTarget", "modelMatched", "modifierStateClear", "outcome", "path", "phase", "platform", "primaryCandidate",
+    "releaseAccepted", "reused", "route", "rowCount", "setFocusReturnedWindow", "setForegroundAccepted", "slot",
+    "source", "stage", "switchRequested", "targetAttach", "targetAttachErrorCode", "targetEffort", "targetFound",
+    "wasActiveBeforeAttention"
   ]);
   return Object.entries(event || {}).flatMap(([key, value]) => {
     if (!allowed.has(key)) return [];
@@ -521,6 +534,17 @@ function renderInstance(instance) {
       setTaskDisplay(instance, task.status, task.title);
       return;
     }
+    if (DEBUG_MODEL_PRESETS[action]) {
+      let label = ACTION_LABELS[action] || "CODEX";
+      try {
+        const resolved = resolveModelSelection(DEBUG_MODEL_PRESETS[action], instance.settings || {});
+        label = modelDisplayLabel(resolved);
+      } catch {
+        label = "CUSTOM MODEL";
+      }
+      setDisplay(instance, 0, label);
+      return;
+    }
     setDisplay(instance, 0, ACTION_LABELS[action] || "CODEX");
     return;
   }
@@ -540,13 +564,15 @@ function renderAll() {
   for (const instance of instances.values()) renderInstance(instance);
 }
 
-async function bridgeRequest(path, method = "GET", traceId = null) {
+async function bridgeRequest(path, method = "GET", traceId = null, timeoutMs = 1200, body = undefined) {
   const headers = { ...await bridgeSetup.authorizationHeaders() };
   if (traceId) headers["X-Codex-Trace-Id"] = traceId;
+  if (body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch(`${BRIDGE_URL}${path}`, {
     method,
     headers,
-    signal: AbortSignal.timeout(1200)
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    signal: AbortSignal.timeout(timeoutMs)
   });
   const payload = await response.json();
   if (!response.ok || payload.ok === false) {
@@ -555,10 +581,46 @@ async function bridgeRequest(path, method = "GET", traceId = null) {
   return payload;
 }
 
-async function openTaskSlot(slot, traceId) {
+function ensureCodexDesktopReady() {
+  if (latestState?.connected) return Promise.resolve(latestState);
+  if (desktopReadyPromise) return desktopReadyPromise;
+
+  const running = (async () => {
+    console.log("[Codex Micro] ChatGPT is unavailable; starting the current installed app build with the local debug bridge.");
+    await bridgeSetup.launch();
+    let lastError = null;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 200));
+      try {
+        latestState = await bridgeRequest("/state?refresh=1", "GET", null, 1600);
+        renderAll();
+        if (latestState.connected) return latestState;
+        lastError = new Error(latestState.error || "ChatGPT is not connected");
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw new Error(`ChatGPT did not become ready after launch: ${lastError?.message || "unknown error"}`);
+  })();
+  desktopReadyPromise = running;
+  void running.finally(() => {
+    if (desktopReadyPromise === running) desktopReadyPromise = null;
+  }).catch(() => {});
+  return running;
+}
+
+async function openTaskSlot(slot, traceId, forceFocus = false) {
+  await ensureCodexDesktopReady();
   const task = latestState?.slots?.[slot];
   if (!task?.threadKey) throw new Error(`Codex task slot ${slot + 1} is empty`);
-  await bridgeRequest(`/thread/${encodeURIComponent(task.threadKey)}/click?slot=${slot}`, "POST", traceId);
+  const query = new URLSearchParams({ slot: String(slot) });
+  if (forceFocus) query.set("forceFocus", "1");
+  return bridgeRequest(
+    `/thread/${encodeURIComponent(task.threadKey)}/click?${query}`,
+    "POST",
+    traceId,
+    1800
+  );
 }
 
 async function pollBridge() {
@@ -577,7 +639,7 @@ async function pollBridge() {
 
 async function invoke(instance, pressed) {
   const slot = taskSlot(instance.uuid);
-  const shortcut = debugShortcut(instance.uuid);
+  const shortcut = debugShortcut(instance.uuid, instance.settings);
   const invocation = shortcut ? ++shortcutInvocationSequence : null;
   const traceId = shortcut ? randomUUID() : null;
   const phase = pressed ? "down" : "up";
@@ -606,15 +668,18 @@ async function invoke(instance, pressed) {
         logShortcut(instance, shortcut, "debug", "dispatching", [
           `invocation=${invocation}`,
           `phase=${phase}`,
-          "transport=bridge-http"
+          "transport=bridge-http",
+          `forceFocus=${globalSettings.forceFocus}`
         ]);
       }
-      await openTaskSlot(slot, traceId);
+      const result = await openTaskSlot(slot, traceId, globalSettings.forceFocus);
       if (shortcut) {
         logShortcut(instance, shortcut, "info", "succeeded", [
           `invocation=${invocation}`,
           `phase=${phase}`,
-          `durationMs=${Date.now() - startedAt}`
+          `durationMs=${Date.now() - startedAt}`,
+          `focusOk=${result?.focusOk === true}`,
+          `attentionRequested=${Boolean(result?.attentionRequested)}`
         ]);
       }
       return;
@@ -632,7 +697,15 @@ async function invoke(instance, pressed) {
         "transport=bridge-http"
       ]);
     }
-    await bridgeRequest(`/action/${action}/${pressed ? "down" : "up"}`, "POST", traceId);
+    let selection;
+    if (DEBUG_MODEL_PRESETS[action] && pressed) {
+      const resolved = resolveModelSelection(DEBUG_MODEL_PRESETS[action], instance.settings || {});
+      selection = { model: resolved.model, effort: resolved.effort };
+    }
+    await bridgeRequest(
+      `/action/${action}/${pressed ? "down" : "up"}`, "POST", traceId,
+      DEBUG_MODEL_PRESETS[action] ? 15000 : 1200, selection
+    );
     if (shortcut) {
       logShortcut(instance, shortcut, "info", "succeeded", [
         `invocation=${invocation}`,
@@ -695,7 +768,16 @@ function addInstance(message) {
     lastDisplay: null
   };
   instance.active = true;
+  const settings = message.settings ?? message.param;
+  if (settings && typeof settings === "object" && !Array.isArray(settings)) {
+    instance.settings = { ...settings };
+  } else if (!existing) {
+    instance.settings = {};
+  }
   instances.set(context, instance);
+  if (!existing && DEBUG_MODEL_PRESETS[actionName(instance.uuid)]) {
+    send({ cmd: "getSettings", uuid: instance.uuid, actionid: instance.actionid, key: instance.key });
+  }
   renderInstance(instance);
   return instance;
 }
@@ -734,6 +816,19 @@ function handleMessage(raw) {
     }
     return;
   }
+  if (message.cmd === "didReceiveGlobalSettings") {
+    globalSettings = Object.freeze({ forceFocus: message.settings?.forceFocus === true });
+    return;
+  }
+  if (message.cmd === "didReceiveSettings" || message.cmd === "paramfromplugin") {
+    const instance = instances.get(contextOf(message));
+    const settings = message.settings ?? message.param;
+    if (instance && settings && typeof settings === "object" && !Array.isArray(settings)) {
+      instance.settings = { ...settings };
+      renderInstance(instance);
+    }
+    return;
+  }
   if (message.cmd === "run") {
     ack(message);
     return;
@@ -756,6 +851,7 @@ function connect() {
   socket = new WebSocket(HOST_URL);
   socket.on("open", () => {
     send({ code: 0, cmd: "connected", uuid: PLUGIN_UUID });
+    send({ cmd: "getGlobalSettings", uuid: PLUGIN_UUID, actionid: "", key: "" });
     if (process.env.CODEX_BRIDGE_AUTOSTART !== "0") {
       void ensureBundledBridgeCurrent().catch(error => {
         console.error(`[Codex Micro] Automatic Bridge reconciliation failed: ${error.message}`);

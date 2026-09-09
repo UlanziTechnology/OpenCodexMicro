@@ -65,6 +65,7 @@ for (const banner of manifest.Banner || []) {
 }
 for (const relative of [
   "installer/bridge.mjs",
+  "installer/elevated-launcher.mjs",
   "installer/CodexBridge.png",
   "installer/LICENSE",
   "installer/NOTICE.md",

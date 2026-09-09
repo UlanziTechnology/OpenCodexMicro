@@ -106,6 +106,10 @@ curl http://127.0.0.1:17373/state
 New、Fork、Steer、Mic、Submit 和 Latest Task & Scroll 旋钮 Action，不需要额外的
 设备 daemon 或快捷键映射。
 
+Windows 聚焦始终绑定当前 CDP listener 对应的 PID。adapter 会重新校验缓存窗口，
+优先选择无 owner 的可见顶层主窗口，并只在同一 PID 内回退到其他可见窗口；不会依赖
+窗口标题、带版本号的 Appx 路径或全局键盘钩子。
+
 选中任意已配置的 Action，即可打开共用的 **Codex Bridge 设置**页。该页面显示
 Bridge 安装、后台服务和 CDP 状态，并提供“安装 / 修复”和“启动”操作。
 

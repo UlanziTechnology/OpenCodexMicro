@@ -50,6 +50,12 @@ import { join } from "node:path";
 function sameWindow(left, right) {
   return left != null && right != null && String(left) === String(right);
 }
+function emitDiagnostic(onDiagnostic, stage, fields = {}) {
+  try {
+    onDiagnostic?.(stage, fields);
+  } catch {
+  }
+}
 async function loadKoffi() {
   const nativeRoot = process.env.CODEX_BRIDGE_NATIVE_ROOT;
   if (nativeRoot) {
@@ -75,6 +81,30 @@ async function createWindowsApi() {
     uCount: "uint32_t",
     dwTimeout: "uint32_t"
   });
+  const KEYBDINPUT = koffi.struct("KEYBDINPUT", {
+    wVk: "uint16_t",
+    wScan: "uint16_t",
+    dwFlags: "uint32_t",
+    time: "uint32_t",
+    dwExtraInfo: "uintptr_t"
+  });
+  const MOUSEINPUT = koffi.struct("MOUSEINPUT", {
+    dx: "long",
+    dy: "long",
+    mouseData: "uint32_t",
+    dwFlags: "uint32_t",
+    time: "uint32_t",
+    dwExtraInfo: "uintptr_t"
+  });
+  const HARDWAREINPUT = koffi.struct("HARDWAREINPUT", {
+    uMsg: "uint32_t",
+    wParamL: "uint16_t",
+    wParamH: "uint16_t"
+  });
+  const INPUT = koffi.struct("INPUT", {
+    type: "uint32_t",
+    u: koffi.union({ mi: MOUSEINPUT, ki: KEYBDINPUT, hi: HARDWAREINPUT })
+  });
   const findWindowEx = user32.func(
     "HWND __stdcall FindWindowExW(HWND parent, HWND childAfter, const char16_t *className, const char16_t *windowName)"
   );
@@ -88,13 +118,32 @@ async function createWindowsApi() {
   const showWindowAsync = user32.func("bool __stdcall ShowWindowAsync(HWND hwnd, int command)");
   const setForegroundWindow = user32.func("bool __stdcall SetForegroundWindow(HWND hwnd)");
   const getForegroundWindow = user32.func("HWND __stdcall GetForegroundWindow()");
+  const getWindow = user32.func("HWND __stdcall GetWindow(HWND hwnd, uint32_t command)");
   const bringWindowToTop = user32.func("bool __stdcall BringWindowToTop(HWND hwnd)");
   const setFocus = user32.func("HWND __stdcall SetFocus(HWND hwnd)");
   const attachThreadInput = user32.func(
     "bool __stdcall AttachThreadInput(uint32_t sourceThreadId, uint32_t targetThreadId, bool attach)"
   );
+  const flashWindowEx = user32.func("bool __stdcall FlashWindowEx(_In_ FLASHWINFO *info)");
+  const getAsyncKeyState = user32.func("int16_t __stdcall GetAsyncKeyState(int virtualKey)");
+  const sendInput = user32.func(
+    "uint32_t __stdcall SendInput(uint32_t inputCount, INPUT *inputs, int inputSize)"
+  );
   const getCurrentThreadId = kernel32.func("uint32_t __stdcall GetCurrentThreadId()");
-  const flashWindowEx = user32.func("bool __stdcall FlashWindowEx(_Inout_ FLASHWINFO *info)");
+  const getLastError = kernel32.func("uint32_t __stdcall GetLastError()");
+  const setLastError = kernel32.func("void __stdcall SetLastError(uint32_t errorCode)");
+  const keyboardEvent = (virtualKey, pressed) => ({
+    type: INPUT_KEYBOARD,
+    u: {
+      ki: {
+        wVk: virtualKey,
+        wScan: 0,
+        dwFlags: pressed ? 0 : KEYEVENTF_KEYUP,
+        time: 0,
+        dwExtraInfo: 0
+      }
+    }
+  });
   function identityForWindow(hwnd) {
     const processId = [0];
     const threadId = getWindowThreadProcessId(hwnd, processId);
@@ -103,24 +152,37 @@ async function createWindowsApi() {
       threadId: Number(threadId) || 0
     };
   }
+  function isWindowCandidate(hwnd, processId) {
+    return hwnd != null && identityForWindow(hwnd).processId === processId && isWindow(hwnd) && isWindowVisible(hwnd) && getWindowTextLength(hwnd) > 0;
+  }
+  function isPrimaryWindowCandidate(hwnd, processId) {
+    return isWindowCandidate(hwnd, processId) && getWindow(hwnd, GW_OWNER) == null;
+  }
+  function findWindowsForProcess(processId) {
+    const primary = [];
+    const displayedFallbacks = [];
+    let previous = null;
+    for (let index = 0; index < 4096; index += 1) {
+      const hwnd = findWindowEx(null, previous, null, null);
+      if (hwnd == null) return [...primary, ...displayedFallbacks];
+      previous = hwnd;
+      if (!isWindowCandidate(hwnd, processId)) continue;
+      (getWindow(hwnd, GW_OWNER) == null ? primary : displayedFallbacks).push(hwnd);
+    }
+    throw new Error("Windows window enumeration exceeded its safety bound");
+  }
   return {
     isWindow,
+    isWindowCandidate,
+    isPrimaryWindowCandidate,
     isZoomed,
     getForegroundWindow,
     processIdForWindow(hwnd) {
       return identityForWindow(hwnd).processId;
     },
+    findWindowsForProcess,
     findWindowForProcess(processId) {
-      let previous = null;
-      for (let index = 0; index < 4096; index += 1) {
-        const hwnd = findWindowEx(null, previous, null, null);
-        if (hwnd == null) return null;
-        previous = hwnd;
-        if (identityForWindow(hwnd).processId === processId && isWindow(hwnd) && isWindowVisible(hwnd) && getWindowTextLength(hwnd) > 0) {
-          return hwnd;
-        }
-      }
-      throw new Error("Windows window enumeration exceeded its safety bound");
+      return findWindowsForProcess(processId)[0] ?? null;
     },
     maximize(hwnd) {
       return showWindowAsync(hwnd, SW_MAXIMIZE);
@@ -135,31 +197,84 @@ async function createWindowsApi() {
       const targetThreadId = identityForWindow(hwnd).threadId;
       const attached = [];
       const attach = (threadId) => {
-        if (threadId > 0 && threadId !== currentThreadId && !attached.includes(threadId) && attachThreadInput(currentThreadId, threadId, true)) {
-          attached.push(threadId);
+        if (threadId <= 0 || threadId === currentThreadId || attached.includes(threadId)) {
+          return { outcome: "skipped", errorCode: 0 };
         }
+        setLastError(0);
+        const accepted = Boolean(attachThreadInput(currentThreadId, threadId, true));
+        if (accepted) attached.push(threadId);
+        return {
+          outcome: accepted ? "succeeded" : "failed",
+          errorCode: accepted ? 0 : Number(getLastError()) || 0
+        };
+      };
+      const result = {
+        foregroundAttach: "skipped",
+        foregroundAttachErrorCode: 0,
+        targetAttach: "skipped",
+        targetAttachErrorCode: 0,
+        bringToTopAccepted: false,
+        setForegroundAccepted: false,
+        setFocusReturnedWindow: false,
+        detachAccepted: true
       };
       try {
-        attach(foregroundThreadId);
-        attach(targetThreadId);
-        bringWindowToTop(hwnd);
-        setForegroundWindow(hwnd);
-        setFocus(hwnd);
+        const foregroundAttachment = attach(foregroundThreadId);
+        result.foregroundAttach = foregroundAttachment.outcome;
+        result.foregroundAttachErrorCode = foregroundAttachment.errorCode;
+        const targetAttachment = attach(targetThreadId);
+        result.targetAttach = targetAttachment.outcome;
+        result.targetAttachErrorCode = targetAttachment.errorCode;
+        result.bringToTopAccepted = Boolean(bringWindowToTop(hwnd));
+        result.setForegroundAccepted = Boolean(setForegroundWindow(hwnd));
+        result.setFocusReturnedWindow = setFocus(hwnd) != null;
       } finally {
         for (const threadId of attached.reverse()) {
-          attachThreadInput(currentThreadId, threadId, false);
+          result.detachAccepted = Boolean(
+            attachThreadInput(currentThreadId, threadId, false)
+          ) && result.detachAccepted;
         }
       }
+      return result;
+    },
+    aggressiveForeground(hwnd) {
+      const modifierStateClear = MODIFIER_KEYS.every(
+        (virtualKey) => (Number(getAsyncKeyState(virtualKey)) & 32768) === 0
+      );
+      const result = {
+        modifierStateClear,
+        inputEventsInserted: 0,
+        inputErrorCode: 0,
+        releaseAccepted: true,
+        setForegroundAccepted: false
+      };
+      if (!modifierStateClear) return result;
+      const events = [keyboardEvent(VK_MENU, true), keyboardEvent(VK_MENU, false)];
+      setLastError(0);
+      result.inputEventsInserted = Number(sendInput(events.length, events, koffi.sizeof(INPUT))) || 0;
+      if (result.inputEventsInserted !== events.length) {
+        result.inputErrorCode = Number(getLastError()) || 0;
+        if (result.inputEventsInserted === 1) {
+          result.releaseAccepted = sendInput(
+            1,
+            [keyboardEvent(VK_MENU, false)],
+            koffi.sizeof(INPUT)
+          ) === 1;
+        }
+        return result;
+      }
+      result.setForegroundAccepted = Boolean(setForegroundWindow(hwnd));
+      return result;
     },
     flash(hwnd) {
-      const info = {
+      const wasActiveBeforeRequest = Boolean(flashWindowEx({
         cbSize: koffi.sizeof(FLASHWINFO),
         hwnd,
-        dwFlags: FLASHW_TRAY | FLASHW_TIMERNOFG,
+        dwFlags: FLASHW_TRAY,
         uCount: 3,
         dwTimeout: 0
-      };
-      flashWindowEx(info);
+      }));
+      return { requested: true, wasActiveBeforeRequest };
     }
   };
 }
@@ -178,46 +293,197 @@ async function initializeWindowsFocusRuntime() {
 }
 function validCachedWindow(api, processId) {
   const hwnd = cachedWindows.get(processId);
-  if (hwnd != null && api.isWindow(hwnd) && api.processIdForWindow(hwnd) === processId) {
+  const candidateValid = hwnd != null && typeof api.isWindowCandidate === "function" ? api.isWindowCandidate(hwnd, processId) : hwnd != null && api.isWindow(hwnd) && api.processIdForWindow(hwnd) === processId;
+  if (candidateValid) {
     return hwnd;
   }
   cachedWindows.delete(processId);
   return null;
 }
+async function verifyForegroundWithDelays(native, hwnd, wait, delays, onDiagnostic, stage) {
+  for (let index = 0; index < delays.length; index += 1) {
+    await wait(delays[index]);
+    const matchesTarget = sameWindow(native.getForegroundWindow(), hwnd);
+    emitDiagnostic(onDiagnostic, stage, {
+      outcome: "observed",
+      attempts: index + 1,
+      matchesTarget
+    });
+    if (matchesTarget) return true;
+  }
+  return false;
+}
 async function activateWindowsProcess(processId, {
   api,
-  wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds))
+  wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  onDiagnostic = null,
+  forceFocus = false
 } = {}) {
   if (!Number.isInteger(processId) || processId <= 0) {
     throw new Error("The connected Codex process identity is unavailable");
   }
   const native = api ?? await defaultWindowsApi();
-  const hwnd = validCachedWindow(native, processId) ?? native.findWindowForProcess(processId);
+  const cacheHit = cachedWindows.has(processId);
+  const cachedWindow = validCachedWindow(native, processId);
+  const cacheValid = cachedWindow != null;
+  let hwnd = cachedWindow;
+  let candidateCount = cacheValid ? 1 : 0;
+  try {
+    if (hwnd == null) {
+      const candidates = typeof native.findWindowsForProcess === "function" ? native.findWindowsForProcess(processId) : [native.findWindowForProcess(processId)].filter((candidate) => candidate != null);
+      candidateCount = candidates.length;
+      hwnd = candidates[0] ?? null;
+    }
+  } catch (error) {
+    emitDiagnostic(onDiagnostic, "target-selection", {
+      outcome: "observed",
+      cacheHit,
+      cacheValid,
+      candidateCount,
+      source: cacheValid ? "cache" : "discovery",
+      targetFound: false
+    });
+    throw error;
+  }
+  emitDiagnostic(onDiagnostic, "target-selection", {
+    outcome: "observed",
+    cacheHit,
+    cacheValid,
+    candidateCount,
+    primaryCandidate: hwnd != null && typeof native.isPrimaryWindowCandidate === "function" ? native.isPrimaryWindowCandidate(hwnd, processId) : true,
+    source: cacheValid ? "cache" : "discovery",
+    targetFound: hwnd != null
+  });
   if (hwnd == null) throw new Error("The connected Codex Desktop window was not found");
-  cachedWindows.set(processId, hwnd);
+  if (typeof native.isPrimaryWindowCandidate !== "function" || native.isPrimaryWindowCandidate(hwnd, processId)) {
+    cachedWindows.set(processId, hwnd);
+  } else {
+    cachedWindows.delete(processId);
+  }
   const alreadyForeground = sameWindow(native.getForegroundWindow(), hwnd);
   const alreadyMaximized = Boolean(native.isZoomed(hwnd));
-  if (!alreadyMaximized && !native.maximize(hwnd)) {
+  const maximizeAccepted = alreadyMaximized ? null : Boolean(native.maximize(hwnd));
+  emitDiagnostic(onDiagnostic, "maximize", {
+    outcome: alreadyMaximized ? "skipped" : "observed",
+    alreadyMaximized,
+    ...maximizeAccepted == null ? {} : { accepted: maximizeAccepted }
+  });
+  if (maximizeAccepted === false) {
     throw new Error("Windows did not accept the Codex maximize request");
   }
-  if (!alreadyForeground) native.foreground(hwnd);
+  if (alreadyForeground) {
+    emitDiagnostic(onDiagnostic, "initial-foreground", {
+      outcome: "skipped",
+      alreadyForeground
+    });
+  } else {
+    emitDiagnostic(onDiagnostic, "initial-foreground", {
+      outcome: "observed",
+      alreadyForeground,
+      accepted: Boolean(native.foreground(hwnd))
+    });
+  }
   if (!alreadyMaximized) await wait(20);
   let foreground = sameWindow(native.getForegroundWindow(), hwnd);
+  emitDiagnostic(onDiagnostic, "verify-foreground-immediate", {
+    outcome: "observed",
+    matchesTarget: foreground
+  });
   if (!foreground && !alreadyForeground) {
     await wait(25);
     foreground = sameWindow(native.getForegroundWindow(), hwnd);
+    emitDiagnostic(onDiagnostic, "verify-foreground-delayed", {
+      outcome: "observed",
+      matchesTarget: foreground
+    });
   }
+  let automaticAggressiveFallback = false;
   if (!foreground && !alreadyForeground && typeof native.forceForeground === "function") {
-    native.forceForeground(hwnd);
-    await wait(25);
-    foreground = sameWindow(native.getForegroundWindow(), hwnd);
+    let result;
+    try {
+      result = native.forceForeground(hwnd) || {};
+      const foregroundAttachErrorCode = Number(result.foregroundAttachErrorCode) || 0;
+      const targetAttachErrorCode = Number(result.targetAttachErrorCode) || 0;
+      automaticAggressiveFallback = foregroundAttachErrorCode === ERROR_ACCESS_DENIED || targetAttachErrorCode === ERROR_ACCESS_DENIED;
+      emitDiagnostic(onDiagnostic, "force-foreground", {
+        outcome: "observed",
+        foregroundAttach: result.foregroundAttach || "unknown",
+        foregroundAttachErrorCode,
+        targetAttach: result.targetAttach || "unknown",
+        targetAttachErrorCode,
+        bringToTopAccepted: Boolean(result.bringToTopAccepted),
+        setForegroundAccepted: Boolean(result.setForegroundAccepted),
+        setFocusReturnedWindow: Boolean(result.setFocusReturnedWindow),
+        detachAccepted: result.detachAccepted !== false
+      });
+    } catch (error) {
+      emitDiagnostic(onDiagnostic, "force-foreground", { outcome: "failed" });
+      throw error;
+    }
+    foreground = await verifyForegroundWithDelays(
+      native,
+      hwnd,
+      wait,
+      automaticAggressiveFallback ? [FORCED_VERIFY_DELAYS_MS[0]] : FORCED_VERIFY_DELAYS_MS,
+      onDiagnostic,
+      "verify-foreground-forced"
+    );
+  }
+  if (!foreground && !alreadyForeground && (forceFocus || automaticAggressiveFallback) && typeof native.aggressiveForeground === "function") {
+    try {
+      const result = native.aggressiveForeground(hwnd) || {};
+      emitDiagnostic(onDiagnostic, "aggressive-foreground", {
+        outcome: "observed",
+        automatic: automaticAggressiveFallback,
+        forceFocus: Boolean(forceFocus),
+        modifierStateClear: Boolean(result.modifierStateClear),
+        inputEventsInserted: Number(result.inputEventsInserted) || 0,
+        inputErrorCode: Number(result.inputErrorCode) || 0,
+        releaseAccepted: result.releaseAccepted !== false,
+        setForegroundAccepted: Boolean(result.setForegroundAccepted)
+      });
+      if (Number(result.inputEventsInserted) > 0) {
+        foreground = await verifyForegroundWithDelays(
+          native,
+          hwnd,
+          wait,
+          FORCED_VERIFY_DELAYS_MS,
+          onDiagnostic,
+          "verify-foreground-aggressive"
+        );
+      }
+    } catch {
+      emitDiagnostic(onDiagnostic, "aggressive-foreground", {
+        outcome: "failed",
+        automatic: automaticAggressiveFallback,
+        forceFocus: Boolean(forceFocus)
+      });
+    }
   }
   if (!foreground) {
-    try {
-      native.flash(hwnd);
-    } catch {
+    let attentionRequested = false;
+    let wasActiveBeforeAttention = null;
+    if (typeof native.flash === "function") {
+      try {
+        const result = native.flash(hwnd);
+        attentionRequested = true;
+        wasActiveBeforeAttention = typeof result === "object" && result != null ? Boolean(result.wasActiveBeforeRequest) : Boolean(result);
+      } catch {
+      }
     }
-    throw new Error("Windows did not allow Codex Desktop to receive focus");
+    emitDiagnostic(onDiagnostic, "final-attention", {
+      outcome: "observed",
+      attentionRequested,
+      ...wasActiveBeforeAttention == null ? {} : { wasActiveBeforeAttention }
+    });
+    emitDiagnostic(onDiagnostic, "final-denial", {
+      outcome: "observed",
+      matchesTarget: false,
+      attentionRequested
+    });
+    const error = new Error("Windows did not allow Codex Desktop to receive focus");
+    error.attentionRequested = attentionRequested;
+    throw error;
   }
   return {
     processId,
@@ -229,12 +495,22 @@ async function activateWindowsProcess(processId, {
 function clearWindowsFocusCache() {
   cachedWindows.clear();
 }
-var SW_MAXIMIZE, FLASHW_TRAY, FLASHW_TIMERNOFG, cachedWindows, windowsApiPromise;
+var SW_MAXIMIZE, FLASHW_TRAY, INPUT_KEYBOARD, KEYEVENTF_KEYUP, VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN, GW_OWNER, MODIFIER_KEYS, ERROR_ACCESS_DENIED, FORCED_VERIFY_DELAYS_MS, cachedWindows, windowsApiPromise;
 var init_windows_focus = __esm({
   "../../src/bridge/windows-focus.mjs"() {
     SW_MAXIMIZE = 3;
     FLASHW_TRAY = 2;
-    FLASHW_TIMERNOFG = 12;
+    INPUT_KEYBOARD = 1;
+    KEYEVENTF_KEYUP = 2;
+    VK_SHIFT = 16;
+    VK_CONTROL = 17;
+    VK_MENU = 18;
+    VK_LWIN = 91;
+    VK_RWIN = 92;
+    GW_OWNER = 4;
+    MODIFIER_KEYS = [VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN];
+    ERROR_ACCESS_DENIED = 5;
+    FORCED_VERIFY_DELAYS_MS = [25, 75, 150];
     cachedWindows = /* @__PURE__ */ new Map();
     windowsApiPromise = null;
   }
@@ -3916,6 +4192,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join as join2 } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ../../src/bridge/platform.mjs
 import { execFile, spawn } from "node:child_process";
@@ -3930,11 +4207,22 @@ var CDP_ARGUMENTS = Object.freeze([
 ]);
 var WINDOWS_PROCESS_COMMAND = String.raw`
 $ErrorActionPreference = 'Stop'
+$processNames = @('ChatGPT', 'ChatGPT (Beta)', 'Codex', 'Codex (Beta)')
+$existing = @(Get-Process -Name $processNames -ErrorAction SilentlyContinue)
+if ($existing.Count -eq 0) { '[]'; exit 0 }
 $listenerOwners = @{}
-Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-  Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
-  ForEach-Object { $listenerOwners[('{0}:{1}' -f $_.LocalPort, $_.OwningProcess)] = $true }
-$rows = Get-CimInstance Win32_Process |
+try {
+  netstat.exe -ano -p tcp | ForEach-Object {
+    if ($_ -match '^\s*TCP\s+127\.0\.0\.1:(\d+)\s+\S+\s+LISTENING\s+(\d+)') {
+      $listenerOwners[('{0}:{1}' -f $matches[1], $matches[2])] = $true
+    }
+  }
+} catch {
+  Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+    Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
+    ForEach-Object { $listenerOwners[('{0}:{1}' -f $_.LocalPort, $_.OwningProcess)] = $true }
+}
+$rows = Get-CimInstance Win32_Process -Filter "Name LIKE 'ChatGPT%.exe' OR Name LIKE 'Codex%.exe'" |
   Where-Object { $_.CommandLine -like '*--remote-debugging-address=127.0.0.1*' } |
   ForEach-Object {
     $portMatch = [regex]::Match([string]$_.CommandLine, '--remote-debugging-port(?:=|\s+)(\d+)')
@@ -3977,7 +4265,10 @@ $rows = foreach ($name in @('OpenAI.Codex', 'OpenAI.CodexBeta')) {
 var WINDOWS_STOP_EXECUTABLE_COMMAND = String.raw`
 $ErrorActionPreference = 'Stop'
 $target = $env:CODEX_BRIDGE_TARGET_EXECUTABLE
-$processes = @(Get-CimInstance Win32_Process |
+$processNames = @('ChatGPT', 'ChatGPT (Beta)', 'Codex', 'Codex (Beta)')
+$existing = @(Get-Process -Name $processNames -ErrorAction SilentlyContinue)
+if ($existing.Count -eq 0) { exit 0 }
+$processes = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'ChatGPT%.exe' OR Name LIKE 'Codex%.exe'" |
   Where-Object {
     $_.ExecutablePath -eq $target -and
     $_.CommandLine -notlike '*--type=*' -and
@@ -4084,11 +4375,13 @@ async function focusCodex({
   platform = process.platform,
   execute = execFileAsync,
   processId = null,
-  activateWindows = null
+  activateWindows = null,
+  onDiagnostic = null,
+  forceFocus = false
 } = {}) {
   if (platform === "win32") {
     const activate = activateWindows ?? (await Promise.resolve().then(() => (init_windows_focus(), windows_focus_exports))).activateWindowsProcess;
-    return activate(processId);
+    return activate(processId, { onDiagnostic, forceFocus });
   }
   if (platform === "darwin") {
     await execute("/usr/bin/open", ["-b", "com.openai.codex"], { timeout: 3e3 });
@@ -4132,6 +4425,214 @@ function decodeThreadPathSegment(segment) {
 }
 function localThreadKey(value) {
   return `local:${validateThreadId(value)}`;
+}
+
+// ../../src/bridge/model-selection.mjs
+var REASONING_EFFORTS = Object.freeze([
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra"
+]);
+var MODEL_LABELS = Object.freeze({
+  "gpt-5.6-sol": "5.6 Sol",
+  "gpt-5.6-luna": "5.6 Luna",
+  "gpt-reserve": "Luna Reserve",
+  "gpt-6-astra": "GPT-6 Astra",
+  "gemini-3.8-flash-high": "Gemini 3.8 Flash High"
+});
+var DEFAULT_MODEL_OPTIONS = Object.freeze([
+  Object.freeze({ model: "gpt-6-astra", effort: "low", label: "ASTRA LOW" }),
+  Object.freeze({ model: "gpt-6-astra", effort: "medium", label: "ASTRA MED" }),
+  Object.freeze({ model: "gemini-3.8-flash-high", effort: "high", label: "GEMINI HIGH" }),
+  Object.freeze({ model: "gpt-5.6-sol", effort: "high", label: "SOL HIGH" })
+]);
+var MODEL_DISPLAY_NAMES = Object.freeze({
+  "gpt-6-astra": "ASTRA",
+  "gemini-3.8-flash-high": "GEMINI",
+  "gpt-5.6-sol": "SOL",
+  "gpt-5.6-luna": "LUNA",
+  "gpt-reserve": "RESERVE"
+});
+var EFFORT_DISPLAY_NAMES = Object.freeze({
+  none: "NONE",
+  minimal: "MIN",
+  low: "LOW",
+  medium: "MED",
+  high: "HIGH",
+  xhigh: "XHIGH",
+  max: "MAX",
+  ultra: "ULTRA"
+});
+function resolveModelSelection(defaults, settings) {
+  if (settings === void 0) return defaults;
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    throw new Error("Invalid model shortcut settings");
+  }
+  const { model, effort } = settings;
+  if (model !== void 0 && (typeof model !== "string" || model.length > 100 || !/^[\p{L}\p{N}\p{M} ._+()/:\-]*$/u.test(model))) {
+    throw new Error("Invalid model shortcut model");
+  }
+  if (effort !== void 0 && (typeof effort !== "string" || effort !== "" && !REASONING_EFFORTS.includes(effort))) {
+    throw new Error("Invalid model shortcut reasoning effort");
+  }
+  const requestedModel = model?.trim() || defaults.model;
+  const modelKey = (value) => value.toLowerCase().replace(/^gpt[- ]/, "").replace(/[- ]/g, "");
+  const alias = Object.entries(MODEL_LABELS).find(([id, label]) => modelKey(id) === modelKey(requestedModel) || modelKey(label) === modelKey(requestedModel));
+  const selectedModel = alias?.[0] || requestedModel;
+  return Object.freeze({
+    model: selectedModel,
+    displayName: selectedModel === defaults.model ? defaults.displayName : MODEL_LABELS[selectedModel] || selectedModel,
+    effort: effort || defaults.effort
+  });
+}
+function modelSelectionMatches(text, selection) {
+  const value = String(text ?? "").replace(/\s+/g, " ").trim();
+  const key = (label) => String(label ?? "").toLowerCase().replace(/^gpt[- ]/, "").replace(/[- ]/g, "");
+  const withoutEffort = value.replace(/\s+(?:none|minimal|low|medium|high|xhigh|max|ultra)$/i, "");
+  return [selection.model, selection.displayName].filter(Boolean).some((label) => key(value) === key(label) || key(withoutEffort) === key(label));
+}
+
+// ../../src/bridge/model-picker.mjs
+function inspectModelPicker(preset, kind) {
+  const visible = (element) => {
+    for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
+      if (ancestor.getAttribute("aria-hidden") === "true" || ancestor.hasAttribute("inert") || ancestor.getAttribute("data-active") === "false") return false;
+    }
+    const rect = element?.getBoundingClientRect?.();
+    return Boolean(element && element.getAttribute("aria-hidden") !== "true" && (element.offsetParent !== null || rect?.width > 0 && rect?.height > 0));
+  };
+  const triggers = [...document.querySelectorAll("[data-codex-intelligence-trigger]")].filter(visible);
+  if (triggers.length !== 1) return kind === "snapshot" ? { modern: false } : [];
+  const trigger = triggers[0];
+  const open = (element) => visible(element) && element.getAttribute("data-state") !== "closed";
+  const controlled = document.getElementById(trigger.getAttribute("aria-controls"));
+  const roots = controlled && open(controlled) ? [controlled] : [...document.querySelectorAll('[role="menu"][data-state="open"]')].filter(
+    (menu) => open(menu) && (menu.querySelector("[data-model-picker-view-toggle]") || menu.querySelector("[data-reasoning-slider]"))
+  );
+  if (roots.length !== 1) return kind === "snapshot" ? { modern: false } : [];
+  const menus = new Set(roots);
+  for (const menu of menus) {
+    for (const owner of menu.querySelectorAll("[aria-controls]")) {
+      const child = document.getElementById(owner.getAttribute("aria-controls"));
+      if (child && open(child)) menus.add(child);
+    }
+  }
+  const selector = '[role="menuitem"],[role="menuitemradio"],[role="option"],[role="radio"],button';
+  const items = [...new Set([...menus].flatMap((menu) => [...menu.querySelectorAll(selector)]))].filter((item) => visible(item) && !item.disabled && item.getAttribute("aria-disabled") !== "true" && !item.hasAttribute("data-disabled") && !item.hasAttribute("data-model-picker-view-toggle") && !item.hasAttribute("data-reasoning-slider"));
+  const normalize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+  const labels = (item) => [
+    item.getAttribute("aria-label"),
+    item.getAttribute("data-model-id"),
+    item.getAttribute("data-model"),
+    item.getAttribute("data-reasoning-effort"),
+    item.getAttribute("data-value"),
+    item.getAttribute("value"),
+    item.textContent,
+    // A label and a description often occupy separate spans.
+    ...[...item.querySelectorAll("span")].filter((span) => !span.children.length).map((span) => span.textContent)
+  ].filter(Boolean).map(normalize);
+  const modelKey = (value) => normalize(value).toLowerCase().replace(/^gpt[- ]/, "").replace(/[- ]/g, "");
+  const targets = new Set([preset.model, preset.displayName].map(modelKey));
+  const innermost = (candidates) => candidates.filter((item) => !candidates.some((other) => other !== item && item.contains(other)));
+  const modelItems = innermost(items.filter((item) => (
+    // A legacy row can display the current model while opening the model
+    // list, rather than selecting that model. Leave those rows to the legacy
+    // semantic probe unless they explicitly identify an actual model.
+    (item.getAttribute("aria-haspopup") !== "menu" || item.hasAttribute("data-model-id")) && labels(item).some((label) => targets.has(modelKey(label)))
+  )));
+  const effortKey = (value) => {
+    const key = normalize(value).toLowerCase();
+    return {
+      "extra high": "xhigh",
+      "extra-high": "xhigh",
+      "maximum": "max",
+      "\u65E0": "none",
+      "\u6700\u4F4E": "minimal",
+      "\u4F4E": "low",
+      "\u4E2D": "medium",
+      "\u9AD8": "high",
+      "\u6781\u9AD8": "xhigh",
+      "\u6975\u9AD8": "xhigh",
+      "\u6700\u9AD8": "max"
+    }[key] || key;
+  };
+  const efforts = /* @__PURE__ */ new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+  const sliders = [...new Set([...menus].flatMap((menu) => [...menu.querySelectorAll("[data-reasoning-slider]")]))].filter(visible);
+  let slider = null;
+  if (sliders.length === 1) {
+    const element = sliders[0];
+    const roots2 = Object.keys(element).filter((key) => key.startsWith("__reactProps$"));
+    const queue = roots2.map((key) => element[key]?.children);
+    const seen = /* @__PURE__ */ new Set();
+    const candidates = [];
+    for (let count = 0; queue.length && count < 200; count += 1) {
+      const node = queue.shift();
+      if (!node || typeof node !== "object" || seen.has(node)) continue;
+      seen.add(node);
+      if (Array.isArray(node)) {
+        queue.push(...node);
+        continue;
+      }
+      const props = node.props;
+      if (!props || typeof props !== "object") continue;
+      if (Array.isArray(props.options) && typeof props.selectedOptionId === "string") candidates.push(props);
+      queue.push(props.children);
+    }
+    if (!queue.length && candidates.length === 1) {
+      const props = candidates[0];
+      const options = props.options.length <= 20 ? props.options.map((option) => {
+        if (typeof option?.id !== "string" || option.id.length > 160) return null;
+        const separator = option.id.lastIndexOf(":");
+        const model = option.id.slice(0, separator);
+        const effort = option.id.slice(separator + 1);
+        return separator > 0 && efforts.has(effort) ? { id: option.id, model, effort, locked: option.isLocked === true } : null;
+      }) : [];
+      const index = options.findIndex((option) => option?.id === props.selectedOptionId);
+      if (options.length && options.every(Boolean) && new Set(options.map((option) => option.id)).size === options.length && index >= 0) {
+        const targetIndexes = options.flatMap((option, index2) => targets.has(modelKey(option.model)) && option.effort === preset.effort ? [index2] : []);
+        slider = {
+          options,
+          index,
+          current: options[index],
+          targetIndex: targetIndexes.length === 1 ? targetIndexes[0] : -1,
+          disabled: element.disabled || element.hasAttribute("data-disabled") || element.getAttribute("aria-disabled") === "true" || props.disabled === true || props.active === false
+        };
+      }
+    }
+  }
+  if (kind?.type === "slider-step") {
+    if (!slider || slider.disabled || sliders.length !== 1) throw new Error("Reasoning slider unavailable");
+    const ids = slider.options.map((option) => option.id);
+    const nextIndex = slider.index + (kind.key === "ArrowRight" ? 1 : kind.key === "ArrowLeft" ? -1 : 0);
+    const next = slider.options[nextIndex];
+    if (JSON.stringify(ids) !== JSON.stringify(kind.ids) || slider.current.id !== kind.fromId || next?.id !== kind.toId || next.locked || next.model !== slider.current.model || !targets.has(modelKey(next.model))) throw new Error("Reasoning slider changed before input");
+    sliders[0].focus({ preventScroll: true });
+    sliders[0].dispatchEvent(new KeyboardEvent("keydown", { key: kind.key, code: kind.key, bubbles: true, cancelable: true }));
+    sliders[0].dispatchEvent(new KeyboardEvent("keyup", { key: kind.key, code: kind.key, bubbles: true, cancelable: true }));
+    return true;
+  }
+  const effortItems = innermost(items.filter((item) => item.getAttribute("aria-haspopup") !== "menu" && labels(item).some((label) => efforts.has(effortKey(label)))));
+  const targetEfforts = effortItems.filter((item) => labels(item).some((label) => effortKey(label) === preset.effort));
+  if (kind === "model") return modelItems;
+  if (kind === "effort") return targetEfforts;
+  return {
+    open: true,
+    triggerEffort: trigger.getAttribute("data-selected-reasoning-effort"),
+    modern: modelItems.length > 0 || effortItems.length > 0 || sliders.length > 0,
+    sliderCount: sliders.length,
+    slider,
+    modelCount: modelItems.length,
+    effortCount: targetEfforts.length,
+    availableEffortCount: effortItems.length
+  };
+}
+function modelPickerExpression(preset, kind = "snapshot") {
+  return `(${inspectModelPicker.toString()})(${JSON.stringify(preset)}, ${JSON.stringify(kind)})`;
 }
 
 // ../../src/bridge/codex-cdp.mjs
@@ -4223,6 +4724,11 @@ function rendererActionExpression(action) {
     target.click();
     return true;
   })()`;
+}
+function modelPreset(action, settings = void 0) {
+  const preset = MODEL_PRESETS[action];
+  if (!preset) throw new Error(`Unknown Codex model preset: ${action}`);
+  return resolveModelSelection(preset, settings);
 }
 function composerSteerExpression() {
   return `(() => {
@@ -4480,6 +4986,28 @@ function selectMainTarget(targets) {
     }
   }) ?? pages.find((target) => !/avatar-overlay|composition-surface/i.test(target.url || ""));
 }
+function connectionIdentity(discovery) {
+  return Number.isInteger(discovery) ? { port: discovery, processId: null, executable: null, channel: null } : discovery;
+}
+function threadActiveExpression(threadKey) {
+  return `(() => {
+    const key = ${JSON.stringify(threadKey)};
+    const normalize = (value) => String(value ?? "").replace(/^local:/, "");
+    const sidebarItems = [...document.querySelectorAll("[data-app-action-sidebar-thread-id]")];
+    const target = sidebarItems.find((element) =>
+      normalize(element.getAttribute("data-app-action-sidebar-thread-id")) === normalize(key)
+    );
+    const active = sidebarItems.find((element) =>
+      element.getAttribute("data-app-action-sidebar-thread-active") === "true" ||
+      element.getAttribute("aria-current") === "page"
+    );
+    const current = document.querySelector("[data-above-composer-conversation-id]")
+      ?.getAttribute("data-above-composer-conversation-id")
+      ?? active?.getAttribute("data-app-action-sidebar-thread-id")
+      ?? null;
+    return normalize(current) === normalize(key) || Boolean(target && active && target === active);
+  })()`;
+}
 function traceErrorCategory(error) {
   const name = String(error?.name || "").toLowerCase();
   const message = String(error?.message || "").toLowerCase();
@@ -4545,7 +5073,7 @@ var CodexCdpClient = class {
   }
   async openConnection(generation) {
     const discovery = await this.discoverPort();
-    const identity = Number.isInteger(discovery) ? { port: discovery, processId: null, executable: null, channel: null } : discovery;
+    const identity = connectionIdentity(discovery);
     const port = Number(identity?.port);
     if (!Number.isInteger(port) || port <= 0 || port > 65535) {
       throw new Error("Codex debug endpoint identity was invalid");
@@ -4621,6 +5149,14 @@ var CodexCdpClient = class {
     return this.clickThreadKey(localThreadKey(threadId), slot, trace);
   }
   async clickThreadKey(threadKey, slot, trace = null) {
+    if (await runTraceStage(
+      trace,
+      "task.verify-initial",
+      () => this.threadIsActive(threadKey),
+      { slot: slot + 1 }
+    )) return true;
+    let nativeError = null;
+    let pressed = false;
     try {
       await runTraceStage(
         trace,
@@ -4628,44 +5164,51 @@ var CodexCdpClient = class {
         () => this.dispatchAgent(slot, threadKey, 1),
         { slot: slot + 1 }
       );
-      const finishBackground = trace?.defer?.();
-      trace?.record("task.background", { stage: "scheduled", background: true, slot: slot + 1 });
-      void (async () => {
-        await new Promise((resolve) => setTimeout(resolve, 35));
-        await runTraceStage(
-          trace,
-          "task.native-act0",
-          () => this.dispatchAgent(slot, threadKey, 0),
-          { background: true, slot: slot + 1 }
-        );
-        await runTraceStage(
-          trace,
-          "task.dom-activate",
-          () => this.activateThread(threadKey),
-          { background: true, slot: slot + 1 }
-        );
-      })().catch((error) => {
-        trace?.record("task.background", {
-          stage: "complete",
-          background: true,
-          outcome: "failed",
-          category: traceErrorCategory(error),
-          slot: slot + 1
-        });
-      }).finally(() => finishBackground?.());
+      pressed = true;
+      await new Promise((resolve) => setTimeout(resolve, 35));
     } catch (error) {
+      nativeError = error;
       trace?.record("task.fallback", {
         outcome: "started",
         category: traceErrorCategory(error),
         slot: slot + 1
       });
+    } finally {
+      if (pressed) {
+        try {
+          await runTraceStage(
+            trace,
+            "task.native-act0",
+            () => this.dispatchAgent(slot, threadKey, 0),
+            { slot: slot + 1 }
+          );
+        } catch (error) {
+          nativeError ??= error;
+          trace?.record("task.fallback", {
+            outcome: "started",
+            category: traceErrorCategory(error),
+            slot: slot + 1
+          });
+        }
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const nativeActivated = nativeError === null && await runTraceStage(
+      trace,
+      "task.verify-native",
+      () => this.threadIsActive(threadKey),
+      { slot: slot + 1 }
+    );
+    if (!nativeActivated) {
       await runTraceStage(
         trace,
-        "task.dom-activate-fallback",
+        "task.dom-activate",
         () => this.activateThread(threadKey),
         { slot: slot + 1 }
       );
     }
+    await this.waitForThreadActivation(threadKey, trace);
+    return true;
   }
   async dispatchAgent(slot, threadKey, act) {
     return this.dispatchMicroMessage({
@@ -4679,20 +5222,21 @@ var CodexCdpClient = class {
       event: { key, act, slot: null, threadKey: null }
     }, "codex-micro-hid-event");
   }
-  async dispatchNamedAction(action, pressed, trace = null) {
+  async dispatchNamedAction(action, pressed, trace = null, settings = void 0) {
     const key = MICRO_ACTION_KEYS[action];
     if (key) return this.dispatchAction(key, pressed ? 1 : 0);
     if (!RENDERER_ACTIONS.has(action)) {
       throw new Error(`Unsupported Codex bridge action: ${action}`);
     }
     if (!pressed) return true;
-    return this.dispatchRendererAction(action, trace);
+    return this.dispatchRendererAction(action, trace, settings);
   }
-  async dispatchRendererAction(action, trace = null) {
+  async dispatchRendererAction(action, trace = null, settings = void 0) {
     if (MODEL_PRESETS[action]) {
+      const preset = modelPreset(action, settings);
       const operation = this.modelActionQueue.then(async () => {
         await runTraceStage(trace, "model.connect", () => this.connect(), { action });
-        return this.dispatchModelPreset(action, trace);
+        return this.dispatchModelPreset(action, trace, preset);
       });
       this.modelActionQueue = operation.catch(() => {
       });
@@ -4704,9 +5248,8 @@ var CodexCdpClient = class {
     if (!invoked) throw new Error(`Codex ${action} action is not available`);
     return true;
   }
-  async dispatchModelPreset(action, trace = null) {
-    const preset = MODEL_PRESETS[action];
-    if (!preset) throw new Error(`Unknown Codex model preset: ${action}`);
+  async dispatchModelPreset(action, trace = null, settings = void 0) {
+    const preset = modelPreset(action, settings);
     const presetStartedAt = performance.now();
     trace?.record("model.preset", {
       action,
@@ -4714,8 +5257,42 @@ var CodexCdpClient = class {
       outcome: "started",
       targetEffort: preset.effort
     });
-    const effortOrder = ["low", "medium", "high", "xhigh", "max"];
-    const targetEffortIndex = effortOrder.indexOf(preset.effort);
+    const effortOrder = REASONING_EFFORTS;
+    const isSingleEffort = preset.model === "gemini-3.8-flash-high" || /gemini/i.test(preset.model);
+    let modernPicker = false;
+    let pendingModelSelection = false;
+    const pickerState = () => this.evaluate(modelPickerExpression(preset));
+    const selectedExpression = `(() => {
+      const picker = ${modelPickerExpression(preset)};
+      const triggers = [...document.querySelectorAll("[data-codex-intelligence-trigger]")].filter(element => {
+        const rect = element.getBoundingClientRect();
+        return element.offsetParent !== null || (rect.width > 0 && rect.height > 0);
+      });
+      if (triggers.length !== 1) return false;
+      const modelMatched = (${modelSelectionMatches.toString()})(picker.slider?.current?.model ?? triggers[0].textContent, ${JSON.stringify(preset)});
+      const triggerEffort = triggers[0].getAttribute("data-selected-reasoning-effort");
+      const effortMatched = triggerEffort === ${JSON.stringify(preset.effort)} || (!triggerEffort && ${Boolean(isSingleEffort)});
+      return modelMatched && effortMatched;
+    })()`;
+    const chooseModernModel = async () => {
+      const state = await pickerState();
+      if (state.modelCount !== 1) throw new Error("Expected one available model option in sequential picker");
+      await this.clickRendererCandidates(
+        modelPickerExpression(preset, "model"),
+        "requested model option",
+        trace,
+        "model.select-model-option"
+      );
+      pendingModelSelection = true;
+      await this.waitForRenderer(
+        `(() => { const picker = ${modelPickerExpression(preset)};
+          return picker.sliderCount > 0 || picker.availableEffortCount > 0 || (${selectedExpression});
+        })()`,
+        "Codex model reasoning choices",
+        trace,
+        "model.wait-reasoning-view"
+      );
+    };
     const readState = async () => {
       const state = await runTraceStage(trace, "model.read-state", () => this.evaluate(`(() => {
         const visible = (element) => {
@@ -4731,10 +5308,12 @@ var CodexCdpClient = class {
         };
       })()`));
       if (state?.error) throw new Error(state.error);
+      const picker = await pickerState();
+      if (picker?.slider?.current) state.text = picker.slider.current.model;
       trace?.record("model.state", {
         currentEffort: state.effort || "unknown",
         effortMatched: state.effort === preset.effort,
-        modelMatched: state.text.includes(preset.displayName)
+        modelMatched: modelSelectionMatches(state.text, preset)
       });
       return state;
     };
@@ -4756,6 +5335,7 @@ var CodexCdpClient = class {
         );
       }
       await this.waitForRenderer(`(() => {
+        if ((${modelPickerExpression(preset)}).open) return true;
         const visible = (element) => {
           const rect = element?.getBoundingClientRect?.();
           return element && (element.offsetParent !== null || (rect?.width > 0 && rect?.height > 0));
@@ -4780,11 +5360,20 @@ var CodexCdpClient = class {
           rowCount: menus[0]?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0
         };
       })()`));
+      const direct = await pickerState();
+      if (direct?.modern && (direct.modelCount > 0 || modelSelectionMatches((await readState()).text, preset))) {
+        modernPicker = true;
+        trace?.record("model.menu-shape", { outcome: "sequential", rowCount: direct.modelCount });
+        return;
+      }
       trace?.record("model.menu-shape", {
         rowCount: toggleState.rowCount,
         outcome: toggleState.expanded ? "expanded" : "collapsed"
       });
-      if (toggleState.count === 0 && toggleState.rowCount === 2) return;
+      if (toggleState.count === 0) {
+        if (toggleState.rowCount < 1) throw new Error("Codex model picker has no submenu rows");
+        return;
+      }
       if (toggleState.count !== 1) {
         throw new Error(`Expected one model picker view toggle, found ${toggleState.count}`);
       }
@@ -4801,12 +5390,16 @@ var CodexCdpClient = class {
           "model.open-picker-view"
         );
         await this.waitForRenderer(`(() => {
+          if ((${modelPickerExpression(preset)}).modern) return true;
           const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
             (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
           );
-          return menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length === 2;
+          return (menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0) > 0;
         })()`, "expanded Codex model picker", trace, "model.wait-picker-view");
       }
+      const expandedPicker = await pickerState();
+      modernPicker = Boolean(expandedPicker?.modern);
+      if (modernPicker) trace?.record("model.menu-shape", { outcome: "sequential", rowCount: expandedPicker.modelCount });
     };
     const rowExpression = (rowIndex) => `(() => {
       const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
@@ -4820,7 +5413,7 @@ var CodexCdpClient = class {
         (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
       );
       const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
-      if (rows.length !== 2 || !rows[${rowIndex}]) return null;
+      if (!rows[${rowIndex}]) return null;
       const submenu = document.getElementById(rows[${rowIndex}].getAttribute("aria-controls"));
       if (!submenu || submenu.getAttribute("data-state") !== "open") return null;
       return [...submenu.querySelectorAll('[role="menuitem"]')].map((item) => ({
@@ -4831,7 +5424,7 @@ var CodexCdpClient = class {
     const identifyRows = async () => {
       if (this.modelPickerLayout?.connectionGeneration === this.connectionGeneration) {
         trace?.record("model.rows-identified", {
-          rowCount: 2,
+          rowCount: this.modelPickerLayout.rowCount,
           source: "cache",
           outcome: "succeeded"
         });
@@ -4844,8 +5437,13 @@ var CodexCdpClient = class {
         );
         return menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0;
       })()`));
-      if (rowCount !== 2) throw new Error(`Expected two Codex model picker rows, found ${rowCount}`);
-      let modelRowIndex = -1;
+      if (rowCount < 1) throw new Error("Codex model picker has no submenu rows");
+      const current = await readState();
+      if (!effortOrder.includes(current.effort)) {
+        throw new Error(`Unsupported Codex reasoning effort: ${current.effort}`);
+      }
+      const modelRowIndexes = [];
+      const effortRowIndexes = [];
       for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
         await openMain();
         await this.clickRendererCandidates(
@@ -4856,15 +5454,31 @@ var CodexCdpClient = class {
         );
         const items = await submenuInfo(rowIndex);
         if (items.filter((item) => item.text === preset.displayName).length === 1) {
-          modelRowIndex = rowIndex;
+          modelRowIndexes.push(rowIndex);
+        }
+        const effortTexts = items.map((item) => item.text);
+        const checkedItems = items.filter((item) => item.checked);
+        if (items.length > 0 && effortTexts.every((text) => effortOrder.includes(text)) && new Set(effortTexts).size === items.length && checkedItems.length === 1 && checkedItems[0].text === current.effort) {
+          effortRowIndexes.push(rowIndex);
         }
         await this.pressRendererEscape(trace, `model.close-row-${rowIndex + 1}`);
       }
-      if (modelRowIndex < 0) throw new Error(`Codex model ${preset.displayName} is not available`);
+      if (modelRowIndexes.length !== 1) {
+        throw new Error(`Expected one Codex model row for ${preset.displayName}, found ${modelRowIndexes.length}`);
+      }
+      if (effortRowIndexes.length !== 1) {
+        throw new Error(`Expected one Codex reasoning effort row, found ${effortRowIndexes.length}`);
+      }
+      const modelRowIndex = modelRowIndexes[0];
+      const effortRowIndex = effortRowIndexes[0];
+      if (modelRowIndex === effortRowIndex) {
+        throw new Error("Codex model and reasoning effort rows are ambiguous");
+      }
       const result = {
         connectionGeneration: this.connectionGeneration,
+        rowCount,
         modelRowIndex,
-        effortRowIndex: modelRowIndex === 0 ? 1 : 0
+        effortRowIndex
       };
       this.modelPickerLayout = result;
       trace?.record("model.rows-identified", {
@@ -4874,13 +5488,65 @@ var CodexCdpClient = class {
       });
       return result;
     };
+    const selectSliderEffort = async () => {
+      for (let step = 0; step < 20; step += 1) {
+        const state = await pickerState();
+        const slider = state?.slider;
+        trace?.record("model.menu-shape", {
+          stage: "model.read-slider",
+          rowCount: slider?.options.length ?? 0,
+          currentEffort: slider?.current.effort || "unknown",
+          targetEffort: preset.effort,
+          outcome: slider ? "slider" : "unsupported"
+        });
+        if (state?.sliderCount !== 1 || !slider || slider.disabled) {
+          throw new Error("Reasoning slider metadata unavailable, ambiguous or disabled");
+        }
+        if (slider.targetIndex < 0 || !modelSelectionMatches(slider.current.model, preset)) {
+          throw new Error("Requested reasoning effort is unavailable for the selected model");
+        }
+        const from = Math.min(slider.index, slider.targetIndex);
+        const to = Math.max(slider.index, slider.targetIndex);
+        if (slider.options.slice(from, to + 1).some((option) => option.locked || option.model !== slider.current.model)) {
+          throw new Error("Reasoning slider path contains a locked option or another model");
+        }
+        if (slider.index === slider.targetIndex) {
+          await this.waitForRenderer(selectedExpression, "requested model and reasoning effort", trace, "model.wait-effort-selected");
+          return;
+        }
+        const key = slider.targetIndex > slider.index ? "ArrowRight" : "ArrowLeft";
+        const next = slider.options[slider.index + (key === "ArrowRight" ? 1 : -1)];
+        await runTraceStage(trace, "model.slider-step", () => this.evaluate(modelPickerExpression(preset, {
+          type: "slider-step",
+          key,
+          fromId: slider.current.id,
+          toId: next.id,
+          ids: slider.options.map((option) => option.id)
+        })), { targetEffort: next.effort });
+        await this.waitForRenderer(`(() => {
+          const picker = ${modelPickerExpression(preset)};
+          return picker.slider?.current.id === ${JSON.stringify(next.id)}
+            && picker.triggerEffort === ${JSON.stringify(next.effort)};
+        })()`, "reasoning slider step", trace, "model.wait-slider-step");
+      }
+      throw new Error("Reasoning slider exceeded bounded step count");
+    };
     const selectEffort = async () => {
       const current = await readState();
-      if (current.effort === preset.effort) {
+      const currentEffortMatched = current.effort === preset.effort || !current.effort && isSingleEffort;
+      if (currentEffortMatched && modelSelectionMatches(current.text, preset)) {
         trace?.record("model.effort", {
-          currentEffort: current.effort,
+          currentEffort: current.effort || preset.effort,
           targetEffort: preset.effort,
           outcome: "skipped"
+        });
+        return;
+      }
+      if (isSingleEffort) {
+        trace?.record("model.effort", {
+          currentEffort: preset.effort,
+          targetEffort: preset.effort,
+          outcome: "single-effort"
         });
         return;
       }
@@ -4889,11 +5555,34 @@ var CodexCdpClient = class {
         targetEffort: preset.effort,
         outcome: "changing"
       });
-      const currentEffortIndex = effortOrder.indexOf(current.effort);
-      if (currentEffortIndex < 0 || targetEffortIndex < 0) {
+      if (!effortOrder.includes(preset.effort)) {
         throw new Error(`Unsupported Codex reasoning effort transition: ${current.effort} -> ${preset.effort}`);
       }
-      await openMain();
+      if (!pendingModelSelection) await openMain();
+      if (modernPicker) {
+        let state = await pickerState();
+        if (!state.sliderCount && state.availableEffortCount === 0 && state.modelCount > 0) {
+          await chooseModernModel();
+          state = await pickerState();
+        }
+        if (state.sliderCount > 0) {
+          await selectSliderEffort();
+          trace?.record("model.effort", { targetEffort: preset.effort, outcome: "succeeded" });
+          return;
+        }
+        if (state.effortCount !== 1) {
+          throw new Error("Requested reasoning effort is unavailable or ambiguous for this model");
+        }
+        await this.clickRendererCandidates(
+          modelPickerExpression(preset, "effort"),
+          "requested reasoning effort",
+          trace,
+          "model.select-effort-option"
+        );
+        await this.waitForRenderer(selectedExpression, "requested model and reasoning effort", trace, "model.wait-effort-selected");
+        trace?.record("model.effort", { targetEffort: preset.effort, outcome: "succeeded" });
+        return;
+      }
       const { effortRowIndex } = await identifyRows();
       await openMain();
       await this.clickRendererCandidates(
@@ -4903,8 +5592,9 @@ var CodexCdpClient = class {
         "model.open-effort-row"
       );
       const items = await submenuInfo(effortRowIndex);
-      const checkedIndexes = items.flatMap((item, index) => item.checked ? [index] : []);
-      if (items.length !== effortOrder.length || checkedIndexes.length !== 1 || checkedIndexes[0] !== currentEffortIndex) {
+      const effortTexts = items.map((item) => item.text);
+      const checkedItems = items.filter((item) => item.checked);
+      if (items.length === 0 || !effortTexts.every((text) => effortOrder.includes(text)) || new Set(effortTexts).size !== items.length || !effortTexts.includes(preset.effort) || checkedItems.length !== 1 || checkedItems[0].text !== current.effort) {
         throw new Error("Codex reasoning effort order or selected state changed");
       }
       await this.clickRendererCandidates(`(() => {
@@ -4915,8 +5605,11 @@ var CodexCdpClient = class {
         const submenu = rows[${effortRowIndex}]
           ? document.getElementById(rows[${effortRowIndex}].getAttribute("aria-controls"))
           : null;
-        const items = submenu ? [...submenu.querySelectorAll('[role="menuitem"]')] : [];
-        return items[${targetEffortIndex}] ? [items[${targetEffortIndex}]] : [];
+        return submenu
+          ? [...submenu.querySelectorAll('[role="menuitem"]')].filter(
+              (item) => String(item.textContent ?? "").replace(/\\s+/g, " ").trim() === ${JSON.stringify(preset.effort)}
+            )
+          : [];
       })()`, `reasoning effort ${preset.effort}`, trace, "model.select-effort-option");
       await this.waitForRenderer(
         `document.querySelector("[data-codex-intelligence-trigger]")?.getAttribute("data-selected-reasoning-effort") === ${JSON.stringify(preset.effort)}`,
@@ -4930,12 +5623,18 @@ var CodexCdpClient = class {
       });
     };
     const selectModel = async () => {
-      if ((await readState()).text.includes(preset.displayName)) {
+      if (modelSelectionMatches((await readState()).text, preset)) {
         trace?.record("model.model", { modelMatched: true, outcome: "skipped" });
         return;
       }
       trace?.record("model.model", { modelMatched: false, outcome: "changing" });
       await openMain();
+      if (modernPicker) {
+        if (modelSelectionMatches((await readState()).text, preset)) return;
+        await chooseModernModel();
+        trace?.record("model.model", { outcome: "selected", modelMatched: modelSelectionMatches((await readState()).text, preset) });
+        return;
+      }
       const { modelRowIndex } = await identifyRows();
       await openMain();
       await this.clickRendererCandidates(
@@ -4974,7 +5673,8 @@ var CodexCdpClient = class {
       await runTraceStage(trace, "model.select-model", selectModel, { action });
       await runTraceStage(trace, "model.select-effort", selectEffort, { targetEffort: preset.effort });
       const selected = await runTraceStage(trace, "model.validate", readState, { action });
-      if (!selected.text.includes(preset.displayName) || selected.effort !== preset.effort) {
+      const effortMatched = selected.effort === preset.effort || !selected.effort && isSingleEffort;
+      if (!modelSelectionMatches(selected.text, preset) || !effortMatched) {
         throw new Error(`Codex did not select ${preset.displayName} / ${preset.effort}`);
       }
       await runTraceStage(trace, "model.close-menus", closeMenus, { action });
@@ -5002,6 +5702,25 @@ var CodexCdpClient = class {
       }
       throw error;
     }
+  }
+  async refreshConnectionIdentity() {
+    const identity = connectionIdentity(await this.discoverPort());
+    const port = Number(identity?.port);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      throw new Error("Codex debug endpoint identity was invalid");
+    }
+    if (this.socket?.readyState === wrapper_default.OPEN && this.connectionIdentity?.port !== port) {
+      this.disconnect();
+      await this.connect();
+      return this.connectionIdentity;
+    }
+    this.connectionIdentity = {
+      port,
+      processId: Number.isInteger(identity?.processId) ? identity.processId : null,
+      executable: typeof identity?.executable === "string" ? identity.executable : null,
+      channel: ["stable", "beta"].includes(identity?.channel) ? identity.channel : null
+    };
+    return this.connectionIdentity;
   }
   async dispatchComposerSteer() {
     await this.connect();
@@ -5076,6 +5795,17 @@ var CodexCdpClient = class {
       (item.querySelector("button,a,[role=button],[role=link]") ?? item).click();
       return true;
     })()`);
+  }
+  threadIsActive(threadKey) {
+    return this.evaluate(threadActiveExpression(threadKey));
+  }
+  waitForThreadActivation(threadKey, trace = null) {
+    return this.waitForRenderer(
+      threadActiveExpression(threadKey),
+      "target Codex task activation",
+      trace,
+      "task.verify-final"
+    );
   }
   sendCommand(method, params, returnValue = false) {
     if (!this.socket || this.socket.readyState !== wrapper_default.OPEN) {
@@ -5211,11 +5941,122 @@ function bridgeRequestAuthorized(token, authorizationHeader) {
   return actual.length === supplied.length && timingSafeEqual(actual, supplied);
 }
 
+// ../../src/bridge/diagnostics.mjs
+var SAFE_TRACE_FIELD_KEYS = /* @__PURE__ */ new Set([
+  "accepted",
+  "action",
+  "alreadyForeground",
+  "alreadyMaximized",
+  "attentionRequested",
+  "attempts",
+  "automatic",
+  "background",
+  "bringToTopAccepted",
+  "cacheHit",
+  "cacheValid",
+  "candidateCount",
+  "category",
+  "channel",
+  "complete",
+  "connection",
+  "currentEffort",
+  "detachAccepted",
+  "durationMs",
+  "effortMatched",
+  "focusOk",
+  "foregroundAttach",
+  "foregroundAttachErrorCode",
+  "forceFocus",
+  "inputErrorCode",
+  "inputEventsInserted",
+  "matchesTarget",
+  "modifierStateClear",
+  "modelMatched",
+  "outcome",
+  "path",
+  "phase",
+  "platform",
+  "primaryCandidate",
+  "reused",
+  "releaseAccepted",
+  "route",
+  "rowCount",
+  "setFocusReturnedWindow",
+  "setForegroundAccepted",
+  "slot",
+  "source",
+  "stage",
+  "switchRequested",
+  "targetAttach",
+  "targetAttachErrorCode",
+  "targetEffort",
+  "targetFound",
+  "wasActiveBeforeAttention"
+]);
+function safeTraceFields(fields) {
+  return Object.fromEntries(Object.entries(fields || {}).flatMap(([key, value]) => {
+    if (!SAFE_TRACE_FIELD_KEYS.has(key)) return [];
+    if (typeof value === "boolean" || typeof value === "number" && Number.isFinite(value)) {
+      return [[key, value]];
+    }
+    const normalized = String(value || "");
+    return /^[a-zA-Z0-9_.:-]{1,80}$/.test(normalized) ? [[key, normalized]] : [];
+  }));
+}
+
 // ../../src/bridge/navigation.mjs
 async function navigateAndFocus(navigate, focus) {
   const [navigation, activation] = await Promise.allSettled([navigate(), focus()]);
   if (navigation.status === "rejected") throw navigation.reason;
-  return { focusOk: activation.status === "fulfilled" };
+  if (activation.status === "rejected") throw activation.reason;
+  return {
+    focusOk: true,
+    attentionRequested: false
+  };
+}
+
+// ../../src/bridge/model-request.mjs
+function readModelSettings(request, { timeoutMs = 2e3, maxBytes = 2048 } = {}) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    const timer2 = setTimeout(() => fail("Model settings request timed out"), timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer2);
+      request.off("data", onData);
+      request.off("end", onEnd);
+      request.off("error", onError);
+      request.off("aborted", onError);
+    };
+    const fail = (message) => {
+      cleanup();
+      request.resume();
+      reject(Object.assign(new Error(message), { statusCode: 400 }));
+    };
+    const onError = () => fail("Incomplete model settings request");
+    const onData = (chunk) => {
+      size += Buffer.byteLength(chunk);
+      if (size > maxBytes) return fail("Model settings request too large");
+      chunks.push(Buffer.from(chunk));
+    };
+    const onEnd = () => {
+      cleanup();
+      if (size === 0) return resolve(void 0);
+      try {
+        const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((key) => key !== "model" && key !== "effort")) {
+          throw new Error();
+        }
+        resolve(value);
+      } catch {
+        reject(Object.assign(new Error("Invalid model settings request"), { statusCode: 400 }));
+      }
+    };
+    request.on("data", onData);
+    request.on("end", onEnd);
+    request.on("error", onError);
+    request.on("aborted", onError);
+  });
 }
 
 // ../../src/bridge/server.mjs
@@ -5224,7 +6065,7 @@ var PORT = Number(process.env.CODEX_KEYBOARD_PORT || 17373);
 var BRIDGE_VERSION = false ? null : "0.6.1";
 var RUNTIME_HASH = (() => {
   try {
-    return createHash("sha256").update(readFileSync(process.argv[1])).digest("hex");
+    return createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url))).digest("hex");
   } catch {
     return null;
   }
@@ -5255,6 +6096,7 @@ var cached = {
 };
 var refreshPromise = null;
 var nextReconnectAt = 0;
+var nextIdentityRefreshAt = 0;
 var hasRefreshed = false;
 var traceBuffer = /* @__PURE__ */ new Map();
 var TRACE_TTL_MS = 3e4;
@@ -5272,15 +6114,6 @@ function diagnosticErrorCategory(error) {
 function traceIdFrom(request) {
   const value = String(request.headers["x-codex-trace-id"] || "");
   return /^[a-f0-9-]{36}$/.test(value) ? value : null;
-}
-function safeTraceFields(fields) {
-  return Object.fromEntries(Object.entries(fields || {}).flatMap(([key, value]) => {
-    if (typeof value === "boolean" || typeof value === "number" && Number.isFinite(value)) {
-      return [[key, value]];
-    }
-    const normalized = String(value || "");
-    return /^[a-zA-Z0-9_.:-]{1,80}$/.test(normalized) ? [[key, normalized]] : [];
-  }));
 }
 function startTrace(request, route, fields = {}) {
   const traceId = traceIdFrom(request);
@@ -5332,7 +6165,7 @@ function traceSnapshot(traceId) {
     events: trace.events.map((event) => ({ ...event }))
   };
 }
-async function focusCodexDesktop(trace = null) {
+async function focusCodexDesktop(trace = null, { forceFocus = false } = {}) {
   const startedAt = performance.now();
   const path = process.platform === "win32" ? "win32-native" : "platform-adapter";
   trace?.record("focus.start", { platform: process.platform, path });
@@ -5348,7 +6181,11 @@ async function focusCodexDesktop(trace = null) {
         outcome: "succeeded"
       });
     }
-    const result = await focusCodex({ processId: identity?.processId ?? null });
+    const result = await focusCodex({
+      processId: identity?.processId ?? null,
+      forceFocus,
+      onDiagnostic: trace ? (stage, fields) => trace.record("focus.stage", { stage, ...fields }) : null
+    });
     trace?.record("focus.native", {
       outcome: "succeeded",
       channel: identity?.channel || "unknown",
@@ -5383,6 +6220,15 @@ async function refresh(force = false) {
       const snapshot = await client.snapshot();
       cached = { connected: true, ...snapshot, error: null, updatedAt: Date.now() };
       nextReconnectAt = 0;
+      const identity = client.connectionIdentity;
+      if (process.platform === "win32" && Date.now() >= nextIdentityRefreshAt && (!Number.isInteger(identity?.processId) || !identity?.channel)) {
+        try {
+          await client.refreshConnectionIdentity();
+          nextIdentityRefreshAt = Date.now() + 2e3;
+        } catch {
+          nextIdentityRefreshAt = Date.now() + 2e3;
+        }
+      }
     } catch (error) {
       cached = { ...cached, connected: false, error: error.message, updatedAt: Date.now() };
       nextReconnectAt = Date.now() + 2e3;
@@ -5423,6 +6269,9 @@ var server = createServer(async (request, response) => {
     });
   }
   if (request.method === "GET" && url.pathname === "/state") {
+    if (url.searchParams.get("refresh") === "1" || url.searchParams.get("force") === "1") {
+      await refresh(true);
+    }
     return json(response, 200, cached);
   }
   if (request.method === "POST" && url.pathname === "/diagnostics/trace") {
@@ -5458,18 +6307,20 @@ var server = createServer(async (request, response) => {
     try {
       const threadId = decodeThreadPathSegment(threadMatch[1]);
       const slot = Number(url.searchParams.get("slot") || 0);
+      const forceFocus = url.searchParams.get("forceFocus") === "1";
       if (!Number.isInteger(slot) || slot < 0 || slot > 5) {
         throw new Error("Invalid Codex Micro slot");
       }
-      trace = startTrace(request, "thread-click", { slot: slot + 1 });
+      trace = startTrace(request, "thread-click", { slot: slot + 1, forceFocus });
       const result = await navigateAndFocus(
         () => client.clickThread(threadId, slot, trace),
-        () => focusCodexDesktop(trace)
+        () => focusCodexDesktop(trace, { forceFocus })
       );
       trace?.record("server.response", {
         outcome: "succeeded",
         route: "thread-click",
-        focusOk: result.focusOk
+        focusOk: result.focusOk,
+        attentionRequested: result.attentionRequested
       });
       return json(response, 200, { ok: true, bridge: true, ...result });
     } catch (error) {
@@ -5500,7 +6351,8 @@ var server = createServer(async (request, response) => {
         }
         return json(response, 200, { ok: true });
       }
-      await client.dispatchNamedAction(action[1], action[2] === "down", trace);
+      const settings = action[1].startsWith("model-") && action[2] === "down" ? await readModelSettings(request) : void 0;
+      await client.dispatchNamedAction(action[1], action[2] === "down", trace, settings);
       trace?.record("server.response", { outcome: "succeeded", route: "action" });
       return json(response, 200, { ok: true, bridge: true });
     } catch (error) {
@@ -5509,7 +6361,7 @@ var server = createServer(async (request, response) => {
         route: "action",
         category: diagnosticErrorCategory(error)
       });
-      return json(response, 503, { ok: false, error: error.message });
+      return json(response, error.statusCode === 400 ? 400 : 503, { ok: false, error: error.message });
     } finally {
       trace?.finish();
     }

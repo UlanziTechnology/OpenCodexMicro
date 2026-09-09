@@ -1,4 +1,6 @@
 import { execFile, spawn } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -13,11 +15,22 @@ export const CDP_ARGUMENTS = Object.freeze([
 
 const WINDOWS_PROCESS_COMMAND = String.raw`
 $ErrorActionPreference = 'Stop'
+$processNames = @('ChatGPT', 'ChatGPT (Beta)', 'Codex', 'Codex (Beta)')
+$existing = @(Get-Process -Name $processNames -ErrorAction SilentlyContinue)
+if ($existing.Count -eq 0) { '[]'; exit 0 }
 $listenerOwners = @{}
-Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-  Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
-  ForEach-Object { $listenerOwners[('{0}:{1}' -f $_.LocalPort, $_.OwningProcess)] = $true }
-$rows = Get-CimInstance Win32_Process |
+try {
+  netstat.exe -ano -p tcp | ForEach-Object {
+    if ($_ -match '^\s*TCP\s+127\.0\.0\.1:(\d+)\s+\S+\s+LISTENING\s+(\d+)') {
+      $listenerOwners[('{0}:{1}' -f $matches[1], $matches[2])] = $true
+    }
+  }
+} catch {
+  Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+    Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
+    ForEach-Object { $listenerOwners[('{0}:{1}' -f $_.LocalPort, $_.OwningProcess)] = $true }
+}
+$rows = Get-CimInstance Win32_Process -Filter "Name LIKE 'ChatGPT%.exe' OR Name LIKE 'Codex%.exe'" |
   Where-Object { $_.CommandLine -like '*--remote-debugging-address=127.0.0.1*' } |
   ForEach-Object {
     $portMatch = [regex]::Match([string]$_.CommandLine, '--remote-debugging-port(?:=|\s+)(\d+)')
@@ -62,7 +75,10 @@ $rows = foreach ($name in @('OpenAI.Codex', 'OpenAI.CodexBeta')) {
 const WINDOWS_STOP_EXECUTABLE_COMMAND = String.raw`
 $ErrorActionPreference = 'Stop'
 $target = $env:CODEX_BRIDGE_TARGET_EXECUTABLE
-$processes = @(Get-CimInstance Win32_Process |
+$processNames = @('ChatGPT', 'ChatGPT (Beta)', 'Codex', 'Codex (Beta)')
+$existing = @(Get-Process -Name $processNames -ErrorAction SilentlyContinue)
+if ($existing.Count -eq 0) { exit 0 }
+$processes = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'ChatGPT%.exe' OR Name LIKE 'Codex%.exe'" |
   Where-Object {
     $_.ExecutablePath -eq $target -and
     $_.CommandLine -notlike '*--type=*' -and
@@ -181,7 +197,56 @@ export async function discoverDebugPort(options = {}) {
   return (await discoverDebugEndpoint(options)).port;
 }
 
+function fastDiscoverWindowsCodexExecutables() {
+  if (process.platform !== "win32") return [];
+  const programFiles = process.env.ProgramFiles || "C:\\Program Files";
+  const windowsApps = join(programFiles, "WindowsApps");
+  if (!existsSync(windowsApps)) return [];
+  let entries = [];
+  try {
+    entries = readdirSync(windowsApps);
+  } catch {
+    return [];
+  }
+  const rows = [];
+  for (const name of ["OpenAI.Codex", "OpenAI.CodexBeta"]) {
+    const pkgs = entries.filter((entry) => entry.startsWith(`${name}_`));
+    if (pkgs.length === 0) continue;
+    pkgs.sort().reverse();
+    for (const pkg of pkgs) {
+      const appDir = join(windowsApps, pkg, "app");
+      const candidates = name === "OpenAI.CodexBeta"
+        ? ["ChatGPT (Beta).exe", "Codex (Beta).exe", "ChatGPT.exe"]
+        : ["ChatGPT.exe", "Codex.exe"];
+      let found = null;
+      for (const file of candidates) {
+        const fullPath = join(appDir, file);
+        if (existsSync(fullPath)) {
+          found = fullPath;
+          break;
+        }
+      }
+      if (found) {
+        rows.push({
+          channel: name === "OpenAI.CodexBeta" ? "beta" : "stable",
+          packageName: name,
+          packageFullName: pkg,
+          executable: found
+        });
+        break;
+      }
+    }
+  }
+  return rows;
+}
+
 export async function discoverWindowsCodexExecutables({ execute = execFileAsync } = {}) {
+  if (execute === execFileAsync) {
+    try {
+      const fast = fastDiscoverWindowsCodexExecutables();
+      if (fast.length > 0) return fast;
+    } catch {}
+  }
   const { stdout = "" } = await execute(
     "powershell.exe",
     powershellArgs(WINDOWS_PACKAGE_COMMAND),
@@ -200,12 +265,14 @@ export async function focusCodex({
   platform = process.platform,
   execute = execFileAsync,
   processId = null,
-  activateWindows = null
+  activateWindows = null,
+  onDiagnostic = null,
+  forceFocus = false
 } = {}) {
   if (platform === "win32") {
     const activate = activateWindows
       ?? (await import("./windows-focus.mjs")).activateWindowsProcess;
-    return activate(processId);
+    return activate(processId, { onDiagnostic, forceFocus });
   }
   if (platform === "darwin") {
     await execute("/usr/bin/open", ["-b", "com.openai.codex"], { timeout: 3000 });

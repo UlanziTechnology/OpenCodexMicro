@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { CodexCdpClient } from "./codex-cdp.mjs";
 import { bridgeRequestAuthorized } from "./auth.mjs";
+import { safeTraceFields } from "./diagnostics.mjs";
 import { focusCodex } from "./platform.mjs";
 import { navigateAndFocus } from "./navigation.mjs";
 import { decodeThreadPathSegment } from "./thread-key.mjs";
@@ -16,7 +18,7 @@ const BRIDGE_VERSION = typeof __CODEX_BRIDGE_VERSION__ === "undefined"
   : __CODEX_BRIDGE_VERSION__;
 const RUNTIME_HASH = (() => {
   try {
-    return createHash("sha256").update(readFileSync(process.argv[1])).digest("hex");
+    return createHash("sha256").update(readFileSync(fileURLToPath(import.meta.url))).digest("hex");
   } catch {
     return null;
   }
@@ -46,6 +48,7 @@ let cached = {
 };
 let refreshPromise = null;
 let nextReconnectAt = 0;
+let nextIdentityRefreshAt = 0;
 let hasRefreshed = false;
 const traceBuffer = new Map();
 const TRACE_TTL_MS = 30000;
@@ -65,16 +68,6 @@ function diagnosticErrorCategory(error) {
 function traceIdFrom(request) {
   const value = String(request.headers["x-codex-trace-id"] || "");
   return /^[a-f0-9-]{36}$/.test(value) ? value : null;
-}
-
-function safeTraceFields(fields) {
-  return Object.fromEntries(Object.entries(fields || {}).flatMap(([key, value]) => {
-    if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
-      return [[key, value]];
-    }
-    const normalized = String(value || "");
-    return /^[a-zA-Z0-9_.:-]{1,80}$/.test(normalized) ? [[key, normalized]] : [];
-  }));
 }
 
 function startTrace(request, route, fields = {}) {
@@ -129,7 +122,7 @@ function traceSnapshot(traceId) {
   };
 }
 
-async function focusCodexDesktop(trace = null) {
+async function focusCodexDesktop(trace = null, { forceFocus = false } = {}) {
   const startedAt = performance.now();
   const path = process.platform === "win32" ? "win32-native" : "platform-adapter";
   trace?.record("focus.start", { platform: process.platform, path });
@@ -145,7 +138,13 @@ async function focusCodexDesktop(trace = null) {
         outcome: "succeeded"
       });
     }
-    const result = await focusCodex({ processId: identity?.processId ?? null });
+    const result = await focusCodex({
+      processId: identity?.processId ?? null,
+      forceFocus,
+      onDiagnostic: trace
+        ? (stage, fields) => trace.record("focus.stage", { stage, ...fields })
+        : null
+    });
     trace?.record("focus.native", {
       outcome: "succeeded",
       channel: identity?.channel || "unknown",
@@ -182,6 +181,19 @@ async function refresh(force = false) {
       const snapshot = await client.snapshot();
       cached = { connected: true, ...snapshot, error: null, updatedAt: Date.now() };
       nextReconnectAt = 0;
+      const identity = client.connectionIdentity;
+      if (
+        process.platform === "win32" &&
+        Date.now() >= nextIdentityRefreshAt &&
+        (!Number.isInteger(identity?.processId) || !identity?.channel)
+      ) {
+        try {
+          await client.refreshConnectionIdentity();
+          nextIdentityRefreshAt = Date.now() + 2000;
+        } catch {
+          nextIdentityRefreshAt = Date.now() + 2000;
+        }
+      }
     } catch (error) {
       cached = { ...cached, connected: false, error: error.message, updatedAt: Date.now() };
       nextReconnectAt = Date.now() + 2000;
@@ -194,6 +206,8 @@ async function refresh(force = false) {
     refreshPromise = null;
   }
 }
+
+import { readModelSettings } from "./model-request.mjs";
 
 function json(response, status, body) {
   response.writeHead(status, {
@@ -223,6 +237,9 @@ const server = createServer(async (request, response) => {
     });
   }
   if (request.method === "GET" && url.pathname === "/state") {
+    if (url.searchParams.get("refresh") === "1" || url.searchParams.get("force") === "1") {
+      await refresh(true);
+    }
     return json(response, 200, cached);
   }
   if (request.method === "POST" && url.pathname === "/diagnostics/trace") {
@@ -260,18 +277,20 @@ const server = createServer(async (request, response) => {
     try {
       const threadId = decodeThreadPathSegment(threadMatch[1]);
       const slot = Number(url.searchParams.get("slot") || 0);
+      const forceFocus = url.searchParams.get("forceFocus") === "1";
       if (!Number.isInteger(slot) || slot < 0 || slot > 5) {
         throw new Error("Invalid Codex Micro slot");
       }
-      trace = startTrace(request, "thread-click", { slot: slot + 1 });
+      trace = startTrace(request, "thread-click", { slot: slot + 1, forceFocus });
       const result = await navigateAndFocus(
         () => client.clickThread(threadId, slot, trace),
-        () => focusCodexDesktop(trace)
+        () => focusCodexDesktop(trace, { forceFocus })
       );
       trace?.record("server.response", {
         outcome: "succeeded",
         route: "thread-click",
-        focusOk: result.focusOk
+        focusOk: result.focusOk,
+        attentionRequested: result.attentionRequested
       });
       return json(response, 200, { ok: true, bridge: true, ...result });
     } catch (error) {
@@ -302,7 +321,10 @@ const server = createServer(async (request, response) => {
         }
         return json(response, 200, { ok: true });
       }
-      await client.dispatchNamedAction(action[1], action[2] === "down", trace);
+      const settings = action[1].startsWith("model-") && action[2] === "down"
+        ? await readModelSettings(request)
+        : undefined;
+      await client.dispatchNamedAction(action[1], action[2] === "down", trace, settings);
       trace?.record("server.response", { outcome: "succeeded", route: "action" });
       return json(response, 200, { ok: true, bridge: true });
     } catch (error) {
@@ -311,7 +333,7 @@ const server = createServer(async (request, response) => {
         route: "action",
         category: diagnosticErrorCategory(error)
       });
-      return json(response, 503, { ok: false, error: error.message });
+      return json(response, error.statusCode === 400 ? 400 : 503, { ok: false, error: error.message });
     } finally {
       trace?.finish();
     }

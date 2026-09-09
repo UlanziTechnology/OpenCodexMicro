@@ -1,6 +1,8 @@
 import { discoverDebugEndpoint, fetchJson } from "./platform.mjs";
 import WebSocket from "ws";
 import { localThreadKey } from "./thread-key.mjs";
+import { resolveModelSelection, modelSelectionMatches, REASONING_EFFORTS } from "./model-selection.mjs";
+import { modelPickerExpression } from "./model-picker.mjs";
 
 const USAGE_REFRESH_MS = Math.max(
   15000,
@@ -93,10 +95,10 @@ export function rendererActionExpression(action) {
   })()`;
 }
 
-export function modelPreset(action) {
+export function modelPreset(action, settings = undefined) {
   const preset = MODEL_PRESETS[action];
   if (!preset) throw new Error(`Unknown Codex model preset: ${action}`);
-  return preset;
+  return resolveModelSelection(preset, settings);
 }
 
 export function composerSteerExpression() {
@@ -356,6 +358,32 @@ function selectMainTarget(targets) {
   }) ?? pages.find((target) => !/avatar-overlay|composition-surface/i.test(target.url || ""));
 }
 
+function connectionIdentity(discovery) {
+  return Number.isInteger(discovery)
+    ? { port: discovery, processId: null, executable: null, channel: null }
+    : discovery;
+}
+
+function threadActiveExpression(threadKey) {
+  return `(() => {
+    const key = ${JSON.stringify(threadKey)};
+    const normalize = (value) => String(value ?? "").replace(/^local:/, "");
+    const sidebarItems = [...document.querySelectorAll("[data-app-action-sidebar-thread-id]")];
+    const target = sidebarItems.find((element) =>
+      normalize(element.getAttribute("data-app-action-sidebar-thread-id")) === normalize(key)
+    );
+    const active = sidebarItems.find((element) =>
+      element.getAttribute("data-app-action-sidebar-thread-active") === "true" ||
+      element.getAttribute("aria-current") === "page"
+    );
+    const current = document.querySelector("[data-above-composer-conversation-id]")
+      ?.getAttribute("data-above-composer-conversation-id")
+      ?? active?.getAttribute("data-app-action-sidebar-thread-id")
+      ?? null;
+    return normalize(current) === normalize(key) || Boolean(target && active && target === active);
+  })()`;
+}
+
 function traceErrorCategory(error) {
   const name = String(error?.name || "").toLowerCase();
   const message = String(error?.message || "").toLowerCase();
@@ -426,9 +454,7 @@ export class CodexCdpClient {
 
   async openConnection(generation) {
     const discovery = await this.discoverPort();
-    const identity = Number.isInteger(discovery)
-      ? { port: discovery, processId: null, executable: null, channel: null }
-      : discovery;
+    const identity = connectionIdentity(discovery);
     const port = Number(identity?.port);
     if (!Number.isInteger(port) || port <= 0 || port > 65535) {
       throw new Error("Codex debug endpoint identity was invalid");
@@ -502,8 +528,15 @@ export class CodexCdpClient {
   }
 
   async clickThreadKey(threadKey, slot, trace = null) {
-    // Use the same native HID path as Codex Micro. The DOM click introduced
-    // perceptible navigation scheduling; it is now only a non-blocking fallback.
+    if (await runTraceStage(
+      trace,
+      "task.verify-initial",
+      () => this.threadIsActive(threadKey),
+      { slot: slot + 1 }
+    )) return true;
+
+    let nativeError = null;
+    let pressed = false;
     try {
       await runTraceStage(
         trace,
@@ -511,44 +544,53 @@ export class CodexCdpClient {
         () => this.dispatchAgent(slot, threadKey, 1),
         { slot: slot + 1 }
       );
-      const finishBackground = trace?.defer?.();
-      trace?.record("task.background", { stage: "scheduled", background: true, slot: slot + 1 });
-      void (async () => {
-        await new Promise((resolve) => setTimeout(resolve, 35));
-        await runTraceStage(
-          trace,
-          "task.native-act0",
-          () => this.dispatchAgent(slot, threadKey, 0),
-          { background: true, slot: slot + 1 }
-        );
-        await runTraceStage(
-          trace,
-          "task.dom-activate",
-          () => this.activateThread(threadKey),
-          { background: true, slot: slot + 1 }
-        );
-      })().catch((error) => {
-        trace?.record("task.background", {
-          stage: "complete",
-          background: true,
-          outcome: "failed",
-          category: traceErrorCategory(error),
-          slot: slot + 1
-        });
-      }).finally(() => finishBackground?.());
+      pressed = true;
+      await new Promise((resolve) => setTimeout(resolve, 35));
     } catch (error) {
+      nativeError = error;
       trace?.record("task.fallback", {
         outcome: "started",
         category: traceErrorCategory(error),
         slot: slot + 1
       });
+    } finally {
+      if (pressed) {
+        try {
+          await runTraceStage(
+            trace,
+            "task.native-act0",
+            () => this.dispatchAgent(slot, threadKey, 0),
+            { slot: slot + 1 }
+          );
+        } catch (error) {
+          nativeError ??= error;
+          trace?.record("task.fallback", {
+            outcome: "started",
+            category: traceErrorCategory(error),
+            slot: slot + 1
+          });
+        }
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const nativeActivated = nativeError === null && await runTraceStage(
+      trace,
+      "task.verify-native",
+      () => this.threadIsActive(threadKey),
+      { slot: slot + 1 }
+    );
+    if (!nativeActivated) {
       await runTraceStage(
         trace,
-        "task.dom-activate-fallback",
+        "task.dom-activate",
         () => this.activateThread(threadKey),
         { slot: slot + 1 }
       );
     }
+
+    await this.waitForThreadActivation(threadKey, trace);
+    return true;
   }
 
   async dispatchAgent(slot, threadKey, act) {
@@ -565,21 +607,24 @@ export class CodexCdpClient {
     }, "codex-micro-hid-event");
   }
 
-  async dispatchNamedAction(action, pressed, trace = null) {
+  async dispatchNamedAction(action, pressed, trace = null, settings = undefined) {
     const key = MICRO_ACTION_KEYS[action];
     if (key) return this.dispatchAction(key, pressed ? 1 : 0);
     if (!RENDERER_ACTIONS.has(action)) {
       throw new Error(`Unsupported Codex bridge action: ${action}`);
     }
     if (!pressed) return true;
-    return this.dispatchRendererAction(action, trace);
+    return this.dispatchRendererAction(action, trace, settings);
   }
 
-  async dispatchRendererAction(action, trace = null) {
+  async dispatchRendererAction(action, trace = null, settings = undefined) {
     if (MODEL_PRESETS[action]) {
+      // Validate and snapshot before queueing so later settings edits cannot
+      // change an already accepted key press.
+      const preset = modelPreset(action, settings);
       const operation = this.modelActionQueue.then(async () => {
         await runTraceStage(trace, "model.connect", () => this.connect(), { action });
-        return this.dispatchModelPreset(action, trace);
+        return this.dispatchModelPreset(action, trace, preset);
       });
       this.modelActionQueue = operation.catch(() => {});
       await operation;
@@ -591,9 +636,8 @@ export class CodexCdpClient {
     return true;
   }
 
-  async dispatchModelPreset(action, trace = null) {
-    const preset = MODEL_PRESETS[action];
-    if (!preset) throw new Error(`Unknown Codex model preset: ${action}`);
+  async dispatchModelPreset(action, trace = null, settings = undefined) {
+    const preset = modelPreset(action, settings);
     const presetStartedAt = performance.now();
     trace?.record("model.preset", {
       action,
@@ -601,8 +645,39 @@ export class CodexCdpClient {
       outcome: "started",
       targetEffort: preset.effort
     });
-    const effortOrder = ["low", "medium", "high", "xhigh", "max"];
-    const targetEffortIndex = effortOrder.indexOf(preset.effort);
+    const effortOrder = REASONING_EFFORTS;
+    const isSingleEffort = preset.model === "gemini-3.8-flash-high" || /gemini/i.test(preset.model);
+    let modernPicker = false;
+    let pendingModelSelection = false;
+    const pickerState = () => this.evaluate(modelPickerExpression(preset));
+    const selectedExpression = `(() => {
+      const picker = ${modelPickerExpression(preset)};
+      const triggers = [...document.querySelectorAll("[data-codex-intelligence-trigger]")].filter(element => {
+        const rect = element.getBoundingClientRect();
+        return element.offsetParent !== null || (rect.width > 0 && rect.height > 0);
+      });
+      if (triggers.length !== 1) return false;
+      const modelMatched = (${modelSelectionMatches.toString()})(picker.slider?.current?.model ?? triggers[0].textContent, ${JSON.stringify(preset)});
+      const triggerEffort = triggers[0].getAttribute("data-selected-reasoning-effort");
+      const effortMatched = triggerEffort === ${JSON.stringify(preset.effort)} || (!triggerEffort && ${Boolean(isSingleEffort)});
+      return modelMatched && effortMatched;
+    })()`;
+    const chooseModernModel = async () => {
+      const state = await pickerState();
+      if (state.modelCount !== 1) throw new Error("Expected one available model option in sequential picker");
+      await this.clickRendererCandidates(
+        modelPickerExpression(preset, "model"), "requested model option", trace, "model.select-model-option"
+      );
+      pendingModelSelection = true;
+      // New pickers may commit model + effort together, only after the second
+      // click. Do not wait for the trigger label before that second step.
+      await this.waitForRenderer(
+        `(() => { const picker = ${modelPickerExpression(preset)};
+          return picker.sliderCount > 0 || picker.availableEffortCount > 0 || (${selectedExpression});
+        })()`,
+        "Codex model reasoning choices", trace, "model.wait-reasoning-view"
+      );
+    };
     const readState = async () => {
       const state = await runTraceStage(trace, "model.read-state", () => this.evaluate(`(() => {
         const visible = (element) => {
@@ -618,10 +693,12 @@ export class CodexCdpClient {
         };
       })()`));
       if (state?.error) throw new Error(state.error);
+      const picker = await pickerState();
+      if (picker?.slider?.current) state.text = picker.slider.current.model;
       trace?.record("model.state", {
         currentEffort: state.effort || "unknown",
         effortMatched: state.effort === preset.effort,
-        modelMatched: state.text.includes(preset.displayName)
+        modelMatched: modelSelectionMatches(state.text, preset)
       });
       return state;
     };
@@ -643,6 +720,7 @@ export class CodexCdpClient {
         );
       }
       await this.waitForRenderer(`(() => {
+        if ((${modelPickerExpression(preset)}).open) return true;
         const visible = (element) => {
           const rect = element?.getBoundingClientRect?.();
           return element && (element.offsetParent !== null || (rect?.width > 0 && rect?.height > 0));
@@ -667,11 +745,20 @@ export class CodexCdpClient {
           rowCount: menus[0]?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0
         };
       })()`));
+      const direct = await pickerState();
+      if (direct?.modern && (direct.modelCount > 0 || modelSelectionMatches((await readState()).text, preset))) {
+        modernPicker = true;
+        trace?.record("model.menu-shape", { outcome: "sequential", rowCount: direct.modelCount });
+        return;
+      }
       trace?.record("model.menu-shape", {
         rowCount: toggleState.rowCount,
         outcome: toggleState.expanded ? "expanded" : "collapsed"
       });
-      if (toggleState.count === 0 && toggleState.rowCount === 2) return;
+      if (toggleState.count === 0) {
+        if (toggleState.rowCount < 1) throw new Error("Codex model picker has no submenu rows");
+        return;
+      }
       if (toggleState.count !== 1) {
         throw new Error(`Expected one model picker view toggle, found ${toggleState.count}`);
       }
@@ -688,12 +775,16 @@ export class CodexCdpClient {
           "model.open-picker-view"
         );
         await this.waitForRenderer(`(() => {
+          if ((${modelPickerExpression(preset)}).modern) return true;
           const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
             (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
           );
-          return menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length === 2;
+          return (menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0) > 0;
         })()`, "expanded Codex model picker", trace, "model.wait-picker-view");
       }
+      const expandedPicker = await pickerState();
+      modernPicker = Boolean(expandedPicker?.modern);
+      if (modernPicker) trace?.record("model.menu-shape", { outcome: "sequential", rowCount: expandedPicker.modelCount });
     };
     const rowExpression = (rowIndex) => `(() => {
       const menu = [...document.querySelectorAll('[role="menu"][data-state="open"]')].find(
@@ -707,7 +798,7 @@ export class CodexCdpClient {
         (candidate) => candidate.querySelector("[data-model-picker-view-toggle]") || candidate.querySelector("[data-reasoning-slider]")
       );
       const rows = menu ? [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')] : [];
-      if (rows.length !== 2 || !rows[${rowIndex}]) return null;
+      if (!rows[${rowIndex}]) return null;
       const submenu = document.getElementById(rows[${rowIndex}].getAttribute("aria-controls"));
       if (!submenu || submenu.getAttribute("data-state") !== "open") return null;
       return [...submenu.querySelectorAll('[role="menuitem"]')].map((item) => ({
@@ -718,7 +809,7 @@ export class CodexCdpClient {
     const identifyRows = async () => {
       if (this.modelPickerLayout?.connectionGeneration === this.connectionGeneration) {
         trace?.record("model.rows-identified", {
-          rowCount: 2,
+          rowCount: this.modelPickerLayout.rowCount,
           source: "cache",
           outcome: "succeeded"
         });
@@ -731,8 +822,13 @@ export class CodexCdpClient {
         );
         return menu?.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]').length ?? 0;
       })()`));
-      if (rowCount !== 2) throw new Error(`Expected two Codex model picker rows, found ${rowCount}`);
-      let modelRowIndex = -1;
+      if (rowCount < 1) throw new Error("Codex model picker has no submenu rows");
+      const current = await readState();
+      if (!effortOrder.includes(current.effort)) {
+        throw new Error(`Unsupported Codex reasoning effort: ${current.effort}`);
+      }
+      const modelRowIndexes = [];
+      const effortRowIndexes = [];
       for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
         await openMain();
         await this.clickRendererCandidates(
@@ -743,15 +839,37 @@ export class CodexCdpClient {
         );
         const items = await submenuInfo(rowIndex);
         if (items.filter((item) => item.text === preset.displayName).length === 1) {
-          modelRowIndex = rowIndex;
+          modelRowIndexes.push(rowIndex);
+        }
+        const effortTexts = items.map((item) => item.text);
+        const checkedItems = items.filter((item) => item.checked);
+        if (
+          items.length > 0
+          && effortTexts.every((text) => effortOrder.includes(text))
+          && new Set(effortTexts).size === items.length
+          && checkedItems.length === 1
+          && checkedItems[0].text === current.effort
+        ) {
+          effortRowIndexes.push(rowIndex);
         }
         await this.pressRendererEscape(trace, `model.close-row-${rowIndex + 1}`);
       }
-      if (modelRowIndex < 0) throw new Error(`Codex model ${preset.displayName} is not available`);
+      if (modelRowIndexes.length !== 1) {
+        throw new Error(`Expected one Codex model row for ${preset.displayName}, found ${modelRowIndexes.length}`);
+      }
+      if (effortRowIndexes.length !== 1) {
+        throw new Error(`Expected one Codex reasoning effort row, found ${effortRowIndexes.length}`);
+      }
+      const modelRowIndex = modelRowIndexes[0];
+      const effortRowIndex = effortRowIndexes[0];
+      if (modelRowIndex === effortRowIndex) {
+        throw new Error("Codex model and reasoning effort rows are ambiguous");
+      }
       const result = {
         connectionGeneration: this.connectionGeneration,
+        rowCount,
         modelRowIndex,
-        effortRowIndex: modelRowIndex === 0 ? 1 : 0
+        effortRowIndex
       };
       this.modelPickerLayout = result;
       trace?.record("model.rows-identified", {
@@ -761,13 +879,62 @@ export class CodexCdpClient {
       });
       return result;
     };
+    const selectSliderEffort = async () => {
+      for (let step = 0; step < 20; step += 1) {
+        const state = await pickerState();
+        const slider = state?.slider;
+        trace?.record("model.menu-shape", {
+          stage: "model.read-slider", rowCount: slider?.options.length ?? 0,
+          currentEffort: slider?.current.effort || "unknown", targetEffort: preset.effort,
+          outcome: slider ? "slider" : "unsupported"
+        });
+        if (state?.sliderCount !== 1 || !slider || slider.disabled) {
+          throw new Error("Reasoning slider metadata unavailable, ambiguous or disabled");
+        }
+        if (slider.targetIndex < 0 || !modelSelectionMatches(slider.current.model, preset)) {
+          throw new Error("Requested reasoning effort is unavailable for the selected model");
+        }
+        const from = Math.min(slider.index, slider.targetIndex);
+        const to = Math.max(slider.index, slider.targetIndex);
+        if (slider.options.slice(from, to + 1).some(option => option.locked || option.model !== slider.current.model)) {
+          throw new Error("Reasoning slider path contains a locked option or another model");
+        }
+        if (slider.index === slider.targetIndex) {
+          await this.waitForRenderer(selectedExpression, "requested model and reasoning effort", trace, "model.wait-effort-selected");
+          return;
+        }
+        const key = slider.targetIndex > slider.index ? "ArrowRight" : "ArrowLeft";
+        const next = slider.options[slider.index + (key === "ArrowRight" ? 1 : -1)];
+        await runTraceStage(trace, "model.slider-step", () => this.evaluate(modelPickerExpression(preset, {
+          type: "slider-step", key, fromId: slider.current.id, toId: next.id,
+          ids: slider.options.map(option => option.id)
+        })), { targetEffort: next.effort });
+        // A timed-out input is never replayed. Require the next real selected
+        // id AND the trigger's effort before issuing a second arrow key.
+        await this.waitForRenderer(`(() => {
+          const picker = ${modelPickerExpression(preset)};
+          return picker.slider?.current.id === ${JSON.stringify(next.id)}
+            && picker.triggerEffort === ${JSON.stringify(next.effort)};
+        })()`, "reasoning slider step", trace, "model.wait-slider-step");
+      }
+      throw new Error("Reasoning slider exceeded bounded step count");
+    };
     const selectEffort = async () => {
       const current = await readState();
-      if (current.effort === preset.effort) {
+      const currentEffortMatched = current.effort === preset.effort || (!current.effort && isSingleEffort);
+      if (currentEffortMatched && modelSelectionMatches(current.text, preset)) {
         trace?.record("model.effort", {
-          currentEffort: current.effort,
+          currentEffort: current.effort || preset.effort,
           targetEffort: preset.effort,
           outcome: "skipped"
+        });
+        return;
+      }
+      if (isSingleEffort) {
+        trace?.record("model.effort", {
+          currentEffort: preset.effort,
+          targetEffort: preset.effort,
+          outcome: "single-effort"
         });
         return;
       }
@@ -776,11 +943,31 @@ export class CodexCdpClient {
         targetEffort: preset.effort,
         outcome: "changing"
       });
-      const currentEffortIndex = effortOrder.indexOf(current.effort);
-      if (currentEffortIndex < 0 || targetEffortIndex < 0) {
+      if (!effortOrder.includes(preset.effort)) {
         throw new Error(`Unsupported Codex reasoning effort transition: ${current.effort} -> ${preset.effort}`);
       }
-      await openMain();
+      if (!pendingModelSelection) await openMain();
+      if (modernPicker) {
+        let state = await pickerState();
+        if (!state.sliderCount && state.availableEffortCount === 0 && state.modelCount > 0) {
+          await chooseModernModel();
+          state = await pickerState();
+        }
+        if (state.sliderCount > 0) {
+          await selectSliderEffort();
+          trace?.record("model.effort", { targetEffort: preset.effort, outcome: "succeeded" });
+          return;
+        }
+        if (state.effortCount !== 1) {
+          throw new Error("Requested reasoning effort is unavailable or ambiguous for this model");
+        }
+        await this.clickRendererCandidates(
+          modelPickerExpression(preset, "effort"), "requested reasoning effort", trace, "model.select-effort-option"
+        );
+        await this.waitForRenderer(selectedExpression, "requested model and reasoning effort", trace, "model.wait-effort-selected");
+        trace?.record("model.effort", { targetEffort: preset.effort, outcome: "succeeded" });
+        return;
+      }
       const { effortRowIndex } = await identifyRows();
       await openMain();
       await this.clickRendererCandidates(
@@ -790,8 +977,16 @@ export class CodexCdpClient {
         "model.open-effort-row"
       );
       const items = await submenuInfo(effortRowIndex);
-      const checkedIndexes = items.flatMap((item, index) => item.checked ? [index] : []);
-      if (items.length !== effortOrder.length || checkedIndexes.length !== 1 || checkedIndexes[0] !== currentEffortIndex) {
+      const effortTexts = items.map((item) => item.text);
+      const checkedItems = items.filter((item) => item.checked);
+      if (
+        items.length === 0
+        || !effortTexts.every((text) => effortOrder.includes(text))
+        || new Set(effortTexts).size !== items.length
+        || !effortTexts.includes(preset.effort)
+        || checkedItems.length !== 1
+        || checkedItems[0].text !== current.effort
+      ) {
         throw new Error("Codex reasoning effort order or selected state changed");
       }
       await this.clickRendererCandidates(`(() => {
@@ -802,8 +997,11 @@ export class CodexCdpClient {
         const submenu = rows[${effortRowIndex}]
           ? document.getElementById(rows[${effortRowIndex}].getAttribute("aria-controls"))
           : null;
-        const items = submenu ? [...submenu.querySelectorAll('[role="menuitem"]')] : [];
-        return items[${targetEffortIndex}] ? [items[${targetEffortIndex}]] : [];
+        return submenu
+          ? [...submenu.querySelectorAll('[role="menuitem"]')].filter(
+              (item) => String(item.textContent ?? "").replace(/\\s+/g, " ").trim() === ${JSON.stringify(preset.effort)}
+            )
+          : [];
       })()`, `reasoning effort ${preset.effort}`, trace, "model.select-effort-option");
       await this.waitForRenderer(
         `document.querySelector("[data-codex-intelligence-trigger]")?.getAttribute("data-selected-reasoning-effort") === ${JSON.stringify(preset.effort)}`,
@@ -817,12 +1015,18 @@ export class CodexCdpClient {
       });
     };
     const selectModel = async () => {
-      if ((await readState()).text.includes(preset.displayName)) {
+      if (modelSelectionMatches((await readState()).text, preset)) {
         trace?.record("model.model", { modelMatched: true, outcome: "skipped" });
         return;
       }
       trace?.record("model.model", { modelMatched: false, outcome: "changing" });
       await openMain();
+      if (modernPicker) {
+        if (modelSelectionMatches((await readState()).text, preset)) return;
+        await chooseModernModel();
+        trace?.record("model.model", { outcome: "selected", modelMatched: modelSelectionMatches((await readState()).text, preset) });
+        return;
+      }
       const { modelRowIndex } = await identifyRows();
       await openMain();
       await this.clickRendererCandidates(
@@ -862,7 +1066,8 @@ export class CodexCdpClient {
       await runTraceStage(trace, "model.select-model", selectModel, { action });
       await runTraceStage(trace, "model.select-effort", selectEffort, { targetEffort: preset.effort });
       const selected = await runTraceStage(trace, "model.validate", readState, { action });
-      if (!selected.text.includes(preset.displayName) || selected.effort !== preset.effort) {
+      const effortMatched = selected.effort === preset.effort || (!selected.effort && isSingleEffort);
+      if (!modelSelectionMatches(selected.text, preset) || !effortMatched) {
         throw new Error(`Codex did not select ${preset.displayName} / ${preset.effort}`);
       }
       await runTraceStage(trace, "model.close-menus", closeMenus, { action });
@@ -887,6 +1092,26 @@ export class CodexCdpClient {
       try { await runTraceStage(trace, "model.cleanup-menus", closeMenus, { action }); } catch {}
       throw error;
     }
+  }
+
+  async refreshConnectionIdentity() {
+    const identity = connectionIdentity(await this.discoverPort());
+    const port = Number(identity?.port);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      throw new Error("Codex debug endpoint identity was invalid");
+    }
+    if (this.socket?.readyState === WebSocket.OPEN && this.connectionIdentity?.port !== port) {
+      this.disconnect();
+      await this.connect();
+      return this.connectionIdentity;
+    }
+    this.connectionIdentity = {
+      port,
+      processId: Number.isInteger(identity?.processId) ? identity.processId : null,
+      executable: typeof identity?.executable === "string" ? identity.executable : null,
+      channel: ["stable", "beta"].includes(identity?.channel) ? identity.channel : null
+    };
+    return this.connectionIdentity;
   }
 
   async dispatchComposerSteer() {
@@ -965,6 +1190,19 @@ export class CodexCdpClient {
       (item.querySelector("button,a,[role=button],[role=link]") ?? item).click();
       return true;
     })()`);
+  }
+
+  threadIsActive(threadKey) {
+    return this.evaluate(threadActiveExpression(threadKey));
+  }
+
+  waitForThreadActivation(threadKey, trace = null) {
+    return this.waitForRenderer(
+      threadActiveExpression(threadKey),
+      "target Codex task activation",
+      trace,
+      "task.verify-final"
+    );
   }
 
   sendCommand(method, params, returnValue = false) {

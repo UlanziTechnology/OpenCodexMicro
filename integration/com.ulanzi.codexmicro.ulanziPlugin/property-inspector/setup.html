@@ -26,6 +26,14 @@
     button { min-height: 33px; border: 1px solid rgba(255,255,255,.14); border-radius: 6px; color: #f3f3f3; background: rgba(255,255,255,.08); cursor: pointer; }
     button.primary { background: #2867ad; } button.danger { grid-column: 1 / -1; color: #ef9a9a; }
     button:disabled { opacity: .45; cursor: default; }
+    .setting { margin-top: 10px; padding: 9px 10px; }
+    .setting label { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: start; cursor: pointer; }
+    .setting input { margin-top: 3px; }
+    .setting strong, .setting small { display: block; }
+    .setting small { margin-top: 3px; color: #aeb3ba; line-height: 1.35; }
+    .model-setting label { display: block; margin: 8px 0 4px; }
+    .model-setting input, .model-setting select { width: 100%; padding: 6px; color: inherit; background: #25272b; border: 1px solid #60656d; border-radius: 4px; }
+    .model-setting :disabled { opacity: .45; }
     details { margin-top: 10px; } summary { padding: 9px 10px; cursor: pointer; font-weight: 600; }
     .info-body { padding: 0 10px 10px; }
     .info-body code { display: block; margin: 7px 0; padding: 7px 8px; border-radius: 5px; background: rgba(0,0,0,.28); user-select: text; }
@@ -36,6 +44,38 @@
   <main>
     <h1 id="title"></h1>
     <p id="intro" class="intro"></p>
+    <section id="modelSettings" class="panel setting model-setting" hidden>
+      <strong id="modelSettingsTitle"></strong>
+      <label id="presetLabel" for="presetOption"></label>
+      <select id="presetOption" disabled>
+        <option id="presetCustom" value="">Default / Custom</option>
+        <option value="gpt-6-astra:low">gpt-6-astra (low)</option>
+        <option value="gpt-6-astra:medium">gpt-6-astra (medium)</option>
+        <option value="gemini-3.8-flash-high:high">gemini-3.8-flash-high (high)</option>
+        <option value="gpt-5.6-sol:high">gpt-5.6-sol (high)</option>
+      </select>
+      <small id="presetHelp"></small>
+      <label id="modelLabel" for="model"></label>
+      <input id="model" type="text" list="modelSuggestions" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="modelHelp modelError" disabled>
+      <datalist id="modelSuggestions">
+        <option value="gpt-6-astra"></option><option value="GPT-6 Astra"></option>
+        <option value="gemini-3.8-flash-high"></option>
+        <option value="gpt-5.6-sol"></option><option value="5.6 Sol"></option>
+        <option value="5.6 Luna"></option><option value="gpt-5.6-luna"></option>
+      </datalist>
+      <small id="modelHelp"></small>
+      <label id="effortLabel" for="effort"></label>
+      <select id="effort" aria-describedby="effortHelp modelError" disabled>
+        <option id="effortDefault" value=""></option>
+        <option value="none">none</option><option value="minimal">minimal</option>
+        <option value="low">low</option><option value="medium">medium</option>
+        <option value="high">high</option><option value="xhigh">xhigh</option>
+        <option value="max">max</option><option value="ultra">ultra</option>
+      </select>
+      <small id="effortHelp"></small>
+      <small id="modelDefaults"></small>
+      <div id="modelError" class="message error" role="status" aria-live="polite"></div>
+    </section>
     <section class="panel">
       <div class="row"><span id="appLabel"></span><span id="appValue" class="value"><i class="dot"></i><span></span></span></div>
       <div class="row"><span id="serviceLabel"></span><span id="serviceValue" class="value"><i class="dot"></i><span></span></span></div>
@@ -49,6 +89,12 @@
       <button id="guide"></button>
       <button id="uninstall" class="danger"></button>
     </div>
+    <section class="panel setting">
+      <label>
+        <input id="forceFocus" type="checkbox">
+        <span><strong id="forceFocusLabel"></strong><small id="forceFocusDescription"></small></span>
+      </label>
+    </section>
     <details>
       <summary id="bridgeAppInfoTitle"></summary>
       <div class="info-body">
@@ -70,6 +116,15 @@
   </main>
   <script>
     const t = {
+      modelSettingsTitle:"Model shortcut (this key)",
+      presetLabel:"Default options", presetHelp:"Select a default model preset or enter custom settings below.",
+      presetCustom:"Default / Custom",
+      modelLabel:"Model", effortLabel:"Reasoning effort",
+      modelHelp:"Enter the exact model name shown in the Codex menu, or a known official ID alias. Custom display names are supported. Leave blank for this key's default. Changes save automatically.",
+      effortHelp:"Choose only an effort actually available for this model in Codex. Unsupported choices fail without fallback. Blank uses this key's default effort.",
+      effortDefault:"Default", modelDefaults:"Defaults: {model} ({id}) / {effort}",
+      modelInvalid:"Use at most 100 characters: letters, numbers, spaces or . _ + ( ) / : -. Control characters and code/HTML punctuation are not allowed.",
+      effortInvalid:"Choose a listed reasoning effort.", modelLoading:"Restoring this key's settings…",
       title:"Codex Bridge Setup", intro:"Install, launch, and check the local Codex connection.",
       app:"Codex Bridge", service:"Bridge service", cdp:"CDP connection", checking:"Checking…",
       installed:"Installed", update:"Update available", notInstalled:"Not installed", online:"Online",
@@ -80,36 +135,96 @@
       serviceOffline:"The Bridge service is offline. Use Install / Repair.", installDone:"Codex Bridge was installed.",
       launchDone:"Launch requested. Waiting for CDP…", uninstallDone:"Codex Bridge was uninstalled.",
       failed:"Operation failed", unsupported:"Automatic installation is available on Windows and macOS only.",
-      confirm:"Install or repair Codex Bridge in your user data directory?",
-      uninstallConfirm:"Uninstall Codex Bridge and its user-level service? Codex Desktop and the Ulanzi plugin are kept.",
+      confirm:"Install or repair Codex Bridge? Windows requests administrator approval only when protected Bridge code is installed or updated; normal starts stay silent.",
+      uninstallConfirm:"Uninstall Codex Bridge and its scheduled task? Windows will request administrator approval. Codex Desktop and the Ulanzi plugin are kept.",
       bridgeAppInfoTitle:"How does Codex Bridge start Codex?",
       bridgeAppDescription:"Windows dynamically discovers Codex Stable or Beta. macOS uses the local wrapper. Both launch the official executable with loopback-only CDP arguments.",
       bridgeAppSafety:"The launcher does not modify accounts, projects, or user files. Bridge write actions require a local capability token.",
       backgroundTitle:"Background activity and Node.js",
-      launchAgentDescription:"Windows uses a plugin-supervised user process; macOS uses a user LaunchAgent. Neither installs an administrator service.",
+      launchAgentDescription:"Windows uses a current-user, on-demand highest-privilege task; normal starts are silent. macOS uses a user LaunchAgent.",
       nodeSelectionStrategy:"Install / Repair selects Node.js 20+ from PATH, then uses Ulanzi Studio Node as a fallback.",
-      ulanziNodeSignatureNotice:"Bridge and CDP listen only on loopback addresses.",
+      ulanziNodeSignatureNotice:"Windows runs only hash-verified protected Bridge code. The task never stores the local capability token.",
       currentNode:"Current runtime: {runtime} {version}", systemNode:"System Node.js",
-      ulanziNode:"Ulanzi Studio Node", unknownNode:"Not installed or not recorded", version:"Installed {installed} · Bundled {bundled}"
+      ulanziNode:"Ulanzi Studio Node", unknownNode:"Not installed or not recorded", version:"Installed {installed} · Bundled {bundled}",
+      forceFocus:"Force focus (Windows)",
+      forceFocusDescription:"Windows access-denied focus failures already receive one automatic protected Alt fallback. Enable this to use the same fallback for other focus denials. No idle hooks, polling, or helper process is added."
     };
     const query = new URLSearchParams(location.search);
     const rawLanguage = query.get("language") || "en-US";
-    const locale = rawLanguage.startsWith("zh-HK") || rawLanguage.startsWith("zh-TW") ? "zh_HK" : rawLanguage.startsWith("zh") ? "zh_CN" : rawLanguage.split(/[-_]/)[0];
+    const locale = /^zh[-_](HK|TW)/i.test(rawLanguage) ? "zh_HK" : rawLanguage.startsWith("zh") ? "zh_CN" : rawLanguage.split(/[-_]/)[0];
     const resource = { en:"en", zh_CN:"zh_CN", zh_HK:"zh_HK", ja:"ja_JP", de:"de_DE", ko:"ko_KR", pt:"pt_PT", es:"es_ES" }[locale] || "en";
     const connection = { address:query.get("address") || "127.0.0.1", port:query.get("port") || "3906", uuid:query.get("uuid") || "com.ulanzi.ulanzistudio.codexmicro.task1", actionid:query.get("actionid") || "", key:query.get("key") || "" };
     let socket; let busy = false; let pollTimer;
+    const modelPresets = {
+      "com.ulanzi.ulanzistudio.codexmicro.model-sol-high": { model:"gpt-5.6-sol", label:"5.6 Sol", effort:"high" },
+      "com.ulanzi.ulanzistudio.codexmicro.model-luna-max": { model:"gpt-5.6-luna", label:"5.6 Luna", effort:"max" },
+      "com.ulanzi.ulanzistudio.codexmicro.model-sol-medium": { model:"gpt-5.6-sol", label:"5.6 Sol", effort:"medium" }
+    };
+    const modelPreset = modelPresets[connection.uuid];
+    const efforts = ["", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+    const defaultModelPresets = [
+      { id:"gpt-6-astra:low", model:"gpt-6-astra", effort:"low" },
+      { id:"gpt-6-astra:medium", model:"gpt-6-astra", effort:"medium" },
+      { id:"gemini-3.8-flash-high:high", model:"gemini-3.8-flash-high", effort:"high" },
+      { id:"gpt-5.6-sol:high", model:"gpt-5.6-sol", effort:"high" }
+    ];
+    let actionSettings = {}; let settingsReady = false;
+
+    function isSingleEffortModel(modelName) {
+      const name = String(modelName || "").trim().toLowerCase();
+      return name === "gemini-3.8-flash-high" || name.includes("gemini") || name.includes("flash-high");
+    }
+    function updateEffortState() {
+      const model = document.getElementById("model");
+      const effort = document.getElementById("effort");
+      if (!model || !effort) return;
+      if (isSingleEffortModel(model.value)) {
+        effort.value = "high";
+        effort.disabled = true;
+      } else if (settingsReady) {
+        effort.disabled = false;
+      }
+    }
+    function syncPresetOption(m, eff) {
+      const preset = document.getElementById("presetOption");
+      if (!preset) return;
+      const modelVal = String(m ?? "").trim().toLowerCase();
+      const effortVal = String(eff ?? "").trim().toLowerCase();
+      const match = defaultModelPresets.find(p => {
+        const pModel = p.model.toLowerCase();
+        const pAlias = pModel.replace(/^gpt[- ]/, "").replace(/[- ]/g, "");
+        const normalized = modelVal.replace(/^gpt[- ]/, "").replace(/[- ]/g, "");
+        const matchesModel = modelVal === pModel || normalized === pAlias;
+        return matchesModel && effortVal === p.effort;
+      });
+      preset.value = match ? match.id : "";
+    }
 
     async function loadLocalizedResources() {
       try {
         const localized = (await (await fetch(`../${resource}.json`)).json()).Localization || {};
-        const fields = { BridgeSetup:"title", BridgeSetupDescription:"intro", BridgeApp:"app", BridgeService:"service", CDPConnection:"cdp", InstallRepair:"install", LaunchBridge:"launch", UninstallBridge:"uninstall", UninstallingBridge:"uninstalling", UninstallBridgeDone:"uninstallDone", UninstallBridgeConfirm:"uninstallConfirm", BridgeAppInfoTitle:"bridgeAppInfoTitle", BridgeAppDescription:"bridgeAppDescription", BridgeAppSafety:"bridgeAppSafety", BackgroundActivityTitle:"backgroundTitle", LaunchAgentDescription:"launchAgentDescription", NodeSelectionStrategy:"nodeSelectionStrategy", UlanziNodeSignatureNotice:"ulanziNodeSignatureNotice", CurrentNodeRuntime:"currentNode", SystemNode:"systemNode", UlanziNode:"ulanziNode", UnknownNode:"unknownNode", CheckAgain:"refresh", InstallationGuide:"guide" };
+        const fields = { BridgeSetup:"title", BridgeSetupDescription:"intro", BridgeApp:"app", BridgeService:"service", CDPConnection:"cdp", InstallRepair:"install", LaunchBridge:"launch", UninstallBridge:"uninstall", UninstallingBridge:"uninstalling", UninstallBridgeDone:"uninstallDone", UninstallBridgeConfirm:"uninstallConfirm", BridgeAppInfoTitle:"bridgeAppInfoTitle", BridgeAppDescription:"bridgeAppDescription", BridgeAppSafety:"bridgeAppSafety", BackgroundActivityTitle:"backgroundTitle", LaunchAgentDescription:"launchAgentDescription", NodeSelectionStrategy:"nodeSelectionStrategy", UlanziNodeSignatureNotice:"ulanziNodeSignatureNotice", CurrentNodeRuntime:"currentNode", SystemNode:"systemNode", UlanziNode:"ulanziNode", UnknownNode:"unknownNode", CheckAgain:"refresh", InstallationGuide:"guide", ForceFocus:"forceFocus", ForceFocusDescription:"forceFocusDescription" };
         for (const [source, target] of Object.entries(fields)) if (localized[source]) t[target] = localized[source];
+        for (const key of ["modelSettingsTitle", "modelLabel", "effortLabel", "modelHelp", "effortHelp", "effortDefault", "modelDefaults", "modelInvalid", "effortInvalid", "modelLoading", "presetLabel", "presetHelp", "presetCustom"]) {
+          const value = localized[key[0].toUpperCase() + key.slice(1)];
+          if (typeof value === "string" && value) t[key] = value;
+        }
       } catch {}
     }
     function text(id, value) { document.getElementById(id).textContent = value; }
     function format(template, values) { return template.replace(/\{(\w+)\}/g, (_, key) => values[key] || "—"); }
     function setValue(id, value, level = "") { const element = document.getElementById(id); element.className = `value ${level}`; element.querySelector("span").textContent = value; }
     function send(action) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ cmd:"sendToPlugin", uuid:connection.uuid, actionid:connection.actionid, key:connection.key, payload:{ type:"bridgeSetup", action } })); }
+    function sendGlobalSettings(cmd, settings) {
+      if (socket?.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify({
+        cmd,
+        uuid:connection.uuid,
+        actionid:connection.actionid,
+        key:connection.key,
+        ...(settings ? { settings } : {})
+      }));
+    }
     function render(status, payload = {}) {
       busy = Boolean(payload.busy);
       setValue("appValue", status.installed ? (status.needsUpdate ? t.update : t.installed) : t.notInstalled, status.installed ? (status.needsUpdate ? "warn" : "good") : "bad");
@@ -131,19 +246,116 @@
       const runtime = status.nodeSource === "system" ? t.systemNode : status.nodeSource === "ulanzi" ? t.ulanziNode : t.unknownNode;
       text("currentNodeRuntime", format(t.currentNode, { runtime, version:status.nodeVersion }));
     }
+    function lockModelSettings() {
+      settingsReady = false;
+      document.getElementById("model").disabled = true;
+      document.getElementById("effort").disabled = true;
+      const preset = document.getElementById("presetOption");
+      if (preset) preset.disabled = true;
+      if (modelPreset) text("modelError", t.modelLoading);
+    }
+    function validModel(value) {
+      return typeof value === "string" && value.length <= 100 && /^[\p{L}\p{N}\p{M} ._+()/:\-]*$/u.test(value);
+    }
+    function validateModelSettings() {
+      const model = document.getElementById("model");
+      const effort = document.getElementById("effort");
+      const modelError = validModel(model.value) ? "" : t.modelInvalid;
+      const effortError = efforts.includes(effort.value) ? "" : t.effortInvalid;
+      model.setCustomValidity(modelError); effort.setCustomValidity(effortError);
+      text("modelError", modelError || effortError);
+      return !modelError && !effortError;
+    }
+    function receiveModelSettings(message) {
+      if (!modelPreset || socket?.readyState !== WebSocket.OPEN) return;
+      // Studio may omit context fields on a PI-scoped reply. Reject any supplied mismatch.
+      if (["uuid", "actionid", "key"].some(key => message[key] != null && String(message[key]) !== connection[key])) return;
+      const settings = message.cmd === "didReceiveSettings" ? message.settings : message.param;
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) return;
+      actionSettings = message.cmd === "didReceiveSettings" ? { ...settings } : { ...actionSettings, ...settings };
+      const model = document.getElementById("model"); const effort = document.getElementById("effort");
+      model.value = typeof actionSettings.model === "string" ? actionSettings.model : "";
+      effort.value = typeof actionSettings.effort === "string" ? actionSettings.effort : "";
+      // An unknown select value becomes "" in the DOM: mark it invalid, never silently default it.
+      const invalidEffort = actionSettings.effort != null && !efforts.includes(actionSettings.effort);
+      const invalidModel = actionSettings.model != null && !validModel(actionSettings.model);
+      settingsReady = true; model.disabled = false; effort.disabled = false;
+      const preset = document.getElementById("presetOption");
+      if (preset) preset.disabled = false;
+      validateModelSettings();
+      syncPresetOption(model.value || modelPreset.model, effort.value || modelPreset.effort);
+      updateEffortState();
+      if (invalidModel || invalidEffort) {
+        model.setCustomValidity(invalidModel ? t.modelInvalid : "");
+        effort.setCustomValidity(invalidEffort ? t.effortInvalid : "");
+        text("modelError", invalidModel ? t.modelInvalid : t.effortInvalid);
+      }
+    }
+    function saveModelSetting(event) {
+      if (!modelPreset || !settingsReady || socket?.readyState !== WebSocket.OPEN || event.isComposing) return;
+      const model = document.getElementById("model"); const effort = document.getElementById("effort");
+      // Validate both stored fields too, so editing one cannot erase an invalid restored other field.
+      const candidate = { ...actionSettings, [event.target.id]:event.target.value };
+      if (isSingleEffortModel(candidate.model)) candidate.effort = "high";
+      if (!validModel(candidate.model ?? "") || !efforts.includes(candidate.effort ?? "")) {
+        text("modelError", !validModel(candidate.model ?? "") ? t.modelInvalid : t.effortInvalid);
+        return;
+      }
+      if (!validateModelSettings()) return;
+      actionSettings = { ...candidate, model:model.value.trim(), effort:effort.value };
+      model.value = actionSettings.model;
+      syncPresetOption(actionSettings.model, actionSettings.effort);
+      updateEffortState();
+      sendGlobalSettings("setSettings", actionSettings);
+    }
+    function onPresetChange(event) {
+      if (!modelPreset || !settingsReady || socket?.readyState !== WebSocket.OPEN) return;
+      const value = event.target.value;
+      if (!value) return;
+      const [targetModel, targetEffort] = value.split(":");
+      const model = document.getElementById("model");
+      const effort = document.getElementById("effort");
+      model.value = targetModel;
+      effort.value = targetEffort;
+      if (!validateModelSettings()) return;
+      actionSettings = { ...actionSettings, model: targetModel, effort: targetEffort };
+      syncPresetOption(targetModel, targetEffort);
+      updateEffortState();
+      sendGlobalSettings("setSettings", actionSettings);
+    }
     function connect() {
+      lockModelSettings();
       socket = new WebSocket(`ws://${connection.address}:${connection.port}`);
-      socket.addEventListener("open", () => { socket.send(JSON.stringify({ code:0, cmd:"connected", uuid:connection.uuid })); send("status"); clearInterval(pollTimer); pollTimer = setInterval(() => send("status"), 2000); });
-      socket.addEventListener("message", event => { const message = JSON.parse(event.data); if (message.cmd === "sendToPropertyInspector" && message.payload?.type === "bridgeSetupStatus") render(message.payload.status, message.payload); });
-      socket.addEventListener("close", () => { clearInterval(pollTimer); setTimeout(connect, 1000); });
+      socket.addEventListener("open", () => { socket.send(JSON.stringify({ code:0, cmd:"connected", uuid:connection.uuid })); sendGlobalSettings("getGlobalSettings"); if (modelPreset) sendGlobalSettings("getSettings"); send("status"); clearInterval(pollTimer); pollTimer = setInterval(() => send("status"), 2000); });
+      socket.addEventListener("message", event => {
+        let message;
+        try { message = JSON.parse(event.data); } catch { return; }
+        if (!message || typeof message !== "object") return;
+        if (["didReceiveSettings", "add", "paramfromapp"].includes(message.cmd)) receiveModelSettings(message);
+        if (message.cmd === "sendToPropertyInspector" && message.payload?.type === "bridgeSetupStatus") render(message.payload.status, message.payload);
+        if (message.cmd === "didReceiveGlobalSettings") document.getElementById("forceFocus").checked = message.settings?.forceFocus === true;
+      });
+      socket.addEventListener("close", () => { lockModelSettings(); actionSettings = {}; clearInterval(pollTimer); setTimeout(connect, 1000); });
     }
     async function start() {
       await loadLocalizedResources();
-      for (const [id, key] of [["title","title"],["intro","intro"],["appLabel","app"],["serviceLabel","service"],["cdpLabel","cdp"],["bridgeAppInfoTitle","bridgeAppInfoTitle"],["bridgeAppDescription","bridgeAppDescription"],["bridgeAppSafety","bridgeAppSafety"],["backgroundTitle","backgroundTitle"],["launchAgentDescription","launchAgentDescription"],["nodeSelectionStrategy","nodeSelectionStrategy"],["ulanziNodeSignatureNotice","ulanziNodeSignatureNotice"],["install","install"],["launch","launch"],["uninstall","uninstall"],["refresh","refresh"],["guide","guide"],["message","checking"]]) text(id, t[key]);
+      document.getElementById("modelSettings").hidden = !modelPreset;
+      if (modelPreset) {
+        for (const id of ["modelSettingsTitle", "presetLabel", "presetHelp", "modelLabel", "effortLabel", "modelHelp", "effortHelp"]) if (t[id]) text(id, t[id]);
+        if (t.presetCustom) text("presetCustom", t.presetCustom);
+        text("effortDefault", `${t.effortDefault} (${modelPreset.effort})`);
+        text("modelDefaults", format(t.modelDefaults, { model:modelPreset.label, id:modelPreset.model, effort:modelPreset.effort }));
+        document.getElementById("model").placeholder = modelPreset.label;
+        document.getElementById("presetOption").addEventListener("change", onPresetChange);
+        document.getElementById("model").addEventListener("change", saveModelSetting);
+        document.getElementById("effort").addEventListener("change", saveModelSetting);
+      }
+      for (const [id, key] of [["title","title"],["intro","intro"],["appLabel","app"],["serviceLabel","service"],["cdpLabel","cdp"],["bridgeAppInfoTitle","bridgeAppInfoTitle"],["bridgeAppDescription","bridgeAppDescription"],["bridgeAppSafety","bridgeAppSafety"],["backgroundTitle","backgroundTitle"],["launchAgentDescription","launchAgentDescription"],["nodeSelectionStrategy","nodeSelectionStrategy"],["ulanziNodeSignatureNotice","ulanziNodeSignatureNotice"],["forceFocusLabel","forceFocus"],["forceFocusDescription","forceFocusDescription"],["install","install"],["launch","launch"],["uninstall","uninstall"],["refresh","refresh"],["guide","guide"],["message","checking"]]) text(id, t[key]);
       setValue("appValue", t.checking); setValue("serviceValue", t.checking); setValue("cdpValue", t.checking);
       document.getElementById("install").addEventListener("click", () => { if (confirm(t.confirm)) send("install"); });
       document.getElementById("launch").addEventListener("click", () => send("launch"));
       document.getElementById("uninstall").addEventListener("click", () => { if (confirm(t.uninstallConfirm)) send("uninstall"); });
+      document.getElementById("forceFocus").addEventListener("change", event => sendGlobalSettings("setGlobalSettings", { forceFocus:Boolean(event.target.checked) }));
       document.getElementById("refresh").addEventListener("click", () => send("status")); document.getElementById("guide").addEventListener("click", () => send("openGuide")); connect();
     }
     void start();
