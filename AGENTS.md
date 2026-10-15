@@ -1,7 +1,9 @@
 # OpenCodexMicro — Codex operating guide
 
 Repository instructions for coding, review, diagnostics and installation. Run
-commands from the repository root. Load only the references relevant to the task.
+commands from the repository root. [README.md](README.md) is the user guide for
+installation, capabilities, usage and diagnostics; this file owns agent workflows
+and implementation contracts.
 
 ## Start with the affected component
 
@@ -77,6 +79,12 @@ diffs before delivery. Regenerate tracked outputs when their sources change.
 - **State and rendering:** serve cached `/state`; do not trigger renderer
   discovery or polling from `/state` requests. Preserve context-keyed action
   instances, replay displays on reconnect, bound caches and prevent stale async renders.
+- **Studio image updates:** a custom image must remain the final update for its
+  action instance in a `state` batch. Do not append a `type: 0` manifest-state
+  reset after a `type: 1` image; it replaces the card on Studio 3.4.4. Use the
+  case-sensitive `textData` field. The current correction retains the supported
+  legacy protocol; validate any later display-protocol migration against the
+  supported Studio versions.
 - **Metrics:** unknown stays unknown; measured zero stays zero. Do not infer
   quotas from activity or substitute cumulative tokens for context usage.
 - **Platform limits:** CLI uses WebSocket framing over its Unix socket, not raw
@@ -88,6 +96,50 @@ diffs before delivery. Regenerate tracked outputs when their sources change.
   fixed-script arguments and last-good catalog on failed refreshes.
 - **Distribution:** keep manifest UUIDs, CodePath, assets, inspectors and all eight
   locales consistent: `en`, `zh_CN`, `zh_HK`, `ja_JP`, `de_DE`, `ko_KR`, `pt_PT`, `es_ES`.
+
+## Adapter contracts
+
+- Displayed metadata belongs to the exact task. Unknown values must not fall back
+  to another slot's metrics, model or plan. Required action press/release pairs
+  remain paired; a timeout never causes automatic mutation replay.
+- Codex App task/Latest cards use the latest loaded local plan for the same turn.
+  A new turn clears the previous plan; remote, unloaded or missing plans stay
+  unknown. CLI cards use that task/turn's structured live plan. Antigravity uses
+  saved native `task.md` checklists only when at least as recent as the latest
+  input; missing, stale or oversized files stay unknown. Counts include nested
+  steps and measure checklist completion, not time remaining. Active work without
+  a plan can show an activity segment; context keeps its separate bar.
+- CLI token monitoring prefers the selected task when running, otherwise the most
+  recently started running task, falling back to update time. Tokens accumulate
+  for that task, independently of deck selection; they are not summed across
+  tasks or reset per turn. No running task shows "No running task"; missing usage
+  shows "Waiting for usage". Context and cumulative tokens remain distinct.
+- Codex App/CLI execution duration includes approval and question waits, freezes
+  when execution ends and resets on the next execution. CLI prefers reported turn
+  start times, otherwise detection time. Locally observed App timing can be lost
+  after restart or eviction from tracking.
+- CLI model, reasoning and Fast settings apply to the next deck prompt, not an
+  active turn. Preserve task-bound drafts and their uncertain-delivery state;
+  limits and storage behavior are documented in [README](README.md#cli-sessions-and-drafts).
+  Monitor instances rotate independently and select only their own displayed task.
+  Stop carries its displayed turn ID; approval carries the selected pending request ID.
+- CLI microphone is unavailable: thread-only realtime append/stop methods lack
+  the session ownership precondition needed to protect another client's session.
+  Protocol method presence alone does not establish a usable capture adapter.
+- Antigravity Steer promotes one eligible message from the expanded selected-task
+  queue using Send Now, preserving the composer. Missing, collapsed or ambiguous
+  controls fail explicitly. Fork depends on the latest response and available
+  workspace control and likewise preserves drafts.
+- Codex App Goal pauses/resumes an existing goal; create objectives in Codex.
+  CLI goal creation requires explicit inspector input. Antigravity Goal, Boost
+  and Grill-me remain unavailable; permission modes or invented commands are not
+  substitutes. Missing subagent counts remain unknown.
+- Codex plan viewing requires the unique enabled native plan control; opening it
+  can materialize its Markdown file but must not choose Implement or submit.
+  CLI exposes read-only saved plan text/live steps and incomplete/error states;
+  delayed history must not replace newer live content. Antigravity opens existing
+  saved plan/walkthrough artifacts. No dedicated Codex App/CLI walkthrough opener
+  is implemented.
 
 ## Development and proportional verification
 
@@ -135,11 +187,9 @@ Node.js 20+, Ulanzi Studio 3.0.1+ and the relevant application.
    `~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/`. Check the target
    UUID below and verify its `CodePath` exists inside that plugin directory.
    A repository checkout or matching directory name does not prove installation.
-2. For Codex plugin installation read
-   [install-ulanzi-studio-plugin](skills/install-ulanzi-studio-plugin/SKILL.md);
-   for Codex bridge setup read
-   [setup-codex-bridge](skills/setup-codex-bridge/SKILL.md). Preserve their scope,
-   application-shutdown and authorization boundaries.
+2. For Codex plugin installation use [the prebuilt procedure](#prebuilt-codex-plugin-installation);
+   for its sidecar use [Codex Bridge setup](#codex-bridge-setup). Verify macOS,
+   Node.js 20+ and `/Applications/Ulanzi Studio.app` before runtime setup.
 3. Do not reinstall a valid plugin unless the user requests update or repair.
    If Studio is running, obtain permission before quitting it or ask the user to
    quit it. Reopen it after replacement to load the new plugin.
@@ -158,20 +208,63 @@ before the first replacement; rollback/backups are per plugin, not a global
 transaction. Backups live outside Studio discovery in
 `~/Library/Application Support/OpenCodexMicro/plugin-backups/`.
 
-The Codex plugin installation skill uses the prebuilt-only path: verify the
-bundle and installer assets, then use `ULANZI_PREBUILT=1 npm run install:plugin`.
-Do not use this flag to install stale outputs after source changes.
-
-Setup writes application/LaunchAgent files and normally restarts bridge services.
-It does not launch the Codex wrapper. `npm run bridge:start` opens
-`~/Applications/Codex Bridge.app`, which quits and relaunches Codex; launch only
-when requested and after the user has had a chance to save work. Do not launch
-it merely to verify installation. Use `npm run setup -- --no-start` only when
-the user wants the Codex sidecar installed but stopped.
-
 For CLI setup, verify the standalone managed daemon installation using
-`src/shared/cli-launcher.mjs` and [setup and operations](docs/setup-and-operations.md).
+`src/shared/cli-launcher.mjs` and [README](README.md#starting-applications).
 A plain terminal `codex` process is not necessarily attached to the shared daemon.
+
+### Prebuilt Codex plugin installation
+
+Require `integration/com.ulanzi.codexmicro.ulanziPlugin/manifest.json` and
+`scripts/install-plugin.mjs`. Check source and installed UUID/CodePath, bundle
+hashes and `dist/package.json`; matching version strings alone do not prove that
+files match. Preflight the intended package:
+
+```bash
+node --input-type=module -e 'import { preflightPlugin } from "./src/shared/plugin-installer.mjs"; await preflightPlugin("integration/com.ulanzi.codexmicro.ulanziPlugin", "codexmicro");'
+test -f integration/com.ulanzi.codexmicro.ulanziPlugin/dist/package.json
+```
+
+Preflight covers the entry point, inspectors, icons, eight locales and bundled
+Bridge resources/notices. For a prebuilt installation, missing or stale outputs
+require a development build and validation before continuing; do not silently
+rebuild as part of the prebuilt-only procedure. With Studio stopped, install:
+
+```bash
+ULANZI_PREBUILT=1 npm run install:plugin
+```
+
+This updates only Codex App and retains the previous package outside discovery.
+Never use the flag for stale bundles. Repeat preflight against the installed
+`~/Library/Application Support/Ulanzi/UlanziDeck/Plugins/com.ulanzi.codexmicro.ulanziPlugin/`
+directory and verify `dist/package.json`. Reopen Studio and check the category,
+actions and live cards; switch profiles to check display restoration. Diagnose
+bridge/application connectivity separately. Local installation does not authorize
+marketplace publication or replacement of sibling plugins.
+
+### Codex Bridge setup
+
+Require `package.json`, `scripts/install.mjs`, `src/bridge/` and the executable
+`/Applications/ChatGPT.app/Contents/MacOS/ChatGPT`. An authorized `npm run setup`
+builds/copies the Bridge, replaces `~/Applications/Codex Bridge.app` and writes
+application/LaunchAgent files, normally restarting the sidecar. It does not open
+the wrapper or modify Studio plugins or Codex shortcuts. For diagnosis alone,
+verify existing artifacts and health instead of running setup:
+
+```bash
+test -x "$HOME/Applications/Codex Bridge.app/Contents/MacOS/Codex Bridge"
+launchctl print "gui/$(id -u)/io.opencodexmicro.bridge"
+node scripts/bridge-status.mjs codex health
+node scripts/bridge-status.mjs codex state
+```
+
+Use `npm run setup -- --no-start` only when the user wants the sidecar installed
+but stopped; it still writes artifacts and unloads an existing service. A stopped
+service intentionally fails running-health checks. `npm run bridge:start` opens
+the wrapper, quits/relaunches Codex and requires a requested launch plus time for
+the user to save work; never launch merely to verify installation. After an
+authorized launch, recheck `connected`; if false, inspect the component error log
+and confirm the wrapper was used. Keep CDP at `127.0.0.1:9222` and the sidecar at
+`127.0.0.1:17373`.
 
 ### Diagnostics and completion
 
@@ -185,21 +278,51 @@ Report separately: plugin manifest/files, bridge/service health, application
 connection, and any observed Studio/device behavior. Inspect component logs under
 `~/Library/Application Support/OpenCodexMicro/{codex,antigravity,codex-cli}/`.
 For authentication changes, update matching plugin and bridge versions together.
+For static or apparently stale cards after a Studio update, follow
+[card display diagnostics](README.md#static-or-apparently-outdated-cards).
+Compare installed bundles with the intended build; matching version strings do
+not establish matching files. A plugin-only display fix does not require bridge
+setup or profile recreation. Record visual Studio checks separately from physical
+device acceptance, using [recorded validation](README.md#recorded-validation)
+as evidence with a date and scope, not a guarantee of current runtime health.
 Do not use personal tasks for live Approve/Reject/Stop/Submit, goals or microphone
 tests; use deliberately selected disposable tasks within the authorized scope.
-See [capabilities and acceptance](docs/feature-parity.md) for remaining live checks.
+See [capabilities](README.md#capabilities-and-limits) and the live checks below.
 
 Run removal only when explicitly requested: `npm run uninstall` removes Codex App
 and its bridge; `npm run uninstall:all` removes all project components. Preserve
 sibling runtimes, backups and unrelated files during component work.
 
-## Documentation routing
+## Live validation
 
-- Project overview: [README](README.md), with a [Chinese summary](README_zh.md).
-- Installation, configuration and diagnostics:
-  [setup and operations](docs/setup-and-operations.md).
-- Capabilities, platform limits and live acceptance:
-  [feature parity](docs/feature-parity.md).
-- Keep instructions in this guide and operational details in the linked
-  references. Update them when contracts change; avoid parallel copies of the
-  same guidance. Preserve legal notices and their required distribution copies.
+Installed files, fixtures, services and Studio previews do not prove physical
+hardware or mutation behavior. Use deliberately selected disposable tasks within
+the authorized scope; do not approve/reject/stop personal work, submit fabricated
+objectives or record audio merely to complete a checklist.
+
+| Area | Required controlled observation |
+| --- | --- |
+| Keys and encoders | The intended task opens and the correct viewport/task list moves on actual hardware. |
+| Approve, Reject and Stop | Only the intended request/turn changes, once. |
+| Drafts, Submit and Steer | Drafts survive and sent/promoted content belongs to the intended task, using each adapter's distinct steering behavior. |
+| New and Fork | One new/forked task appears in the intended workspace; unavailable controls fail explicitly. |
+| Model, reasoning and Fast | The correct task or next prompt reflects the supported setting. |
+| Plans and subagents | The selected task's available native view/read-only content appears; missing/incomplete data is identified. |
+| Goals | Explicit creation or a supported toggle affects only the intended task. |
+| Microphone | Deliberate initiation, permission, recording indication, task binding and stop work on supported applications; CLI stays unavailable. |
+| Spotify | Playback, picker, volume and optional catalog/Like actions affect the intended player/account; playback/authentication failures are surfaced. |
+| Reconnect and restart | Compatible installed builds reconnect and restore displays; reboot persistence needs a separate observation. |
+
+Record installed versions, observed results and unverified behavior. Repeat the
+relevant observations after changes to the app, Studio, firmware or installation.
+Keep dated evidence in [README](README.md#recorded-validation) separate from claims
+about current runtime health.
+
+## Documentation ownership
+
+Keep user-facing overview, installation, operation, capabilities, diagnostics and
+validation records in [README.md](README.md). Keep agent workflows, source maps,
+implementation invariants and development checks here. Update these two guides
+when contracts change; do not create parallel operational Markdown guides or
+standalone installation skills. Preserve legal notices and their required
+installer copies as separate distribution files.
