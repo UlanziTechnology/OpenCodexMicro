@@ -356,7 +356,7 @@ function setDisplay(instance, state, text) {
         type: 0,
         state,
         showtext: true,
-        textdata: text
+        textData: text
       }]
     }
   });
@@ -386,16 +386,7 @@ function sendSvgState(instance, dataUrl) {
           type: 1,
           data: dataUrl,
           showtext: false,
-          textdata: ""
-        },
-        {
-          uuid: instance.uuid,
-          actionid: instance.actionid,
-          key: instance.key,
-          type: 0,
-          state: 0,
-          showtext: false,
-          textdata: ""
+          textData: ""
         }
       ]
     }
@@ -548,7 +539,7 @@ function setTaskDisplay(instance, path, text) {
         type: 2,
         path,
         showtext: true,
-        textdata: text
+        textData: text
       }]
     }
   });
@@ -646,16 +637,7 @@ function setSingleUsageDisplay(instance, windowKind) {
           type: 1,
           data: singleUsageIconData({ header, remaining, resetsAt, connected }),
           showtext: false,
-          textdata: ""
-        },
-        {
-          uuid: instance.uuid,
-          actionid: instance.actionid,
-          key: instance.key,
-          type: 0,
-          state: 0,
-          showtext: false,
-          textdata: ""
+          textData: ""
         }
       ]
     }
@@ -678,16 +660,7 @@ function setUsageDisplay(instance, usage) {
           type: 1,
           data: usageIconData(usage),
           showtext: false,
-          textdata: ""
-        },
-        {
-          uuid: instance.uuid,
-          actionid: instance.actionid,
-          key: instance.key,
-          type: 0,
-          state: 0,
-          showtext: false,
-          textdata: ""
+          textData: ""
         }
       ]
     }
@@ -799,16 +772,7 @@ function setTaskMonitorDisplay(instance) {
             type: 1,
             data: taskMonitorIconData({ connected: false }),
             showtext: false,
-            textdata: ""
-          },
-          {
-            uuid: instance.uuid,
-            actionid: instance.actionid,
-            key: instance.key,
-            type: 0,
-            state: 0,
-            showtext: false,
-            textdata: ""
+            textData: ""
           }
         ]
       }
@@ -878,16 +842,7 @@ function setTaskMonitorDisplay(instance) {
             elapsed
           }),
           showtext: false,
-          textdata: ""
-        },
-        {
-          uuid: instance.uuid,
-          actionid: instance.actionid,
-          key: instance.key,
-          type: 0,
-          state: 0,
-          showtext: false,
-          textdata: ""
+          textData: ""
         }
       ]
     }
@@ -977,15 +932,7 @@ function setAttentionDisplay(instance) {
           type: 1,
           data: attentionBadgeIconData({ connected: false }),
           showtext: false,
-          textdata: ""
-        }, {
-          uuid: instance.uuid,
-          actionid: instance.actionid,
-          key: instance.key,
-          type: 0,
-          state: 0,
-          showtext: false,
-          textdata: ""
+          textData: ""
         }]
       }
     });
@@ -1008,15 +955,7 @@ function setAttentionDisplay(instance) {
         type: 1,
         data: attentionBadgeIconData({ count, hasError, connected: true }),
         showtext: false,
-        textdata: ""
-      }, {
-        uuid: instance.uuid,
-        actionid: instance.actionid,
-        key: instance.key,
-        type: 0,
-        state: 0,
-        showtext: false,
-        textdata: ""
+        textData: ""
       }]
     }
   });
@@ -1247,16 +1186,7 @@ function setReasoningDisplay(instance) {
           type: 1,
           data: reasoningIconData(effort, connected),
           showtext: false,
-          textdata: ""
-        },
-        {
-          uuid: instance.uuid,
-          actionid: instance.actionid,
-          key: instance.key,
-          type: 0,
-          state: 0,
-          showtext: false,
-          textdata: ""
+          textData: ""
         }
       ]
     }
@@ -1441,16 +1371,7 @@ function setPromptDisplay(instance, type) {
           type: 1,
           data: promptIconData(type, connected),
           showtext: false,
-          textdata: ""
-        },
-        {
-          uuid: instance.uuid,
-          actionid: instance.actionid,
-          key: instance.key,
-          type: 0,
-          state: 0,
-          showtext: false,
-          textdata: ""
+          textData: ""
         }
       ]
     }

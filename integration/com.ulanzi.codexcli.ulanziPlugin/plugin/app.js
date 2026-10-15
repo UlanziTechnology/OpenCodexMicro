@@ -338,16 +338,7 @@ function sendSvgState(instance, dataUrl) {
           type: 1,
           data: dataUrl,
           showtext: false,
-          textdata: ""
-        },
-        {
-          uuid: instance.uuid,
-          actionid: instance.actionid,
-          key: instance.key,
-          type: 0,
-          state: 0,
-          showtext: false,
-          textdata: ""
+          textData: ""
         }
       ]
     }

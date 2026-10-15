@@ -261,7 +261,7 @@ try {
     assert.equal(item?.type, 1);
     assert.match(item?.data || "", /^data:image\/svg\+xml;base64,/);
     assert.equal(item?.showtext, false);
-    assert.equal(item?.textdata, "");
+    assert.equal(item?.textData, "");
   }
 
   client.send(JSON.stringify({ cmd: "keydown", uuid: "com.ulanzi.ulanzistudio.codexmicro.task1", actionid: "a1", key: "0_0", param: {} }));
@@ -359,7 +359,7 @@ try {
   const usageItem = usageState?.param?.statelist?.[0];
   assert.equal(usageItem?.type, 1);
   assert.equal(usageItem?.showtext, false);
-  assert.equal(usageItem?.textdata, "");
+  assert.equal(usageItem?.textData, "");
   assert.match(usageItem?.data || "", /^data:image\/svg\+xml;base64,/);
   const usageSvg = Buffer.from(usageItem.data.split(",")[1], "base64").toString();
   assert.match(usageSvg, />23<tspan/);
@@ -466,6 +466,15 @@ try {
     assert.ok(latestSvg(attentionEvent.uuid).includes(`>${count}<`), `${status} must update the attention count`);
     assert.ok(latestSvg("com.ulanzi.ulanzistudio.codexmicro.approve").includes(status === "awaiting-approval" ? ">ACTION READY<" : ">NO PENDING<"), `${status} must update Approve`);
     assert.ok(latestSvg("com.ulanzi.ulanzistudio.codexmicro.reject").includes(status === "awaiting-approval" ? ">DENY REQUEST<" : ">NO PENDING<"), `${status} must update Reject`);
+  }
+  // Check the final host-visible update, rather than only finding an SVG that
+  // could subsequently be overwritten by a manifest icon in the same batch.
+  for (const message of messages.filter(message => message.cmd === "state")) {
+    const items = message.param.statelist;
+    for (const image of items.filter(item => item.type === 1)) {
+      const last = items.findLast(item => item.uuid === image.uuid && item.actionid === image.actionid && item.key === image.key);
+      assert.equal(last.data, image.data, `${image.uuid}: live display overwritten in the same batch`);
+    }
   }
   process.stdout.write("Codex App plugin smoke test passed.\n");
 } finally {

@@ -101,6 +101,17 @@ Logs are `bridge.log` / `bridge-error.log`, `bridge-antigravity.log` / `bridge-a
 
 If the bridge is online but a control is unavailable, inspect application connectivity, selected task, and the reported action error. Empty quota/context values mean unknown. See [feature parity](feature-parity.md) for application-specific differences and validation limits.
 
+If cards show the manifest's static icons after a Studio update (for example,
+the sample `79%` usage icon), check the installed plugin build rather than
+interpreting that icon as live data. On Studio 3.4.4, sending a custom image
+followed by a manifest-state icon for the same action in one `state` batch
+replaces the live card with the placeholder. Plugin renderers must send only
+the intended image update, using the protocol's `textData` field for overlays.
+The corrected builds retain the legacy image protocol supported by the
+[official Node SDK](https://github.com/UlanziTechnology/plugin-common-node#set-button-icon).
+Rebuild and update the affected plugins, then reopen Studio; bridge setup and
+profile recreation are not required for this display correction.
+
 ## Removal
 
 `npm run uninstall` removes Codex App and its bridge only. `npm run uninstall:all` explicitly removes all project components. The separate official Codex CLI installation is not removed.

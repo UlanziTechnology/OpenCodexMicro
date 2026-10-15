@@ -56,6 +56,13 @@ for (const plugin of ["codexmicro", "antigravity", "spotify", "codexcli"]) {
     assert.equal(context.instance.lastDisplay, undefined);
     context.socket.readyState = 1; vm.runInContext('sendSvgState(instance,"image")', context);
     assert.equal(sent.length, 1); vm.runInContext('sendSvgState(instance,"image")', context); assert.equal(sent.length, 1);
+    // Studio applies updates in order. A later manifest-state update would
+    // replace the live image with the static placeholder (e.g. "79%").
+    const displayed = sent[0].param.statelist.at(-1);
+    assert.equal(displayed.type, 1, 'the live image must remain the final display');
+    assert.equal(displayed.data, 'image');
+    assert.equal(displayed.showtext, false);
+    assert.equal(displayed.textData, '');
   });
 }
 test("inspector relay rejects arbitrary routes and returns structured failures", async () => {
