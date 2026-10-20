@@ -4443,12 +4443,12 @@ var MODEL_LABELS = Object.freeze({
   "gpt-5.6-luna": "5.6 Luna",
   "gpt-reserve": "Luna Reserve",
   "gpt-6-astra": "GPT-6 Astra",
-  "gemini-3.8-flash-high": "Gemini 3.8 Flash High"
+  "gemini-3.8-flash-high": "gemini-3.8-flash"
 });
 var DEFAULT_MODEL_OPTIONS = Object.freeze([
   Object.freeze({ model: "gpt-6-astra", effort: "low", label: "ASTRA LOW" }),
   Object.freeze({ model: "gpt-6-astra", effort: "medium", label: "ASTRA MED" }),
-  Object.freeze({ model: "gemini-3.8-flash-high", effort: "high", label: "GEMINI HIGH" }),
+  Object.freeze({ model: "gemini-3.8-flash-high", effort: "medium", label: "GEMINI MED" }),
   Object.freeze({ model: "gpt-5.6-sol", effort: "high", label: "SOL HIGH" })
 ]);
 var MODEL_DISPLAY_NAMES = Object.freeze({
@@ -4487,7 +4487,7 @@ function resolveModelSelection(defaults, settings) {
   return Object.freeze({
     model: selectedModel,
     displayName: selectedModel === defaults.model ? defaults.displayName : MODEL_LABELS[selectedModel] || selectedModel,
-    effort: effort || defaults.effort
+    effort: effort || (selectedModel === "gemini-3.8-flash-high" ? "medium" : defaults.effort)
   });
 }
 function modelSelectionMatches(text, selection) {
@@ -5258,7 +5258,7 @@ var CodexCdpClient = class {
       targetEffort: preset.effort
     });
     const effortOrder = REASONING_EFFORTS;
-    const isSingleEffort = preset.model === "gemini-3.8-flash-high" || /gemini/i.test(preset.model);
+    const isSingleEffort = preset.model !== "gemini-3.8-flash-high" && /gemini/i.test(preset.model);
     let modernPicker = false;
     let pendingModelSelection = false;
     const pickerState = () => this.evaluate(modelPickerExpression(preset));

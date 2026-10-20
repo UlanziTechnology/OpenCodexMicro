@@ -51,7 +51,7 @@
         <option id="presetCustom" value="">Default / Custom</option>
         <option value="gpt-6-astra:low">gpt-6-astra (low)</option>
         <option value="gpt-6-astra:medium">gpt-6-astra (medium)</option>
-        <option value="gemini-3.8-flash-high:high">gemini-3.8-flash-high (high)</option>
+        <option value="gemini-3.8-flash-high:medium">gemini-3.8-flash (medium)</option>
         <option value="gpt-5.6-sol:high">gpt-5.6-sol (high)</option>
       </select>
       <small id="presetHelp"></small>
@@ -59,7 +59,7 @@
       <input id="model" type="text" list="modelSuggestions" maxlength="100" autocomplete="off" spellcheck="false" aria-describedby="modelHelp modelError" disabled>
       <datalist id="modelSuggestions">
         <option value="gpt-6-astra"></option><option value="GPT-6 Astra"></option>
-        <option value="gemini-3.8-flash-high"></option>
+        <option value="gemini-3.8-flash"></option><option value="gemini-3.8-flash-high"></option>
         <option value="gpt-5.6-sol"></option><option value="5.6 Sol"></option>
         <option value="5.6 Luna"></option><option value="gpt-5.6-luna"></option>
       </datalist>
@@ -165,19 +165,24 @@
     const defaultModelPresets = [
       { id:"gpt-6-astra:low", model:"gpt-6-astra", effort:"low" },
       { id:"gpt-6-astra:medium", model:"gpt-6-astra", effort:"medium" },
-      { id:"gemini-3.8-flash-high:high", model:"gemini-3.8-flash-high", effort:"high" },
+      { id:"gemini-3.8-flash-high:medium", model:"gemini-3.8-flash-high", effort:"medium" },
       { id:"gpt-5.6-sol:high", model:"gpt-5.6-sol", effort:"high" }
     ];
     let actionSettings = {}; let settingsReady = false;
 
+    function isFlashModel(modelName) {
+      const key = String(modelName || "").trim().toLowerCase().replace(/[- ]/g, "");
+      return key === "gemini3.8flash" || key === "gemini3.8flashhigh";
+    }
     function isSingleEffortModel(modelName) {
       const name = String(modelName || "").trim().toLowerCase();
-      return name === "gemini-3.8-flash-high" || name.includes("gemini") || name.includes("flash-high");
+      return !isFlashModel(name) && (name.includes("gemini") || name.includes("flash-high"));
     }
     function updateEffortState() {
       const model = document.getElementById("model");
       const effort = document.getElementById("effort");
       if (!model || !effort) return;
+      text("effortDefault", `${t.effortDefault} (${isFlashModel(model.value) ? "medium" : modelPreset.effort})`);
       if (isSingleEffortModel(model.value)) {
         effort.value = "high";
         effort.disabled = true;
@@ -194,7 +199,8 @@
         const pModel = p.model.toLowerCase();
         const pAlias = pModel.replace(/^gpt[- ]/, "").replace(/[- ]/g, "");
         const normalized = modelVal.replace(/^gpt[- ]/, "").replace(/[- ]/g, "");
-        const matchesModel = modelVal === pModel || normalized === pAlias;
+        const matchesModel = modelVal === pModel || normalized === pAlias
+          || (isFlashModel(modelVal) && isFlashModel(pModel));
         return matchesModel && effortVal === p.effort;
       });
       preset.value = match ? match.id : "";
@@ -283,7 +289,7 @@
       const preset = document.getElementById("presetOption");
       if (preset) preset.disabled = false;
       validateModelSettings();
-      syncPresetOption(model.value || modelPreset.model, effort.value || modelPreset.effort);
+      syncPresetOption(model.value || modelPreset.model, effort.value || (isFlashModel(model.value) ? "medium" : modelPreset.effort));
       updateEffortState();
       if (invalidModel || invalidEffort) {
         model.setCustomValidity(invalidModel ? t.modelInvalid : "");

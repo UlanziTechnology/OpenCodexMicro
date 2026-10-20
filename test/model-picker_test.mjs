@@ -346,12 +346,15 @@ test("modelDisplayLabel provides distinct names for all default model options", 
   assert.equal(DEFAULT_MODEL_OPTIONS.length, 4);
   assert.equal(modelDisplayLabel({ model: "gpt-6-astra", effort: "low" }), "ASTRA LOW");
   assert.equal(modelDisplayLabel({ model: "gpt-6-astra", effort: "medium" }), "ASTRA MED");
+  assert.equal(modelDisplayLabel(DEFAULT_MODEL_OPTIONS[2]), "GEMINI MED");
+  assert.deepEqual(DEFAULT_MODEL_OPTIONS[2], { model: "gemini-3.8-flash-high", effort: "medium", label: "GEMINI MED" });
   assert.equal(modelDisplayLabel({ model: "gemini-3.8-flash-high", effort: "high" }), "GEMINI HIGH");
   assert.equal(modelDisplayLabel({ model: "gpt-5.6-sol", effort: "high" }), "SOL HIGH");
 
   // Case-insensitive and alias matching
   assert.equal(modelDisplayLabel({ model: "GPT-6 Astra", effort: "low" }), "ASTRA LOW");
   assert.equal(modelDisplayLabel({ model: "Gemini 3.8 Flash High", effort: "high" }), "GEMINI HIGH");
+  assert.equal(modelDisplayLabel({ model: "gemini-3.8-flash", effort: "medium" }), "GEMINI MED");
   assert.equal(modelDisplayLabel({ model: "5.6 Sol", effort: "high" }), "SOL HIGH");
 
   // Other recognized models
@@ -364,7 +367,50 @@ test("modelDisplayLabel provides distinct names for all default model options", 
   assert.equal(modelDisplayLabel(null), "CUSTOM MODEL");
 });
 
-test("sequential picker selects single-effort model without secondary effort menu", async () => {
+for (const model of ["gemini-3.8-flash-high", "gemini-3.8-flash", "Gemini 3.8 Flash High"]) {
+  test(`Flash alias ${model} keeps the API id and defaults to medium`, () => {
+    const preset = modelPreset("model-sol-high", { model });
+    assert.deepEqual(preset, { model: "gemini-3.8-flash-high", displayName: "gemini-3.8-flash", effort: "medium" });
+    assert.equal(modelPreset("model-sol-high", { model, effort: "" }).effort, "medium");
+    assert.equal(modelPreset("model-sol-high", { model, effort: "high" }).effort, "high");
+    for (const label of ["gemini-3.8-flash", "gemini-3.8-flash-high", "Gemini 3.8 Flash High", "gemini-3.8-flash medium"]) {
+      assert.equal(modelSelectionMatches(label, preset), true);
+    }
+    assert.equal(modelSelectionMatches("gemini-3.8-flash-lite", preset), false);
+  });
+
+  for (const [current, target] of [["high", "medium"], ["medium", "high"]]) {
+    test(`Flash ${model} sequential picker changes ${current} to ${target}`, async () => {
+      const fixture = pickerFixture({ currentModel: "gemini-3.8-flash", targetModel: "gemini-3.8-flash",
+        currentEffort: current, efforts: ["medium", "high"] });
+      const result = await fixture.client.dispatchModelPreset("model-sol-high", null, { model, effort: target });
+      assert.deepEqual(result, { model: "gemini-3.8-flash-high", effort: target });
+      assert.equal(fixture.trigger.getAttribute("data-selected-reasoning-effort"), target);
+      assert.deepEqual(fixture.events, ["open", "picker", "model", "effort"]);
+    });
+  }
+}
+
+for (const model of ["gemini-3.8-flash-high", "gemini-3.8-flash"]) {
+  for (const [current, target, arrow] of [["high", "medium", "ArrowLeft"], ["medium", "high", "ArrowRight"]]) {
+    test(`Flash slider ${model} changes ${current} to ${target}`, async () => {
+      const fixture = sliderFixture({ model, label: "gemini-3.8-flash", efforts: ["medium", "high"], current });
+      await fixture.client.dispatchModelPreset("model-sol-high", null, { model: "gemini-3.8-flash", effort: target });
+      assert.deepEqual(fixture.events, ["open", "model", arrow, "escape"]);
+      assert.equal(fixture.trigger.getAttribute("data-selected-reasoning-effort"), target);
+    });
+  }
+}
+
+test("Flash cannot report success with an unconfirmed reasoning effort", async () => {
+  const fixture = pickerFixture({ currentModel: "gemini-3.8-flash", targetModel: "gemini-3.8-flash",
+    currentEffort: null, efforts: ["high"] });
+  await assert.rejects(fixture.client.dispatchModelPreset("model-sol-high", null, { model: "gemini-3.8-flash" }), /unavailable/);
+  assert.equal(fixture.events.includes("effort"), false);
+  assert.equal(fixture.trigger.getAttribute("aria-expanded"), "false");
+});
+
+test("other Gemini models still select without a secondary effort menu", async () => {
   const doc = new Element("document");
   const events = [];
   const trigger = new Element("button", {
@@ -379,7 +425,7 @@ test("sequential picker selects single-effort model without secondary effort men
   };
   const selectGemini = () => {
     events.push("model");
-    trigger.text = "gemini-3.8-flash-high";
+    trigger.text = "gemini-3.8-pro-high";
     trigger.attrs["data-selected-reasoning-effort"] = "high";
     trigger.attrs["aria-expanded"] = "false";
     menu.attrs["data-state"] = "closed";
@@ -387,7 +433,7 @@ test("sequential picker selects single-effort model without secondary effort men
   };
   const showModels = () => {
     events.push("picker");
-    menu.children = [option("gemini-3.8-flash-high", {}, selectGemini)];
+    menu.children = [option("gemini-3.8-pro-high", {}, selectGemini)];
   };
   trigger.onClick = () => {
     events.push("open");
@@ -404,8 +450,8 @@ test("sequential picker selects single-effort model without secondary effort men
     document: doc, window: {}, MouseEvent: Event, PointerEvent: Event, KeyboardEvent: Event
   });
 
-  await client.dispatchModelPreset("model-sol-high", null, { model: "gemini-3.8-flash-high", effort: "high" });
-  assert.equal(trigger.text, "gemini-3.8-flash-high");
+  await client.dispatchModelPreset("model-sol-high", null, { model: "gemini-3.8-pro-high", effort: "high" });
+  assert.equal(trigger.text, "gemini-3.8-pro-high");
   assert.equal(events.includes("model"), true);
   assert.equal(events.includes("effort"), false);
 });

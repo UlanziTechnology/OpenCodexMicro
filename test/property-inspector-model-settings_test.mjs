@@ -228,7 +228,7 @@ test("presetOption offers default model options and selecting one updates model 
   const presets = [
     ["gpt-6-astra:low", "gpt-6-astra", "low"],
     ["gpt-6-astra:medium", "gpt-6-astra", "medium"],
-    ["gemini-3.8-flash-high:high", "gemini-3.8-flash-high", "high"],
+    ["gemini-3.8-flash-high:medium", "gemini-3.8-flash-high", "medium"],
     ["gpt-5.6-sol:high", "gpt-5.6-sol", "high"]
   ];
 
@@ -243,10 +243,36 @@ test("presetOption offers default model options and selecting one updates model 
   assert.equal(pi.element("presetOption").value, "gpt-6-astra:low");
 });
 
-test("gemini-3.8-flash-high locks effort to high and disables secondary effort control", async () => {
+test("Flash preset uses its new label and medium while keeping the API id", () => {
+  assert.match(html, /<option value="gemini-3\.8-flash-high:medium">gemini-3\.8-flash \(medium\)<\/option>/);
+  assert.match(html, /<option value="gemini-3\.8-flash"><\/option>/);
+});
+
+for (const model of ["gemini-3.8-flash-high", "gemini-3.8-flash", "Gemini 3.8 Flash High"]) {
+  test(`Flash ${model} restores and saves both medium and high without locking`, async () => {
+    const pi = await inspector(); pi.socket.open();
+    for (const effort of ["medium", "high"]) {
+      pi.restore({ model, effort, keep: 42 });
+      assert.equal(pi.element("effort").value, effort);
+      assert.equal(pi.element("effort").disabled, false);
+      assert.equal(pi.element("presetOption").value, effort === "medium" ? "gemini-3.8-flash-high:medium" : "");
+      const target = effort === "medium" ? "high" : "medium";
+      pi.change("effort", target);
+      assert.deepEqual(pi.changes().at(-1).settings, { model, effort: target, keep: 42 });
+    }
+    pi.restore({ model, effort: "" });
+    assert.equal(pi.element("effortDefault").textContent, "Default (medium)");
+    assert.equal(pi.element("presetOption").value, "gemini-3.8-flash-high:medium");
+    pi.change("effort", "high");
+    pi.change("model", "gpt-6-astra");
+    assert.equal(pi.element("effort").disabled, false);
+    assert.equal(pi.element("effortDefault").textContent, "Default (high)");
+  });
+}
+
+test("other Gemini models retain the single high effort constraint", async () => {
   const pi = await inspector(); pi.socket.open(); pi.restore({});
-  pi.change("presetOption", "gemini-3.8-flash-high:high");
-  assert.equal(pi.element("model").value, "gemini-3.8-flash-high");
+  pi.change("model", "gemini-3.8-pro-high");
   assert.equal(pi.element("effort").value, "high");
   assert.equal(pi.element("effort").disabled, true);
 

@@ -646,7 +646,7 @@ export class CodexCdpClient {
       targetEffort: preset.effort
     });
     const effortOrder = REASONING_EFFORTS;
-    const isSingleEffort = preset.model === "gemini-3.8-flash-high" || /gemini/i.test(preset.model);
+    const isSingleEffort = preset.model !== "gemini-3.8-flash-high" && /gemini/i.test(preset.model);
     let modernPicker = false;
     let pendingModelSelection = false;
     const pickerState = () => this.evaluate(modelPickerExpression(preset));

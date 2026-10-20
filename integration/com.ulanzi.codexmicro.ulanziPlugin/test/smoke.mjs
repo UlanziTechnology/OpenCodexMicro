@@ -559,6 +559,16 @@ try {
   ).at(-1);
   assert.equal(geminiState?.param?.statelist?.[0]?.textdata, "GEMINI HIGH");
 
+  client.send(JSON.stringify({ cmd: "didReceiveSettings", ...geminiKey, settings: { model: "gemini-3.8-flash", effort: "" } }));
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const flashMediumState = messages.filter(message =>
+    message.cmd === "state" && message.param?.statelist?.[0]?.actionid === geminiKey.actionid
+  ).at(-1);
+  assert.equal(flashMediumState?.param?.statelist?.[0]?.textdata, "GEMINI MED");
+  client.send(JSON.stringify({ cmd: "keydown", ...geminiKey }));
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.deepEqual(modelSelections.at(-1), { model: "gemini-3.8-flash-high", effort: "medium" });
+
   assert.equal(messages.some(message => message.cmd === "logMessage"
     && /Custom Model|Delayed Model|Restored Model/.test(message.message || "")), false);
   const serializedLogs = JSON.stringify(messages.filter(message => message.cmd === "logMessage"));
