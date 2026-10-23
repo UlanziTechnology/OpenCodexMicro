@@ -19,6 +19,7 @@ No repository or npm working directory is required for this flow.
 | Usage | Show remaining usage; press to focus Codex |
 | Pin | Pin or unpin the active task |
 | New | Create a new Codex task |
+| Launch Codex Bridge | Launch Codex Bridge.app; install or repair missing app/service components first, then launch |
 | Latest Task & Scroll (Encoder) | Press to open task 1; turn left/right to send mouse-wheel up/down through the Ulanzi hotkey protocol |
 | Model & Reasoning (Encoder) | Turn right toward the highest model entry, left toward the lowest; hold and turn right/left to raise/lower reasoning effort; neither list wraps |
 | Context Navigator (Encoder) | First turn opens the + / @ menu; turn left/right to move up/down; click to select, hold and turn to close; clicking while closed does nothing |
@@ -27,6 +28,11 @@ No repository or npm working directory is required for this flow.
 | Steer | Send the visible composer text as steering input to a running task |
 | Mic | Press and release the Codex Micro microphone action |
 | Submit | Submit or queue the composer text |
+
+Launch Codex Bridge works even when the Bridge is offline. It reuses the bundled
+installer and its Node selection strategy; no repository or Terminal command is
+required. Repeated presses are ignored while a setup operation is running.
+The launcher restarts Codex if it is already running to apply the Bridge arguments.
 
 Permission Pilot displays short English policy labels: ASK, REVIEW, FULL,
 CUSTOM, PROFILE, or MANAGED, depending on Codex's available options. Turning

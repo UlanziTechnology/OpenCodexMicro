@@ -342,6 +342,14 @@ exit 1
     return status();
   }
 
+  /** Install missing app/service components before opening the local launcher. */
+  async function start() {
+    const current = await status();
+    if (!current.supported) throw new Error("Codex Bridge installation is supported on macOS only.");
+    if (!current.installed) await install();
+    return launch();
+  }
+
   async function uninstall() {
     if (platform !== "darwin" || !Number.isInteger(uid)) {
       throw new Error("Codex Bridge uninstallation is supported on macOS only.");
@@ -357,5 +365,5 @@ exit 1
     return status();
   }
 
-  return { status, install, launch, uninstall };
+  return { status, install, launch, start, uninstall };
 }

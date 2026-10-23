@@ -24,6 +24,7 @@ const USAGE_BASE64 = readFileSync(
   resolve(PLUGIN_ROOT, "assets/icons/usage-base.png")
 ).toString("base64");
 const ACTION_LABELS = Object.freeze({
+  launch: "BRIDGE",
   fast: "FAST",
   usage: "USAGE",
   pin: "PIN",
@@ -251,7 +252,7 @@ async function handleBridgeSetupMessage(message) {
     await sendBridgeSetupStatus(message);
     return;
   }
-  if (!["install", "launch", "uninstall"].includes(action)) {
+  if (!["install", "launch", "start", "uninstall"].includes(action)) {
     await sendBridgeSetupStatus(message, { error: `Unknown setup action: ${action}` });
     return;
   }
@@ -261,14 +262,16 @@ async function handleBridgeSetupMessage(message) {
   }
 
   setupOperation = action;
-  await sendBridgeSetupStatus(message);
+  renderAll();
   let result = null;
   let failure = null;
   try {
+    await sendBridgeSetupStatus(message);
     if (action === "install") await bridgeSetup.install();
     if (action === "launch") await bridgeSetup.launch();
+    if (action === "start") await bridgeSetup.start();
     if (action === "uninstall") await bridgeSetup.uninstall();
-    result = action;
+    result = action === "start" ? "launch" : action;
   } catch (error) {
     failure = error.message;
     send({
@@ -279,8 +282,10 @@ async function handleBridgeSetupMessage(message) {
       level: "error",
       message: `Codex Bridge ${action} failed: ${error.message}`
     });
+    send({ cmd: "showAlert", uuid: message.uuid, actionid: message.actionid, key: message.key });
   } finally {
     setupOperation = null;
+    renderAll();
   }
   await sendBridgeSetupStatus(message, { result, error: failure });
 }
@@ -427,6 +432,10 @@ function renderInstance(instance) {
   const slot = taskSlot(instance.uuid);
   if (slot === null) {
     const action = actionName(instance.uuid);
+    if (action === "launch") {
+      setDisplay(instance, 0, setupOperation ? "…" : ACTION_LABELS.launch);
+      return;
+    }
     if (action === "permissions") {
       setPermissionDisplay(instance);
       return;
@@ -536,6 +545,10 @@ async function invoke(instance, pressed) {
     }
     const action = actionName(instance.uuid);
     if (!action) throw new Error(`Unknown Codex action: ${instance.uuid}`);
+    if (action === "launch") {
+      if (pressed) await handleBridgeSetupMessage({ ...instance, payload: { action: "start" } });
+      return;
+    }
     if (action === "usage") {
       if (pressed) await bridgeRequest("/focus", "POST");
       return;

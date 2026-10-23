@@ -4019,6 +4019,12 @@ exit 1
     await execute("/usr/bin/open", [bridgeApp]);
     return status();
   }
+  async function start() {
+    const current = await status();
+    if (!current.supported) throw new Error("Codex Bridge installation is supported on macOS only.");
+    if (!current.installed) await install();
+    return launch();
+  }
   async function uninstall() {
     if (platform !== "darwin" || !Number.isInteger(uid)) {
       throw new Error("Codex Bridge uninstallation is supported on macOS only.");
@@ -4032,7 +4038,7 @@ exit 1
     await (0, import_promises.rm)(bridgeApp, { recursive: true, force: true });
     return status();
   }
-  return { status, install, launch, uninstall };
+  return { status, install, launch, start, uninstall };
 }
 
 // plugin/encoder-raster.js
@@ -4323,6 +4329,7 @@ var USAGE_BASE64 = (0, import_node_fs2.readFileSync)(
   (0, import_node_path2.resolve)(PLUGIN_ROOT, "assets/icons/usage-base.png")
 ).toString("base64");
 var ACTION_LABELS = Object.freeze({
+  launch: "BRIDGE",
   fast: "FAST",
   usage: "USAGE",
   pin: "PIN",
@@ -4547,7 +4554,7 @@ async function handleBridgeSetupMessage(message) {
     await sendBridgeSetupStatus(message);
     return;
   }
-  if (!["install", "launch", "uninstall"].includes(action)) {
+  if (!["install", "launch", "start", "uninstall"].includes(action)) {
     await sendBridgeSetupStatus(message, { error: `Unknown setup action: ${action}` });
     return;
   }
@@ -4556,14 +4563,16 @@ async function handleBridgeSetupMessage(message) {
     return;
   }
   setupOperation = action;
-  await sendBridgeSetupStatus(message);
+  renderAll();
   let result = null;
   let failure = null;
   try {
+    await sendBridgeSetupStatus(message);
     if (action === "install") await bridgeSetup.install();
     if (action === "launch") await bridgeSetup.launch();
+    if (action === "start") await bridgeSetup.start();
     if (action === "uninstall") await bridgeSetup.uninstall();
-    result = action;
+    result = action === "start" ? "launch" : action;
   } catch (error) {
     failure = error.message;
     send({
@@ -4574,8 +4583,10 @@ async function handleBridgeSetupMessage(message) {
       level: "error",
       message: `Codex Bridge ${action} failed: ${error.message}`
     });
+    send({ cmd: "showAlert", uuid: message.uuid, actionid: message.actionid, key: message.key });
   } finally {
     setupOperation = null;
+    renderAll();
   }
   await sendBridgeSetupStatus(message, { result, error: failure });
 }
@@ -4723,6 +4734,10 @@ function renderInstance(instance) {
   const slot = taskSlot(instance.uuid);
   if (slot === null) {
     const action = actionName(instance.uuid);
+    if (action === "launch") {
+      setDisplay(instance, 0, setupOperation ? "\u2026" : ACTION_LABELS.launch);
+      return;
+    }
     if (action === "permissions") {
       setPermissionDisplay(instance);
       return;
@@ -4821,6 +4836,10 @@ async function invoke(instance, pressed) {
     }
     const action = actionName(instance.uuid);
     if (!action) throw new Error(`Unknown Codex action: ${instance.uuid}`);
+    if (action === "launch") {
+      if (pressed) await handleBridgeSetupMessage({ ...instance, payload: { action: "start" } });
+      return;
+    }
     if (action === "usage") {
       if (pressed) await bridgeRequest("/focus", "POST");
       return;

@@ -101,6 +101,7 @@
     const rawLanguage = (query.get("language") || "en-US").replaceAll("_", "-").toLowerCase();
     const locale = rawLanguage.startsWith("zh-hk") || rawLanguage.startsWith("zh-tw") ? "zh_HK" : rawLanguage.startsWith("zh") ? "zh_CN" : rawLanguage.split("-")[0];
     const t = {
+      launchActionHelp: "Press to launch Codex Bridge.app. If installation is missing or incomplete, Install / Repair runs first, then launches it. The launcher restarts Codex if it is already running.",
       contextEncoderTitle: "Context Navigator",
       permissionEncoderTitle: "Permission Pilot",
       permissionEncoderHelp: "Turn to change the active chat's permission policy (ASK / REVIEW / FULL). During approval, choose ONCE / CHAT / DENY and press to submit. ONCE is selected initially. Unavailable options are skipped. For the FULL confirmation opened by this dial, press to confirm or turn left to cancel. Switching chats or closing the dialog invalidates confirmation.",
@@ -127,6 +128,7 @@
         const response = await fetch(`../${resource}.json`);
         const localized = (await response.json()).Localization || {};
         Object.assign(t, {
+          launchActionHelp: localized.LaunchBridgeHelp || t.launchActionHelp,
           contextEncoderTitle: localized.ContextEncoderTitle || t.contextEncoderTitle,
           permissionEncoderTitle: localized.PermissionEncoderTitle || t.permissionEncoderTitle,
           permissionEncoderHelp: localized.PermissionEncoderHelp || t.permissionEncoderHelp,
@@ -185,7 +187,7 @@
       const launch = document.getElementById("launch");
       const uninstall = document.getElementById("uninstall");
       install.textContent = busy && payload.operation === "install" ? t.installing : t.install;
-      launch.textContent = busy && payload.operation === "launch" ? t.launching : t.launch;
+      launch.textContent = busy && ["launch", "start"].includes(payload.operation) ? t.launching : t.launch;
       uninstall.textContent = busy && payload.operation === "uninstall" ? t.uninstalling : t.uninstall;
       install.disabled = busy || !status.supported;
       launch.disabled = busy || !status.installed || status.cdpConnected;
@@ -223,6 +225,11 @@
 
     async function start() {
       await loadLocalizedResources();
+      if (connection.uuid.endsWith(".launch")) {
+        text("actionHelpTitle", t.launch);
+        text("actionHelpText", t.launchActionHelp);
+        document.getElementById("actionHelp").hidden = false;
+      }
       if (connection.uuid.endsWith(".model")) {
         text("actionHelpTitle", t.modelEncoderTitle);
         text("actionHelpText", t.modelEncoderHelp);

@@ -19,9 +19,11 @@
     { "Name": "Enviar para o Codex", "Tooltip": "Envia ou coloca em fila o texto atual do editor do Codex." },
     { "Name": "Modelo e raciocínio", "Tooltip": "Rode à direita para o nível mais alto e à esquerda para o mais baixo. Prima e rode para ajustar o raciocínio. Sem ciclo." },
     { "Name": "Navegador de contexto", "Tooltip": "A primeira rotação abre o menu de contexto (+ / @). Rode à esquerda para subir e à direita para descer. Prima e solte para selecionar; mantenha premido e rode em qualquer sentido para fechar. Com o menu fechado, clicar ou rodar com o botão premido não faz nada." },
-    {"Name":"Permissões e aprovações","Tooltip":"Rode para alterar a política de permissões da conversa ativa (ASK / REVIEW / FULL). Numa aprovação, rode para escolher ONCE / CHAT / DENY e prima para executar. ONCE é a seleção inicial. As opções indisponíveis são ignoradas. No diálogo FULL aberto por este botão rotativo, prima para confirmar ou rode para a esquerda para cancelar e manter a política anterior. Fechar ou mudar de conversa invalida a confirmação."}
+    {"Name":"Permissões e aprovações","Tooltip":"Rode para alterar a política de permissões da conversa ativa (ASK / REVIEW / FULL). Numa aprovação, rode para escolher ONCE / CHAT / DENY e prima para executar. ONCE é a seleção inicial. As opções indisponíveis são ignoradas. No diálogo FULL aberto por este botão rotativo, prima para confirmar ou rode para a esquerda para cancelar e manter a política anterior. Fechar ou mudar de conversa invalida a confirmação."},
+    {"Name":"Iniciar Codex Bridge","Tooltip":"Inicia o Codex Bridge.app. Se não estiver instalado, instala ou repara primeiro e inicia em seguida."}
   ],
   "Localization": {
+    "LaunchBridgeHelp": "Prima para iniciar o Codex Bridge.app. Se a instalação estiver em falta ou incompleta, executa primeiro Instalar / Reparar. Se o Codex já estiver em execução, o iniciador reinicia-o com os parâmetros do Bridge.",
     "PermissionEncoderTitle": "Permissões e aprovações",
     "PermissionEncoderHelp": "Rode para alterar a política de permissões da conversa ativa (ASK / REVIEW / FULL). Numa aprovação, rode para escolher ONCE / CHAT / DENY e prima para executar. ONCE é a seleção inicial. As opções indisponíveis são ignoradas. No diálogo FULL aberto por este botão rotativo, prima para confirmar ou rode para a esquerda para cancelar e manter a política anterior. Fechar ou mudar de conversa invalida a confirmação.",
     "ContextEncoderTitle": "Navegador de contexto",

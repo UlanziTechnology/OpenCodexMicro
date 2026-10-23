@@ -19,9 +19,11 @@
     { "Name": "An Codex senden", "Tooltip": "Sendet den aktuellen Codex-Eingabetext oder stellt ihn in die Warteschlange." },
     { "Name": "Modell & Denkintensität", "Tooltip": "Rechts zur höchsten, links zur niedrigsten Stufe drehen. Gedrückt drehen ändert die Denkintensität. Kein Umlauf." },
     { "Name": "Kontext-Navigator", "Tooltip": "Die erste Drehung öffnet das Kontextmenü (+ / @). Links nach oben und rechts nach unten navigieren. Zum Auswählen drücken und loslassen; gedrückt in eine Richtung drehen schließt das Menü. Bei geschlossenem Menü haben Klicken und gedrücktes Drehen keine Wirkung." },
-    {"Name":"Berechtigungen und Freigaben","Tooltip":"Drehen ändert die Berechtigungen des aktiven Chats (ASK / REVIEW / FULL). Bei einer Anfrage ONCE / CHAT / DENY durch Drehen wählen und per Druck ausführen. ONCE ist vorausgewählt. Nicht verfügbare Optionen werden übersprungen. Im durch diesen Drehregler geöffneten FULL-Dialog bestätigt ein Druck; Linksdrehen bricht ab und behält die vorige Richtlinie. Schließen oder Chatwechsel macht die Bestätigung ungültig."}
+    {"Name":"Berechtigungen und Freigaben","Tooltip":"Drehen ändert die Berechtigungen des aktiven Chats (ASK / REVIEW / FULL). Bei einer Anfrage ONCE / CHAT / DENY durch Drehen wählen und per Druck ausführen. ONCE ist vorausgewählt. Nicht verfügbare Optionen werden übersprungen. Im durch diesen Drehregler geöffneten FULL-Dialog bestätigt ein Druck; Linksdrehen bricht ab und behält die vorige Richtlinie. Schließen oder Chatwechsel macht die Bestätigung ungültig."},
+    {"Name":"Codex Bridge starten","Tooltip":"Codex Bridge.app starten. Falls nicht installiert, zuerst installieren oder reparieren und anschließend starten."}
   ],
   "Localization": {
+    "LaunchBridgeHelp": "Drücken startet Codex Bridge.app. Bei fehlender oder unvollständiger Installation wird zuerst Installieren / Reparieren ausgeführt. Läuft Codex bereits, startet der Launcher es mit den Bridge-Startparametern neu.",
     "PermissionEncoderTitle": "Berechtigungen und Freigaben",
     "PermissionEncoderHelp": "Drehen ändert die Berechtigungen des aktiven Chats (ASK / REVIEW / FULL). Bei einer Anfrage ONCE / CHAT / DENY durch Drehen wählen und per Druck ausführen. ONCE ist vorausgewählt. Nicht verfügbare Optionen werden übersprungen. Im durch diesen Drehregler geöffneten FULL-Dialog bestätigt ein Druck; Linksdrehen bricht ab und behält die vorige Richtlinie. Schließen oder Chatwechsel macht die Bestätigung ungültig.",
     "ContextEncoderTitle": "Kontext-Navigator",

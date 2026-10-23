@@ -19,9 +19,11 @@
     { "Name": "Enviar a Codex", "Tooltip": "Envía o pone en cola el texto actual del editor de Codex." },
     { "Name": "Modelo y razonamiento", "Tooltip": "Gira a la derecha hacia el nivel más alto y a la izquierda hacia el más bajo. Mantén pulsado y gira para ajustar el razonamiento. Sin bucle." },
     { "Name": "Navegador de contexto", "Tooltip": "El primer giro abre el menú de contexto (+ / @). Gira a la izquierda para subir y a la derecha para bajar. Pulsa y suelta para seleccionar; mantén pulsado y gira en cualquier dirección para cerrar. Con el menú cerrado, pulsar o girar manteniendo pulsado no hace nada." },
-    {"Name":"Permisos y aprobaciones","Tooltip":"Gira para cambiar la política de permisos del chat activo (ASK / REVIEW / FULL). Ante una aprobación, gira para elegir ONCE / CHAT / DENY y pulsa para ejecutar. ONCE es la selección inicial. Se omiten las opciones no disponibles. En el diálogo FULL abierto por este dial, pulsa para confirmar o gira a la izquierda para cancelar y conservar la política anterior. Cerrar o cambiar de chat invalida la confirmación."}
+    {"Name":"Permisos y aprobaciones","Tooltip":"Gira para cambiar la política de permisos del chat activo (ASK / REVIEW / FULL). Ante una aprobación, gira para elegir ONCE / CHAT / DENY y pulsa para ejecutar. ONCE es la selección inicial. Se omiten las opciones no disponibles. En el diálogo FULL abierto por este dial, pulsa para confirmar o gira a la izquierda para cancelar y conservar la política anterior. Cerrar o cambiar de chat invalida la confirmación."},
+    {"Name":"Iniciar Codex Bridge","Tooltip":"Inicia Codex Bridge.app. Si no está instalado, lo instala o repara primero y después lo inicia."}
   ],
   "Localization": {
+    "LaunchBridgeHelp": "Pulsa para iniciar Codex Bridge.app. Si falta la instalación o está incompleta, se ejecuta primero Instalar / Reparar. Si Codex ya está abierto, el lanzador lo reinicia con los parámetros de inicio del Bridge.",
     "PermissionEncoderTitle": "Permisos y aprobaciones",
     "PermissionEncoderHelp": "Gira para cambiar la política de permisos del chat activo (ASK / REVIEW / FULL). Ante una aprobación, gira para elegir ONCE / CHAT / DENY y pulsa para ejecutar. ONCE es la selección inicial. Se omiten las opciones no disponibles. En el diálogo FULL abierto por este dial, pulsa para confirmar o gira a la izquierda para cancelar y conservar la política anterior. Cerrar o cambiar de chat invalida la confirmación.",
     "ContextEncoderTitle": "Navegador de contexto",

@@ -18,6 +18,7 @@ Steer, Mic, Submit, Latest Task & Scroll, and Model & Reasoning Encoder actions.
 | Five live task actions | Show Codex's Most Recent tasks with idle, working, complete, pending approval, reply needed, or error state |
 | Exact task switching | Route the selected thread through Codex's own Micro event bus |
 | Codex controls | Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit |
+| Launch Codex Bridge | Press to launch Codex Bridge.app; missing or incomplete installations are installed/repaired first |
 | Encoder navigation | Press to open task 1; turn left/right to scroll up/down through Ulanzi Studio's hotkey protocol |
 | Model & Reasoning Encoder | Turn to switch models; hold and turn to switch reasoning effort; stop at either end of each list |
 | Context Navigator Encoder | First turn opens the + / @ menu; turn left/right to move up/down; click to select, hold and turn to close; clicking while closed does nothing |

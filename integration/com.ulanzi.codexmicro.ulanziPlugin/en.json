@@ -19,9 +19,11 @@
     { "Name": "Submit to Codex", "Tooltip": "Submit or queue the current Codex composer text." },
     { "Name": "Model & Reasoning", "Tooltip": "Turn right toward the highest entry and left toward the lowest. Hold and turn to adjust reasoning effort. Stops at both ends." },
     { "Name": "Context Navigator", "Tooltip": "First turn opens the + / @ context menu. Turn left to move up and right to move down. Click and release to select; hold and turn either way to close. Clicking or holding and turning while the menu is closed does nothing." },
-    {"Name":"Permission Pilot","Tooltip":"Turn to change the active chat’s permission policy (ASK / REVIEW / FULL). During an approval, turn to select ONCE / CHAT / DENY, then press to submit. ONCE is selected initially. Unavailable options are skipped. For the Full access dialog opened by this dial, press to confirm or turn left to cancel. Closing or changing chats invalidates the confirmation."}
+    {"Name":"Permission Pilot","Tooltip":"Turn to change the active chat’s permission policy (ASK / REVIEW / FULL). During an approval, turn to select ONCE / CHAT / DENY, then press to submit. ONCE is selected initially. Unavailable options are skipped. For the Full access dialog opened by this dial, press to confirm or turn left to cancel. Closing or changing chats invalidates the confirmation."},
+    {"Name":"Launch Codex Bridge","Tooltip":"Launch Codex Bridge.app. If it is not installed, install or repair it first, then launch it."}
   ],
   "Localization": {
+    "LaunchBridgeHelp": "Press to launch Codex Bridge.app. If installation is missing or incomplete, Install / Repair runs first, then launches it. The launcher restarts Codex if it is already running.",
     "PermissionEncoderTitle": "Permission Pilot",
     "PermissionEncoderHelp": "Turn to change the active chat’s permission policy (ASK / REVIEW / FULL). During an approval, turn to select ONCE / CHAT / DENY, then press to submit. ONCE is selected initially. Unavailable options are skipped. For the Full access dialog opened by this dial, press to confirm or turn left to cancel. Closing or changing chats invalidates the confirmation.",
     "ContextEncoderTitle": "Context Navigator",

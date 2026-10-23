@@ -17,6 +17,7 @@ Fork、Steer、Mic、Submit、Latest Task & Scroll 和“模型与思考强度�
 | 五个实时任务 Action | 展示 Codex Most Recent 任务及空闲、运行、完成、待审批、待回复或错误状态 |
 | 精确任务切换 | 通过 Codex 自己的 Micro event bus 打开按键显示的任务 |
 | Codex 常用控制 | Fast、Usage、Pin、New、Fork、Steer、Mic 和 Submit |
+| 启动 Codex Bridge | 按下一键启动；未安装或安装不完整时，先执行安装/修复，完成后启动 |
 | 旋钮导航 | 按下打开 task1；左/右旋转通过 Ulanzi Studio hotkey 协议向上/向下滚动 |
 | 模型与思考强度旋钮 | 普通旋转切模型，按住旋转切思考强度，两个列表到首尾停止、不循环 |
 | 上下文导航旋钮 | 首次旋转打开附加（+ / @）菜单；左旋向上、右旋向下选择，单击确认，按住旋转关闭；菜单关闭时单击无响应 |
