@@ -1,11 +1,11 @@
 {
   "name": "open-codex-micro-ulanzi-plugin",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "check": "node --check plugin/app.js && node --check plugin/bridge-installer.js",
+    "check": "node --check plugin/app.js && node --check plugin/model-display.js && node --check plugin/encoder-raster.js && node --check plugin/permission-display.js && node --check plugin/bridge-installer.js",
     "smoke": "node test/smoke.mjs"
   },
   "dependencies": {

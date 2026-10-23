@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="196" height="196" viewBox="0 0 196 196">
+  <!-- Reuse the original silver key surface; inline this image when rasterising. -->
+  <image href="usage-base.png" width="196" height="196"/>
+  <!-- Lucide at-sign (ISC / Feather MIT); see THIRD_PARTY_NOTICES.md. -->
+  <g transform="translate(65.6 61.6) scale(2.7)" fill="none" stroke="#292b29" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="4"/>
+    <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>
+  </g>
+</svg>

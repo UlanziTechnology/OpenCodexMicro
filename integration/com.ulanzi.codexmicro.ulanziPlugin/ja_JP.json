@@ -1,7 +1,7 @@
 {
   "Name": "Codex Micro",
   "Overview": "Ulanzi Studio の Ulanzi D200 Series から Codex Desktop のタスクと操作を制御します。",
-  "Description": "Ulanzi Studio を通じて、Ulanzi D200 Series を Codex Desktop 専用のコントロールサーフェスにします。\n\n機能\n- 最近の 5 件の Codex タスクをリアルタイム状態付きで表示し、選択したタスクを正確に開きます。\n- Fast、Usage、Pin、New、Fork、Steer、Mic、Submit を操作できます。\n- Latest Task & Scroll Encoder で task1 を開き、Codex を上下にスクロールできます。\n- 各 Action の設定ページから Codex Bridge のインストール、修復、起動、確認ができます。\n- Codex Bridge.app とループバック限定エンドポイントを使用して通信をローカルに保ちます。\n\nインストール環境\n- macOS 13 以降\n- Codex Desktop\n- Ulanzi Studio 3.0.1 以降\n- Ulanzi Studio に接続された Ulanzi D200 Series\n- リポジトリから手動設定する場合のみ Node.js 20 以降\n\nLLM / AGENT インストール\nAgent に次のように入力します：\nUlanzi Studio プラグインをインストールしてください：https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation\n\n手動インストール\n1. https://github.com/UlanziTechnology/OpenCodexMicro をクローンしてリポジトリを開きます。\n2. Ulanzi Studio を終了します。\n3. 実行：npm install\n4. 実行：npm run install:plugin\n5. 実行：npm run setup\n6. Ulanzi Studio を再度開き、Codex Desktop を終了して ~/Applications/Codex Bridge.app を起動します。\n7. Ulanzi Studio で Codex Micro actions をキーに追加します。\n8. 任意の Action を選択し、Codex Bridge 設定ページでインストール、サービス、CDP の状態を確認します。\n\n重要事項\nCodex Micro を使用する際は、必ず ~/Applications/Codex Bridge.app から Codex を起動してください。Codex Desktop を直接開かないでください。\n起動コマンド： open ~/Applications/Codex\\ Bridge.app",
+  "Description": "Ulanzi Studio を通じて、Ulanzi D200 Series を Codex Desktop 専用のコントロールサーフェスにします。\n\n機能\n- 最近の 5 件の Codex タスクをリアルタイム状態付きで表示し、選択したタスクを正確に開きます。\n- タスクキーに承認待ちと回答待ちを表示。モデルと思考強度の旋回操作で現在の入力欄の設定を切り替えます。リストは循環しません。\n- Fast、Usage、Pin、New、Fork、Steer、Mic、Submit を操作できます。\n- Latest Task & Scroll Encoder で task1 を開き、Codex を上下にスクロールできます。\n- 各 Action の設定ページから Codex Bridge のインストール、修復、起動、確認ができます。\n- Codex Bridge.app とループバック限定エンドポイントを使用して通信をローカルに保ちます。\n- コンテキストナビ: 最初に回すと追加（+ / @）メニューが開きます。左に回して上へ、右に回して下へ移動します。押して離すと選択し、押しながら左右いずれかに回すと閉じます。メニューが閉じている間はクリックや押し回しをしても何も起きません。\n\nインストール環境\n- macOS 13 以降\n- Codex Desktop\n- Ulanzi Studio 3.0.1 以降\n- Ulanzi Studio に接続された Ulanzi D200 Series\n- リポジトリから手動設定する場合のみ Node.js 20 以降\n\nLLM / AGENT インストール\nAgent に次のように入力します：\nUlanzi Studio プラグインをインストールしてください：https://github.com/UlanziTechnology/OpenCodexMicro#1-llm--agent-installation\n\n手動インストール\n1. https://github.com/UlanziTechnology/OpenCodexMicro をクローンしてリポジトリを開きます。\n2. Ulanzi Studio を終了します。\n3. 実行：npm install\n4. 実行：npm run install:plugin\n5. 実行：npm run setup\n6. Ulanzi Studio を再度開き、Codex Desktop を終了して ~/Applications/Codex Bridge.app を起動します。\n7. Ulanzi Studio で Codex Micro actions をキーに追加します。\n8. 任意の Action を選択し、Codex Bridge 設定ページでインストール、サービス、CDP の状態を確認します。\n\n重要事項\nCodex Micro を使用する際は、必ず ~/Applications/Codex Bridge.app から Codex を起動してください。Codex Desktop を直接開かないでください。\n起動コマンド： open ~/Applications/Codex\\ Bridge.app",
   "Actions": [
     { "Name": "Codex タスク 1", "Tooltip": "最近の Codex タスクスロット 1 を開き、リアルタイム状態を表示します。" },
     { "Name": "Codex タスク 2", "Tooltip": "最近の Codex タスクスロット 2 を開き、リアルタイム状態を表示します。" },
@@ -16,9 +16,21 @@
     { "Name": "Codex タスクをフォーク", "Tooltip": "アクティブな Codex タスクを新しいタスクとしてフォークします。" },
     { "Name": "Codex を誘導", "Tooltip": "現在の入力欄のテキストを実行中タスクへの誘導入力として送信します。" },
     { "Name": "Codex マイク", "Tooltip": "Codex のマイク操作を切り替えます。" },
-    { "Name": "Codex に送信", "Tooltip": "現在の Codex 入力欄のテキストを送信またはキューに追加します。" }
+    { "Name": "Codex に送信", "Tooltip": "現在の Codex 入力欄のテキストを送信またはキューに追加します。" },
+    { "Name": "モデルと思考強度", "Tooltip": "右に回すと上位、左に回すと下位へ。押しながら回すと思考強度を調整。両端で停止し、循環しません。" },
+    { "Name": "コンテキストナビ", "Tooltip": "最初に回すと追加（+ / @）メニューが開きます。左に回して上へ、右に回して下へ移動します。押して離すと選択し、押しながら左右いずれかに回すと閉じます。メニューが閉じている間はクリックや押し回しをしても何も起きません。" },
+    {"Name":"権限と承認","Tooltip":"回して現在のチャットの権限方針を変更します（ASK / REVIEW / FULL）。承認待ちでは ONCE（今回のみ）/ CHAT（この会話）/ DENY（拒否）を回して選び、押して実行します。初期選択は ONCE。利用できない項目はスキップします。このダイヤルで開いた FULL 確認画面では、押すと確認、左へ回すと取り消して元の方針を維持します。画面を閉じるかチャットを変えると確認は無効になります。"}
   ],
   "Localization": {
+    "PermissionEncoderTitle": "権限と承認",
+    "PermissionEncoderHelp": "回して現在のチャットの権限方針を変更します（ASK / REVIEW / FULL）。承認待ちでは ONCE（今回のみ）/ CHAT（この会話）/ DENY（拒否）を回して選び、押して実行します。初期選択は ONCE。利用できない項目はスキップします。このダイヤルで開いた FULL 確認画面では、押すと確認、左へ回すと取り消して元の方針を維持します。画面を閉じるかチャットを変えると確認は無効になります。",
+    "ContextEncoderTitle": "コンテキストナビ",
+    "ContextEncoderHelp": "最初に回すと追加（+ / @）メニューが開きます。左に回して上へ、右に回して下へ移動します。押して離すと選択し、押しながら左右いずれかに回すと閉じます。メニューが閉じている間はクリックや押し回しをしても何も起きません。",
+    "AwaitingApproval": "承認待ち",
+    "AwaitingResponse": "回答待ち",
+    "ModelUnavailable": "モデル使用不可",
+    "ModelEncoderTitle": "モデルと思考強度",
+    "ModelEncoderHelp": "右に回すと Codex のモデル一覧の先頭、左に回すと末尾へ移動します。押しながら右/左に回すと思考強度が上がり/下がり、両端で停止します。画面にはモデルの略称、位置、強度バーを表示。押すだけでは選択は変わらず、思考強度を強調します。",
     "BridgeSetup": "Codex Bridge 設定",
     "BridgeSetupDescription": "ローカルの Codex 接続をインストール、起動、確認します。",
     "BridgeApp": "Codex Bridge.app",

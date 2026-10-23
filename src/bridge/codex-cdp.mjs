@@ -2,12 +2,40 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import WebSocket from "ws";
 import { localThreadKey } from "./thread-key.mjs";
+import { composerControl, composerControlExpression } from "./composer-control.mjs";
+import { permissionControl, permissionControlExpression } from "./permission-control.mjs";
+import { contextMenuControlExpression } from "./context-menu-control.mjs";
 
 const execFileAsync = promisify(execFile);
 const USAGE_REFRESH_MS = Math.max(
   15000,
   Number(process.env.CODEX_KEYBOARD_USAGE_REFRESH_SECONDS || 600) * 1000
 );
+// Upstream 0.3.2: reuse the bus and bound discovery to Micro-related assets.
+export async function resolveMicroBus({
+  cachedBus,
+  urls,
+  importNamespace
+}) {
+  const isBus = (candidate) => Boolean(
+    candidate && typeof candidate === "object" &&
+    candidate.handlers instanceof Map &&
+    (typeof candidate.dispatchHostMessage === "function" ||
+      typeof candidate.dispatchMessage === "function")
+  );
+  if (isBus(cachedBus)) return cachedBus;
+  for (const url of [...new Set(urls)]
+    .filter((candidate) => /vscode-api|codex-micro|app-initial/.test(candidate))
+    .slice(0, 120)) {
+    try {
+      const namespace = await importNamespace(url);
+      const bus = Object.values(namespace).find(isBus);
+      if (bus) return bus;
+    } catch {}
+  }
+  return null;
+}
+
 const DEVICE_STATE = {
   type: "codex-micro-device-state-changed",
   state: { status: "connected", error: null, battery: { percentage: 100, isCharging: true } }
@@ -138,20 +166,17 @@ const ENABLE_EXPRESSION = `(async () => {
     ...[...document.querySelectorAll("link[href],script[src]")].map((el) => el.href || el.src),
     ...performance.getEntriesByType("resource").map((entry) => entry.name)
   ])].filter((url) => url.includes("/assets/") && url.endsWith(".js"));
-  for (const url of urls.filter((url) => /vscode-api|codex-micro|app-initial/.test(url)).slice(0, 120)) {
-    try {
-      const namespace = await import(url);
-      const bus = Object.values(namespace).find((candidate) =>
-        candidate && typeof candidate === "object" &&
-        candidate.handlers instanceof Map &&
-        (typeof candidate.dispatchHostMessage === "function" || typeof candidate.dispatchMessage === "function")
-      );
-      if (!bus) continue;
-      globalThis[Symbol.for("codex-keyboard-micro-bus")] = bus;
-      const dispatch = bus.dispatchHostMessage ?? bus.dispatchMessage;
-      dispatch.call(bus, ${JSON.stringify(DEVICE_STATE)});
-      return { ready: true, clients: clients.length };
-    } catch {}
+  const resolveMicroBus = ${resolveMicroBus.toString()};
+  const bus = await resolveMicroBus({
+    cachedBus: globalThis[Symbol.for("codex-keyboard-micro-bus")],
+    urls,
+    importNamespace: (url) => import(url)
+  });
+  if (bus) {
+    globalThis[Symbol.for("codex-keyboard-micro-bus")] = bus;
+    const dispatch = bus.dispatchHostMessage ?? bus.dispatchMessage;
+    dispatch.call(bus, ${JSON.stringify(DEVICE_STATE)});
+    return { ready: true, clients: clients.length };
   }
   return { ready: clients.length > 0, clients: clients.length };
 })()`;
@@ -166,7 +191,9 @@ const SNAPSHOT_EXPRESSION = `(async () => {
     Array.isArray(slots) && slots.length === 6 &&
     slots.every((slot, index) => slot?.id === index);
   const readSource = (source) => {
-    if (!source || source.root !== root || !source.node?.store) {
+    // A valid resolver may still refer to an old mount; periodically rediscover it.
+    if (!source || source.root !== root || !source.node?.store ||
+        !Number.isFinite(source.discoveredAt) || Date.now() - source.discoveredAt >= 2000) {
       throw new Error("Cached Codex Micro source is stale");
     }
     const slots = source.node.store.get(
@@ -199,15 +226,12 @@ const SNAPSHOT_EXPRESSION = `(async () => {
     const slotSignalsUrl = urls.find((url) => url.includes("/assets/codex-micro-slot-signals-"));
     if (!slotSignalsUrl) throw new Error("Codex Micro slot signals are not loaded");
 
-    const namespaces = [];
-    for (const url of urls) {
-      try { namespaces.push(await import(url)); } catch {}
-    }
-    const exportedValues = namespaces.flatMap((namespace) => Object.values(namespace));
-    const bus = exportedValues.find((candidate) =>
-      candidate && typeof candidate === "object" && candidate.handlers instanceof Map &&
-      (typeof candidate.dispatchHostMessage === "function" || typeof candidate.dispatchMessage === "function")
-    );
+    const resolveMicroBus = ${resolveMicroBus.toString()};
+    const bus = await resolveMicroBus({
+      cachedBus: globalThis[Symbol.for("codex-keyboard-micro-bus")],
+      urls,
+      importNamespace: (url) => import(url)
+    });
     if (bus) {
       globalThis[Symbol.for("codex-keyboard-micro-bus")] = bus;
       if ((bus.handlers.get("codex-micro-hid-event")?.size ?? 0) === 0) {
@@ -248,6 +272,7 @@ const SNAPSHOT_EXPRESSION = `(async () => {
                   node,
                   resolver,
                   contextMap: value,
+                  discoveredAt: Date.now(),
                   queryClients: [...queryClients]
                 };
                 globalThis[sourceKey] = source;
@@ -319,6 +344,8 @@ const SNAPSHOT_EXPRESSION = `(async () => {
     ?? null;
   const normalizeThreadKey = (value) => String(value ?? "").replace(/^local:/, "");
   return {
+    composer: await (${composerControl.toString()})().catch(() => null),
+    permissions: await (${permissionControl.toString()})().catch(() => null),
     activeThreadKey,
     slots: found.map((slot) => ({
       id: slot.id,
@@ -372,6 +399,42 @@ export class CodexCdpClient {
   nextId = 0;
   pending = new Map();
   lastSnapshot = null;
+  selectionQueue = Promise.resolve();
+  contextMenuQueue = Promise.resolve();
+  permissionQueue = Promise.resolve();
+
+  /** @param {import('./permission-control.mjs').PermissionCommand} command */
+  controlPermissions(command) {
+    const control = async () => {
+      await this.connect();
+      return this.evaluate(permissionControlExpression(command));
+    };
+    const operation = this.permissionQueue.then(control, control);
+    this.permissionQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  /** @param {import('./context-menu-control.mjs').ContextMenuAction} action */
+  navigateContextMenu(action) {
+    const navigate = async () => {
+      await this.connect();
+      return this.evaluate(contextMenuControlExpression(action));
+    };
+    const operation = this.contextMenuQueue.then(navigate, navigate);
+    this.contextMenuQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  /** @param {'model'|'reasoning'} kind @param {'left'|'right'} direction */
+  adjustComposerSetting(kind, direction) {
+    const select = async () => {
+      await this.connect();
+      return this.evaluate(composerControlExpression(kind, direction));
+    };
+    const operation = this.selectionQueue.then(select, select);
+    this.selectionQueue = operation.catch(() => {});
+    return operation;
+  }
 
   async connect() {
     if (this.socket?.readyState === WebSocket.OPEN) return;

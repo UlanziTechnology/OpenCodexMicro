@@ -1,0 +1,38 @@
+{
+  "id": "codex-navigate-encoder",
+  "items": [
+    {
+      "type": "pixmap",
+      "key": "icon",
+      "background": "transparent",
+      "enabled": true,
+      "rect": [
+        0,
+        7,
+        126,
+        126
+      ],
+      "zOrder": 0,
+      "value": "assets/icons/task-idle.png"
+    },
+    {
+      "type": "text",
+      "key": "encoder-label",
+      "background": "transparent",
+      "enabled": false,
+      "rect": [
+        0,
+        105,
+        126,
+        35
+      ],
+      "zOrder": 1,
+      "alignment": "center",
+      "color": "#dfdfdf",
+      "font": {
+        "size": 7
+      },
+      "text": ""
+    }
+  ]
+}

@@ -7,7 +7,7 @@
 OpenCodexMicro exposes Codex's live Micro state through a loopback Bridge and
 turns it into a native Ulanzi Studio plugin. It shows recent tasks, switches to
 the exact task displayed on a key, and provides Fast, Usage, Pin, New, Fork,
-Steer, Mic, Submit, and Latest Task & Scroll Encoder actions.
+Steer, Mic, Submit, Latest Task & Scroll, and Model & Reasoning Encoder actions.
 
 ![OpenCodexMicro on an Ulanzi D200 Series](docs/images/codex-keyboard-hero.png)
 
@@ -15,10 +15,13 @@ Steer, Mic, Submit, and Latest Task & Scroll Encoder actions.
 
 | Feature | Behavior |
 | --- | --- |
-| Five live task actions | Show Codex's Most Recent tasks with idle, working, complete, attention, or error state |
+| Five live task actions | Show Codex's Most Recent tasks with idle, working, complete, pending approval, reply needed, or error state |
 | Exact task switching | Route the selected thread through Codex's own Micro event bus |
 | Codex controls | Fast, Usage, Pin, New, Fork, Steer, Mic, and Submit |
 | Encoder navigation | Press to open task 1; turn left/right to scroll up/down through Ulanzi Studio's hotkey protocol |
+| Model & Reasoning Encoder | Turn to switch models; hold and turn to switch reasoning effort; stop at either end of each list |
+| Context Navigator Encoder | First turn opens the + / @ menu; turn left/right to move up/down; click to select, hold and turn to close; clicking while closed does nothing |
+| Permission Pilot Encoder | Turn to change the active chat's permission policy; during approval, select ONCE / CHAT / DENY and press to submit |
 | Live usage | Draw the remaining Codex allowance directly on the key; press to return to Codex |
 | Ulanzi Studio integration | Let Ulanzi Studio own the device and manage the key layout |
 | Local-only transport | Bind CDP and the Bridge API to loopback addresses only |
@@ -115,12 +118,31 @@ diagnostics, updates, and uninstall instructions.
 
 The physical layout is managed in Ulanzi Studio. The plugin ships these
 actions: Codex Task 1–5, Fast, Usage, Pin, New, Fork, Steer, Mic, Submit, and
-Latest Task & Scroll for Encoder controls.
+Latest Task & Scroll, Model & Reasoning, and Context Navigator for Encoder controls.
 No separate device daemon or shortcut mapping is required.
 
 Select any configured action to open the shared **Codex Bridge Setup** page.
 It shows Bridge installation, service, and CDP status and provides Install /
 Repair and Launch controls.
+
+The Model & Reasoning action uses the active composer's available model list
+and the selected model's supported reasoning efforts. Right turns toward the
+highest entry (Codex's first model), left toward the lowest (its last model).
+Holding and turning right/left raises/lowers reasoning effort. Neither list wraps.
+The graphic display separates model version and family, shows list position and
+effort bars, and highlights reasoning while held. Pressing alone changes no selection.
+Rebuild/update the Bridge as well
+as the plugin when upgrading to this feature (use Install / Repair in the setup page).
+
+Task keys mark pending approval and pending replies explicitly while keeping the
+task title. They return to their normal status when Codex resumes or completes.
+
+Context Navigator controls the composer's **Add files and more** (+ / @) menu.
+The first turn opens it without skipping the initial selection. Further left/right
+turns move up/down. A click confirms the highlighted item on release; holding
+and turning either way closes the menu without confirming. Clicking or holding
+and turning while the menu is closed does nothing. It uses structural identifiers rather than translated
+button labels. Update both the plugin and Bridge when adding this feature.
 
 On macOS, enable Ulanzi Studio in **System Settings > Privacy & Security >
 Accessibility** so Encoder rotation can send mouse-wheel events.

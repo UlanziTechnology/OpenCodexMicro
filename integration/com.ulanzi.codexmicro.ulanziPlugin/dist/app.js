@@ -4035,14 +4035,285 @@ exit 1
   return { status, install, launch, uninstall };
 }
 
+// plugin/encoder-raster.js
+var import_node_zlib = require("node:zlib");
+var FONT = Object.freeze({
+  "0": ["11111", "10001", "10001", "10001", "10001", "10001", "11111"],
+  "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+  "2": ["11110", "00001", "00001", "01110", "10000", "10000", "11111"],
+  "3": ["11110", "00001", "00001", "01110", "00001", "00001", "11110"],
+  "4": ["10010", "10010", "10010", "11111", "00010", "00010", "00010"],
+  "5": ["11111", "10000", "10000", "11110", "00001", "00001", "11110"],
+  "6": ["01110", "10000", "10000", "11110", "10001", "10001", "01110"],
+  "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+  "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+  "9": ["01110", "10001", "10001", "01111", "00001", "00001", "01110"],
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  B: ["11110", "10001", "10001", "11110", "10001", "10001", "11110"],
+  C: ["01111", "10000", "10000", "10000", "10000", "10000", "01111"],
+  D: ["11110", "10001", "10001", "10001", "10001", "10001", "11110"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  F: ["11111", "10000", "10000", "11110", "10000", "10000", "10000"],
+  G: ["01111", "10000", "10000", "10111", "10001", "10001", "01111"],
+  H: ["10001", "10001", "10001", "11111", "10001", "10001", "10001"],
+  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
+  J: ["00111", "00010", "00010", "00010", "00010", "10010", "01100"],
+  K: ["10001", "10010", "10100", "11000", "10100", "10010", "10001"],
+  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+  M: ["10001", "11011", "10101", "10101", "10001", "10001", "10001"],
+  N: ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  P: ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+  Q: ["01110", "10001", "10001", "10001", "10101", "10010", "01101"],
+  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  S: ["01111", "10000", "10000", "01110", "00001", "00001", "11110"],
+  T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
+  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+  V: ["10001", "10001", "10001", "10001", "10001", "01010", "00100"],
+  W: ["10001", "10001", "10001", "10101", "10101", "11011", "10001"],
+  X: ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
+  Y: ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
+  Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+  "-": ["00000", "00000", "00000", "11111", "00000", "00000", "00000"],
+  ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
+  "/": ["00001", "00010", "00100", "01000", "10000", "00000", "00000"],
+  "+": ["00000", "00100", "00100", "11111", "00100", "00100", "00000"],
+  "?": ["01110", "10001", "00001", "00110", "00100", "00000", "00100"],
+  " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"]
+});
+function rgba(value) {
+  const match = String(value).match(/^#([0-9a-f]{6})$/i);
+  if (!match) return [0, 0, 0, 255];
+  const hex = match[1];
+  return [Number.parseInt(hex.slice(0, 2), 16), Number.parseInt(hex.slice(2, 4), 16), Number.parseInt(hex.slice(4, 6), 16), 255];
+}
+function fillRect(pixels, width, height, x, y, rectWidth, rectHeight, color) {
+  const [red, green, blue, alpha] = rgba(color);
+  const left = Math.max(0, Math.floor(x));
+  const top = Math.max(0, Math.floor(y));
+  const right = Math.min(width, Math.ceil(x + rectWidth));
+  const bottom = Math.min(height, Math.ceil(y + rectHeight));
+  for (let row = top; row < bottom; row += 1) {
+    for (let column = left; column < right; column += 1) {
+      const offset = (row * width + column) * 4;
+      pixels[offset] = red;
+      pixels[offset + 1] = green;
+      pixels[offset + 2] = blue;
+      pixels[offset + 3] = alpha;
+    }
+  }
+}
+function fillRoundedRect(pixels, width, height, x, y, rectWidth, rectHeight, radius, color) {
+  for (let row = 0; row < rectHeight; row += 1) {
+    const dy = Math.max(radius - row - 0.5, row + 0.5 - (rectHeight - radius), 0);
+    const inset = dy ? radius - Math.sqrt(radius * radius - dy * dy) : 0;
+    fillRect(
+      pixels,
+      width,
+      height,
+      x + Math.ceil(inset),
+      y + row,
+      rectWidth - 2 * Math.ceil(inset),
+      1,
+      color
+    );
+  }
+}
+function drawText(pixels, width, height, value, x, y, scale, color, maxWidth, align = "start") {
+  const text = String(value || "").toUpperCase().replace(/[^A-Z0-9 .+\-/]/g, "?");
+  const advance = 6 * scale;
+  const limit = Number.isFinite(maxWidth) ? Math.max(1, Math.floor(maxWidth / advance)) : text.length;
+  const shown = text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}.`;
+  const textWidth = shown.length * advance - scale;
+  let cursor = align === "end" ? x - textWidth : align === "middle" ? x - textWidth / 2 : x;
+  for (const character of shown) {
+    const glyph = FONT[character] || FONT["?"];
+    for (let row = 0; row < glyph.length; row += 1) {
+      for (let column = 0; column < glyph[row].length; column += 1) {
+        if (glyph[row][column] === "1") fillRect(pixels, width, height, cursor + column * scale, y + row * scale, scale, scale, color);
+      }
+    }
+    cursor += advance;
+  }
+}
+var crcTable;
+function crc32(bytes) {
+  if (!crcTable) {
+    crcTable = Array.from({ length: 256 }, (_, value) => {
+      let remainder = value;
+      for (let bit = 0; bit < 8; bit += 1) remainder = remainder & 1 ? 3988292384 ^ remainder >>> 1 : remainder >>> 1;
+      return remainder >>> 0;
+    });
+  }
+  let crc = 4294967295;
+  for (const byte of bytes) crc = crcTable[(crc ^ byte) & 255] ^ crc >>> 8;
+  return ~crc >>> 0;
+}
+function pngChunk(type, data) {
+  const typeBytes = Buffer.from(type, "ascii");
+  const payload = Buffer.concat([typeBytes, data]);
+  const length = Buffer.alloc(4);
+  const checksum = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  checksum.writeUInt32BE(crc32(payload));
+  return Buffer.concat([length, payload, checksum]);
+}
+function pngDataUrl(pixels, width, height) {
+  const rowLength = width * 4;
+  const scanlines = Buffer.alloc((rowLength + 1) * height);
+  for (let row = 0; row < height; row += 1) {
+    const target = row * (rowLength + 1);
+    scanlines[target] = 0;
+    Buffer.from(pixels.buffer, pixels.byteOffset + row * rowLength, rowLength).copy(scanlines, target + 1);
+  }
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 6;
+  const png = Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk("IHDR", header),
+    pngChunk("IDAT", (0, import_node_zlib.deflateSync)(scanlines, { level: 9 })),
+    pngChunk("IEND", Buffer.alloc(0))
+  ]);
+  return `data:image/png;base64,${png.toString("base64")}`;
+}
+
+// plugin/model-display.js
+function modelName(composer) {
+  const name = String(composer?.modelLabel || composer?.model || "").trim();
+  const gpt = name.match(/^GPT[-\s]*(\d+(?:\.\d+)*)(?:[-\s]+(.*))?$/i);
+  if (gpt) return { brand: "GPT", version: gpt[1], family: (gpt[2] || "CODEX").toUpperCase() };
+  const words = name.replace(/[-_]+/g, " ").split(/\s+/);
+  return { brand: "MODEL", version: words.shift() || "\u2014", family: words.join(" ").toUpperCase() };
+}
+function modelEncoderPng(composer, mode = "model", connected = true) {
+  const width = 126;
+  const height = 140;
+  const pixels = new Uint8Array(width * height * 4);
+  const ready = connected && Boolean(composer?.model);
+  const held = mode === "reasoning";
+  const name = ready ? modelName(composer) : { brand: "CODEX", version: "-", family: connected ? "NO MODEL" : "OFFLINE" };
+  const primary = name.version;
+  const family = name.family;
+  const primaryColor = ready ? "#0d8a70" : "#858c8f";
+  const effortColor = ready ? held ? "#94621b" : "#087f5b" : "#858c8f";
+  const modelCount = Math.max(0, Math.min(32, Number(composer?.modelCount) || 0));
+  const modelIndex = Number.isInteger(composer?.modelIndex) ? composer.modelIndex : -1;
+  const effortCount = Math.max(0, Math.min(12, Number(composer?.reasoningCount) || 0));
+  const effortIndex = Number.isInteger(composer?.reasoningIndex) ? composer.reasoningIndex : -1;
+  fillRoundedRect(pixels, width, height, 0, 0, 126, 140, 12, "#bfc4c2");
+  fillRoundedRect(pixels, width, height, 1, 1, 124, 138, 11, "#eeeeed");
+  const primaryScale = Math.min(5, 108 / Math.max(6, primary.length * 6));
+  drawText(pixels, width, height, primary, 63, 10, primaryScale, primaryColor, 110, "middle");
+  const familyScale = Math.min(2.5, 108 / Math.max(6, family.length * 6));
+  drawText(pixels, width, height, family, 63, 53, familyScale, ready ? "#315d69" : "#858c8f", 110, "middle");
+  drawText(pixels, width, height, "-", 10, 76, 1, "#7b8b81", 8, "middle");
+  drawText(pixels, width, height, "+", 116, 76, 1, primaryColor, 8, "middle");
+  const gap = modelCount > 16 ? 1 : 3;
+  const railWidth = modelCount ? (90 - gap * (modelCount - 1)) / modelCount : 90;
+  for (let index = 0; index < Math.max(1, modelCount); index += 1) {
+    fillRect(pixels, width, height, 18 + index * (railWidth + gap), 77, railWidth, 4, ready && index === modelIndex ? "#10a37f" : "#c1c8c5");
+  }
+  fillRoundedRect(pixels, width, height, 8, 90, 110, 39, 6, held ? "#b99a60" : "#b4bfba");
+  fillRoundedRect(pixels, width, height, 9, 91, 108, 37, 5, held ? "#eee4cd" : "#e0eae4");
+  const effort = ready ? String(composer.reasoningEffort || "-") : "-";
+  const effortScale = Math.min(2.5, 100 / Math.max(6, effort.length * 6));
+  drawText(pixels, width, height, effort, 63, 94, effortScale, effortColor, 104, "middle");
+  const barWidth = effortCount ? (96 - 4 * (effortCount - 1)) / effortCount : 96;
+  for (let index = 0; index < Math.max(1, effortCount); index += 1) {
+    const barHeight = effortCount > 1 ? 3 + index * 6 / (effortCount - 1) : 5;
+    fillRect(pixels, width, height, 15 + index * (barWidth + 4), 125 - barHeight, barWidth, barHeight, ready && index <= effortIndex ? effortColor : "#bac4bf");
+  }
+  return pngDataUrl(pixels, width, height);
+}
+
+// plugin/permission-display.js
+function permissionEncoderPng(state, choice = "once", pending = false, connected = true) {
+  const width = 126, height = 126;
+  const pixels = new Uint8Array(width * height * 4);
+  fillRoundedRect(pixels, width, height, 0, 0, width, height, 12, "#bfc4c2");
+  fillRoundedRect(pixels, width, height, 1, 1, width - 2, height - 2, 11, "#eeeeed");
+  const approval = connected && state?.mode === "approval";
+  const heading = pending ? "SENDING" : approval ? "APPROVAL" : state?.mode === "confirmation" ? "CONFIRM FULL" : "PERMISSIONS";
+  drawText(pixels, width, height, heading, 63, 9, 1, "#77837e", 110, "middle");
+  if (approval) {
+    const colors = { once: "#087f5b", session: "#315d69", deny: "#ab4545" };
+    state.options.forEach((option, index) => {
+      const selected = option.id === choice;
+      const color = !option.enabled || pending ? "#8b9490" : colors[option.id];
+      const y = 25 + index * 30;
+      if (selected) fillRoundedRect(pixels, width, height, 8, y - 3, 110, 26, 6, color);
+      drawText(
+        pixels,
+        width,
+        height,
+        option.label,
+        63,
+        y + 2,
+        2,
+        selected ? "#ffffff" : color,
+        100,
+        "middle"
+      );
+    });
+  } else {
+    const label = !connected ? "OFFLINE" : state?.mode === "confirmation" ? "FULL" : state?.confirmationRequired ? "CONFIRM" : state?.policy?.label ?? "UNAVAILABLE";
+    const scale = Math.min(3, 108 / (Math.max(1, label.length) * 6));
+    const color = state?.policy?.label === "FULL" || state?.confirmationRequired ? "#94621b" : "#087f5b";
+    drawText(pixels, width, height, label, 63, 47, scale, color, 110, "middle");
+    const policies = state?.policies ?? [];
+    const gap = 4, segment = policies.length ? (96 - (policies.length - 1) * gap) / policies.length : 96;
+    policies.forEach((option, index) => fillRoundedRect(
+      pixels,
+      width,
+      height,
+      15 + index * (segment + gap),
+      91,
+      segment,
+      4,
+      1,
+      option.id === state.policy?.id ? color : "#c1c8c5"
+    ));
+    if (state?.mode === "confirmation") drawText(
+      pixels,
+      width,
+      height,
+      "LEFT TO CANCEL",
+      63,
+      86,
+      1,
+      "#77837e",
+      110,
+      "middle"
+    );
+    drawText(
+      pixels,
+      width,
+      height,
+      state?.mode === "confirmation" ? "PRESS TO ALLOW" : state?.confirmationRequired ? "CHECK CODEX" : "TURN TO CHANGE",
+      63,
+      108,
+      1,
+      "#77837e",
+      110,
+      "middle"
+    );
+  }
+  return pngDataUrl(pixels, width, height);
+}
+
 // plugin/app.js
 var PLUGIN_UUID = "com.ulanzi.ulanzistudio.codexmicro";
 var BRIDGE_URL = process.env.CODEX_BRIDGE_URL || "http://127.0.0.1:17373";
-var [address = "127.0.0.1", port = "3906"] = process.argv.slice(2);
+var [address = "127.0.0.1", port = "3906", language = "en-US"] = process.argv.slice(2);
 var HOST_URL = `ws://${address}:${port}`;
 var instances = /* @__PURE__ */ new Map();
 var PLUGIN_ROOT = (0, import_node_path2.resolve)((0, import_node_path2.dirname)((0, import_node_path2.resolve)(process.argv[1])), "..");
 var MANIFEST = JSON.parse((0, import_node_fs2.readFileSync)((0, import_node_path2.resolve)(PLUGIN_ROOT, "manifest.json"), "utf8"));
+var locale = /^zh[-_](HK|TW)/i.test(language) ? "zh_HK" : /^zh/i.test(language) ? "zh_CN" : { de: "de_DE", es: "es_ES", ja: "ja_JP", ko: "ko_KR", pt: "pt_PT" }[language.split(/[-_]/)[0]] || "en";
+var TEXT = JSON.parse((0, import_node_fs2.readFileSync)((0, import_node_path2.resolve)(PLUGIN_ROOT, `${locale}.json`), "utf8")).Localization;
 var bridgeSetup = createBridgeInstaller({
   pluginRoot: PLUGIN_ROOT,
   bridgeUrl: BRIDGE_URL,
@@ -4057,6 +4328,9 @@ var ACTION_LABELS = Object.freeze({
   pin: "PIN",
   new: "NEW",
   navigate: "LATEST",
+  model: "MODEL",
+  context: "CONTEXT",
+  permissions: "PERMISSIONS",
   fork: "FORK",
   steer: "STEER",
   mic: "MIC",
@@ -4075,6 +4349,111 @@ var pollTimer;
 var pollInFlight = false;
 var latestState = null;
 var setupOperation = null;
+var modelSelectionQueue = Promise.resolve();
+var contextMenuQueue = Promise.resolve();
+var modelSelectionsPending = 0;
+var composerRevision = 0;
+var permissionQueue = Promise.resolve();
+var permissionRevision = 0;
+var permissionOperationsPending = 0;
+var composerMemory = /* @__PURE__ */ new Map();
+var composerKey = (state) => state?.activeThreadKey ? String(state.activeThreadKey).replace(/^local:/, "") : state?.permissions?.contextKey ?? null;
+function setPermissionDisplay(instance) {
+  const state = latestState?.connected ? latestState.permissions : null;
+  const identity = `${state?.contextKey}:${state?.requestKey}`;
+  if (instance.permissionIdentity !== identity) {
+    instance.permissionIdentity = identity;
+    instance.permissionChoice = "once";
+    instance.permissionSubmitted = false;
+  }
+  const digest = JSON.stringify(["permissions", state, instance.permissionChoice, instance.permissionSubmitted, latestState?.connected]);
+  if (!instance.active || instance.lastDisplay === digest) return;
+  instance.lastDisplay = digest;
+  if (!instance.iconLayoutReady) {
+    send({
+      cmd: "setFeedbackLayout",
+      uuid: instance.uuid,
+      actionid: instance.actionid,
+      key: instance.key,
+      layout: "layouts/permissions-encoder.json"
+    });
+    instance.iconLayoutReady = true;
+  }
+  send({
+    cmd: "state",
+    uuid: instance.uuid,
+    actionid: instance.actionid,
+    key: instance.key,
+    param: { statelist: [{
+      uuid: instance.uuid,
+      actionid: instance.actionid,
+      key: instance.key,
+      type: 1,
+      data: permissionEncoderPng(
+        state,
+        instance.permissionChoice,
+        instance.permissionSubmitted,
+        Boolean(latestState?.connected)
+      ),
+      showtext: false,
+      textdata: ""
+    }] }
+  });
+}
+async function invokePermissionEncoder(instance, message) {
+  if (!instance.active || message.cmd === "dialup") return;
+  const rotation = String(message.rotateEvent || "").replace("\u2014", "-");
+  if (message.cmd === "dialrotate" && !["left", "right"].includes(rotation)) return;
+  const state = latestState?.connected && latestState.permissions;
+  if (!state?.contextKey) throw new Error("Codex permissions are not available");
+  let path;
+  if (state.mode === "confirmation") {
+    if (permissionOperationsPending > 0) return;
+    const action = message.cmd === "dialdown" ? "confirm" : message.cmd === "dialrotate" && rotation === "left" ? "cancel" : null;
+    if (!action) return;
+    path = `/permissions/${action}?context=${encodeURIComponent(state.contextKey)}&request=${encodeURIComponent(state.confirmationKey)}`;
+  } else if (state.mode === "approval") {
+    if (instance.permissionSubmitted) return;
+    if (message.cmd === "dialrotate" && ["left", "right"].includes(rotation)) {
+      const choices = state.options.filter((option) => option.enabled);
+      const current = choices.findIndex((option) => option.id === instance.permissionChoice);
+      const next = Math.max(0, Math.min(choices.length - 1, current + (rotation === "left" ? -1 : 1)));
+      if (choices[next]) instance.permissionChoice = choices[next].id;
+      setPermissionDisplay(instance);
+      return;
+    }
+    if (message.cmd !== "dialdown") return;
+    const choice = instance.permissionChoice || "once";
+    if (!state.options.some((option) => option.id === choice && option.enabled)) {
+      throw new Error("This approval option is not available");
+    }
+    instance.permissionSubmitted = true;
+    setPermissionDisplay(instance);
+    path = `/permissions/approval/${choice}?context=${encodeURIComponent(state.contextKey)}&request=${encodeURIComponent(state.requestKey)}`;
+  } else {
+    if (message.cmd !== "dialrotate" || !["left", "right"].includes(rotation)) return;
+    if (state.mode !== "policy") throw new Error("Codex permission policy is not available");
+    path = `/permissions/policy/${rotation}?context=${encodeURIComponent(state.contextKey)}`;
+  }
+  permissionOperationsPending++;
+  const control = async () => {
+    try {
+      const result = await bridgeRequest(path, "POST", 5e3);
+      permissionRevision++;
+      if (latestState?.permissions?.contextKey === state.contextKey && latestState.permissions.requestKey === state.requestKey) latestState.permissions = result.permissions;
+    } catch (error) {
+      if (instance.permissionIdentity === `${state.contextKey}:${state.requestKey}`) instance.permissionSubmitted = false;
+      throw error;
+    } finally {
+      permissionOperationsPending--;
+      renderAll();
+    }
+  };
+  const operation = permissionQueue.then(control, control);
+  permissionQueue = operation.catch(() => {
+  });
+  await operation;
+}
 function contextOf(message) {
   return String(message.actionid || `${message.uuid}___${message.key}`);
 }
@@ -4204,13 +4583,83 @@ function taskIconPath(status) {
   const value = String(status || "").toLowerCase();
   if (["working", "thinking", "running", "in_progress"].includes(value)) return TASK_ICON_PATHS.working;
   if (["unread", "complete", "completed", "done", "success"].includes(value)) return TASK_ICON_PATHS.complete;
-  if (["attention", "notification", "input", "approval", "waiting_input", "needs_input"].includes(value)) return TASK_ICON_PATHS.attention;
+  if (["attention", "notification", "input", "approval", "awaiting-approval", "awaiting-response", "waiting_input", "needs_input"].includes(value)) return TASK_ICON_PATHS.attention;
   if (["error", "failed", "failure"].includes(value)) return TASK_ICON_PATHS.error;
   return TASK_ICON_PATHS.idle;
 }
 function shortTitle(value) {
   const title = String(value || "Untitled").replace(/\s+/g, " ").trim();
   return title.length > 18 ? `${title.slice(0, 17)}\u2026` : title;
+}
+function taskTitle(task) {
+  const status = String(task.status || "").toLowerCase();
+  const label = ["awaiting-approval", "approval"].includes(status) ? TEXT.AwaitingApproval : ["awaiting-response", "input", "waiting_input", "needs_input"].includes(status) ? TEXT.AwaitingResponse : null;
+  return label ? `${label} \xB7 ${shortTitle(task.title)}` : shortTitle(task.title);
+}
+function setModelDisplay(instance) {
+  const composer = latestState?.connected ? latestState.composer : null;
+  const mode = instance.modelHeld && latestState?.composerAvailable !== false ? "reasoning" : "model";
+  const digest = JSON.stringify([Boolean(latestState?.connected), composer, mode]);
+  if (!instance.active || instance.lastDisplay === digest) return;
+  instance.lastDisplay = digest;
+  if (!instance.modelLayoutReady) {
+    send({
+      cmd: "setFeedbackLayout",
+      uuid: instance.uuid,
+      actionid: instance.actionid,
+      key: instance.key,
+      layout: "layouts/model-encoder.json"
+    });
+    instance.modelLayoutReady = true;
+  }
+  send({
+    cmd: "state",
+    uuid: instance.uuid,
+    actionid: instance.actionid,
+    key: instance.key,
+    param: {
+      statelist: [{
+        uuid: instance.uuid,
+        actionid: instance.actionid,
+        key: instance.key,
+        type: 1,
+        data: modelEncoderPng(composer, mode, Boolean(latestState?.connected)),
+        showtext: false
+      }]
+    }
+  });
+}
+function setEncoderIcon(instance, path) {
+  const digest = `encoder-icon:${path}`;
+  if (!instance.active || instance.lastDisplay === digest) return;
+  instance.lastDisplay = digest;
+  if (!instance.iconLayoutReady) {
+    send({
+      cmd: "setFeedbackLayout",
+      uuid: instance.uuid,
+      actionid: instance.actionid,
+      key: instance.key,
+      layout: `layouts/${actionName(instance.uuid)}-encoder.json`
+    });
+    instance.iconLayoutReady = true;
+  }
+  send({
+    cmd: "state",
+    uuid: instance.uuid,
+    actionid: instance.actionid,
+    key: instance.key,
+    param: {
+      statelist: [{
+        uuid: instance.uuid,
+        actionid: instance.actionid,
+        key: instance.key,
+        type: 2,
+        path,
+        showtext: false,
+        textdata: ""
+      }]
+    }
+  });
 }
 function setDisplay(instance, state, text) {
   const digest = `${state}:${text}`;
@@ -4274,25 +4723,29 @@ function renderInstance(instance) {
   const slot = taskSlot(instance.uuid);
   if (slot === null) {
     const action = actionName(instance.uuid);
+    if (action === "permissions") {
+      setPermissionDisplay(instance);
+      return;
+    }
+    if (action === "model") {
+      setModelDisplay(instance);
+      return;
+    }
+    if (action === "context") {
+      setEncoderIcon(instance, "assets/icons/context.png");
+      return;
+    }
+    if (action === "navigate") {
+      const task2 = latestState?.connected ? latestState.slots?.[0] : null;
+      setEncoderIcon(instance, task2?.threadKey ? taskIconPath(task2.status) : TASK_ICON_PATHS.idle);
+      return;
+    }
     if (!latestState?.connected) {
-      if (action === "navigate") {
-        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Bridge Offline");
-      } else {
-        setDisplay(instance, 0, "Bridge Offline");
-      }
+      setDisplay(instance, 0, "Bridge Offline");
       return;
     }
     if (action === "usage") {
       setUsageDisplay(instance, latestState.usage);
-      return;
-    }
-    if (action === "navigate") {
-      const task2 = latestState.slots?.[0];
-      if (!task2?.threadKey) {
-        setTaskDisplay(instance, TASK_ICON_PATHS.idle, "Latest Task");
-        return;
-      }
-      setTaskDisplay(instance, taskIconPath(task2.status), shortTitle(task2.title));
       return;
     }
     setDisplay(instance, 0, ACTION_LABELS[action] || "CODEX");
@@ -4307,15 +4760,15 @@ function renderInstance(instance) {
     setTaskDisplay(instance, TASK_ICON_PATHS.idle, `Task ${slot + 1}`);
     return;
   }
-  setTaskDisplay(instance, taskIconPath(task.status), shortTitle(task.title));
+  setTaskDisplay(instance, taskIconPath(task.status), taskTitle(task));
 }
 function renderAll() {
   for (const instance of instances.values()) renderInstance(instance);
 }
-async function bridgeRequest(path, method = "GET") {
+async function bridgeRequest(path, method = "GET", timeout = 1200) {
   const response = await fetch(`${BRIDGE_URL}${path}`, {
     method,
-    signal: AbortSignal.timeout(1200)
+    signal: AbortSignal.timeout(timeout)
   });
   const payload = await response.json();
   if (!response.ok || payload.ok === false) {
@@ -4331,8 +4784,26 @@ async function openTaskSlot(slot) {
 async function pollBridge() {
   if (pollInFlight) return;
   pollInFlight = true;
+  const revision = composerRevision;
+  const permissionsRevision = permissionRevision;
   try {
-    latestState = await bridgeRequest("/state");
+    const state = await bridgeRequest("/state");
+    const key = composerKey(state);
+    state.composerAvailable = Boolean(state.connected && state.composer?.model && state.permissions?.mode !== "approval" && !state.permissions?.confirmationRequired);
+    if (latestState?.connected && state.connected && (permissionOperationsPending > 0 || permissionsRevision !== permissionRevision) && latestState.permissions?.contextKey === state.permissions?.contextKey && latestState.permissions?.requestKey === state.permissions?.requestKey) {
+      state.permissions = latestState.permissions;
+    }
+    if (latestState?.connected && state.connected && (modelSelectionsPending > 0 || revision !== composerRevision) && key === composerKey(latestState)) {
+      state.composer = latestState.composer;
+    }
+    if (key && state.connected) {
+      if (state.composer?.model && state.composerAvailable) {
+        composerMemory.delete(key);
+        composerMemory.set(key, state.composer);
+        if (composerMemory.size > 50) composerMemory.delete(composerMemory.keys().next().value);
+      } else if (!state.composer) state.composer = composerMemory.get(key) ?? null;
+    }
+    latestState = state;
   } catch (error) {
     latestState = { connected: false, error: error.message, slots: [] };
   } finally {
@@ -4362,6 +4833,72 @@ async function invoke(instance, pressed) {
 }
 async function invokeEncoder(instance, message) {
   try {
+    if (actionName(instance.uuid) === "permissions") {
+      await invokePermissionEncoder(instance, message);
+      return;
+    }
+    if (actionName(instance.uuid) === "context") {
+      if (message.cmd === "dialdown") {
+        instance.contextPress = "pressed";
+        return;
+      }
+      const rotation = String(message.rotateEvent || "").replace("\u2014", "-");
+      let action = null;
+      if (message.cmd === "dialup") {
+        if (instance.contextPress === "pressed") action = "select";
+        instance.contextPress = null;
+      } else if (message.cmd === "dialrotate") {
+        action = { left: "up", right: "down", "hold-left": "close", "hold-right": "close" }[rotation];
+        if (action === "close") instance.contextPress = "rotated";
+      }
+      if (!action) return;
+      const navigate = () => bridgeRequest(`/composer/context/${action}`, "POST", 5e3);
+      const operation = contextMenuQueue.then(navigate, navigate);
+      contextMenuQueue = operation.catch(() => {
+      });
+      await operation;
+      return;
+    }
+    if (actionName(instance.uuid) === "model") {
+      if (!latestState?.connected || latestState.composerAvailable === false) {
+        instance.modelHeld = false;
+        renderInstance(instance);
+        return;
+      }
+      if (message.cmd === "dialdown" || message.cmd === "dialup") {
+        instance.modelHeld = message.cmd === "dialdown";
+        renderInstance(instance);
+        return;
+      }
+      if (message.cmd !== "dialrotate") return;
+      const rotation = String(message.rotateEvent || "").replace("\u2014", "-");
+      if (!["left", "right", "hold-left", "hold-right"].includes(rotation)) return;
+      const kind = rotation.startsWith("hold-") ? "reasoning" : "model";
+      instance.modelHeld = kind === "reasoning";
+      renderInstance(instance);
+      const direction = rotation.endsWith("left") ? "left" : "right";
+      const selectionKey = composerKey(latestState);
+      modelSelectionsPending += 1;
+      const select = async () => {
+        try {
+          if (latestState?.composerAvailable === false || composerKey(latestState) !== selectionKey) return;
+          const result = await bridgeRequest(`/composer/${kind}/${direction}`, "POST", 5e3);
+          composerRevision += 1;
+          if (latestState && composerKey(latestState) === selectionKey) {
+            latestState.composer = result.composer;
+            if (selectionKey) composerMemory.set(selectionKey, result.composer);
+          }
+          renderAll();
+        } finally {
+          modelSelectionsPending -= 1;
+        }
+      };
+      const operation = modelSelectionQueue.then(select, select);
+      modelSelectionQueue = operation.catch(() => {
+      });
+      await operation;
+      return;
+    }
     if (message.cmd === "dialdown") {
       await openTaskSlot(0);
       return;
@@ -4387,6 +4924,10 @@ function addInstance(message) {
     actionid: message.actionid,
     key: message.key,
     active: true,
+    modelHeld: false,
+    modelLayoutReady: false,
+    iconLayoutReady: false,
+    contextPress: null,
     lastDisplay: null
   };
   instance.active = true;
@@ -4409,8 +4950,12 @@ function handleMessage(raw) {
   if (message.cmd === "setactive") {
     const instance = instances.get(contextOf(message)) || addInstance(message);
     instance.active = Boolean(message.active);
+    instance.contextPress = null;
     if (instance.active) {
       instance.lastDisplay = null;
+      instance.modelHeld = false;
+      instance.modelLayoutReady = false;
+      instance.iconLayoutReady = false;
       renderInstance(instance);
     }
     ack(message);
@@ -4434,7 +4979,7 @@ function handleMessage(raw) {
   }
   if (["dialdown", "dialup", "dialrotate"].includes(message.cmd)) {
     const instance = instances.get(contextOf(message)) || addInstance(message);
-    if (actionName(instance.uuid) === "navigate") void invokeEncoder(instance, message);
+    if (["navigate", "model", "context", "permissions"].includes(actionName(instance.uuid))) void invokeEncoder(instance, message);
     ack(message);
     return;
   }
@@ -4449,6 +4994,13 @@ function connect() {
   socket = new wrapper_default(HOST_URL);
   socket.on("open", () => {
     send({ code: 0, cmd: "connected", uuid: PLUGIN_UUID });
+    for (const instance of instances.values()) {
+      instance.lastDisplay = null;
+      instance.modelHeld = false;
+      instance.modelLayoutReady = false;
+      instance.iconLayoutReady = false;
+      instance.contextPress = null;
+    }
     clearInterval(pollTimer);
     pollTimer = setInterval(() => void pollBridge(), 500);
     pollTimer.unref();

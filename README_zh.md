@@ -8,16 +8,19 @@
 
 OpenCodexMicro 通过本机回环 Bridge 暴露 Codex 的实时 Micro 状态，再由原生
 Ulanzi Studio 插件显示最近任务、精确切换任务，并提供 Fast、Usage、Pin、New、
-Fork、Steer、Mic、Submit 和 Latest Task & Scroll 旋钮操作。
+Fork、Steer、Mic、Submit、Latest Task & Scroll 和“模型与思考强度”旋钮操作。
 
 ## 实现的功能
 
 | 功能 | 行为 |
 | --- | --- |
-| 五个实时任务 Action | 展示 Codex Most Recent 任务及空闲、运行、完成、等待处理或错误状态 |
+| 五个实时任务 Action | 展示 Codex Most Recent 任务及空闲、运行、完成、待审批、待回复或错误状态 |
 | 精确任务切换 | 通过 Codex 自己的 Micro event bus 打开按键显示的任务 |
 | Codex 常用控制 | Fast、Usage、Pin、New、Fork、Steer、Mic 和 Submit |
 | 旋钮导航 | 按下打开 task1；左/右旋转通过 Ulanzi Studio hotkey 协议向上/向下滚动 |
+| 模型与思考强度旋钮 | 普通旋转切模型，按住旋转切思考强度，两个列表到首尾停止、不循环 |
+| 上下文导航旋钮 | 首次旋转打开附加（+ / @）菜单；左旋向上、右旋向下选择，单击确认，按住旋转关闭；菜单关闭时单击无响应 |
+| 权限审批旋钮 | 平时旋转切换当前会话权限策略；待审批时旋转选择 ONCE（允许一次）/ CHAT（允许此对话）/ DENY（拒绝），按下执行 |
 | Usage 显示 | 在按键上动态绘制剩余额度，点击后回到 Codex 应用 |
 | Ulanzi Studio 集成 | 由 Ulanzi Studio 独占设备并管理实体键位 |
 | 仅本机通信 | CDP 与 Bridge API 都只绑定回环地址 |
@@ -108,11 +111,26 @@ curl http://127.0.0.1:17373/state
 ## 配置
 
 实体布局完全由 Ulanzi Studio 管理。插件提供 Codex Task 1–5、Fast、Usage、Pin、
-New、Fork、Steer、Mic、Submit 和 Latest Task & Scroll 旋钮 Action，不需要额外的
+New、Fork、Steer、Mic、Submit、Latest Task & Scroll、“模型与思考强度”和“上下文导航”旋钮 Action，不需要额外的
 设备 daemon 或快捷键映射。
 
 选中任意已配置的 Action，即可打开共用的 **Codex Bridge 设置**页。该页面显示
 Bridge 安装、后台服务和 CDP 状态，并提供“安装 / 修复”和“启动”操作。
+
+“模型与思考强度”是独立的旋钮功能项。右旋朝最高档、左旋朝最低档；模型以 Codex
+列表首项为右端、末项为左端。按住右/左旋提高/降低思考强度，逐档切换，到两端停止、
+不循环。图形界面拆分模型版本与系列，显示档位刻度和强度条；按住时突出思考强度，
+单独按下不会更改选项。
+升级此功能时，插件和 Bridge 都需更新，可在配置页执行“安装 / 修复”。
+
+“上下文导航”控制输入框的“添加文件及更多”（+ / @）菜单。首次旋转只打开菜单，
+保留初始选中项；继续左旋向上、右旋向下选择，单击抬起时确认当前项；按住向任一
+方向旋转关闭菜单，抬起不确认。菜单关闭时，单击或按住旋转均无响应。
+入口通过结构属性定位，不依赖 Codex 的界面语言。新增此功能后，插件和
+Bridge 都需更新。
+
+任务 1–5 在等待审批和等待用户回答时显示明确的“待审批”或“待回复”标记并保留任务名，
+继续执行或完成后会恢复对应状态。
 
 在 macOS 中，请在“系统设置 > 隐私与安全性 > 辅助功能”中允许 Ulanzi Studio，
 否则旋钮无法发送鼠标滚轮事件。

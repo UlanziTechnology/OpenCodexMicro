@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="196" height="196" viewBox="0 0 196 196">
+  <defs>
+    <linearGradient id="bg" x2="0.8" y2="1"><stop stop-color="#253b32"/><stop offset="1" stop-color="#0b1510"/></linearGradient>
+    <linearGradient id="mint" x2="0.3" y2="1"><stop stop-color="#d2ffe8"/><stop offset="1" stop-color="#72cba7"/></linearGradient>
+  </defs>
+  <rect width="196" height="196" rx="30" fill="#080f0b"/>
+  <rect x="6" y="6" width="184" height="184" rx="26" fill="url(#bg)" stroke="#385345"/>
+  <path d="M49 141a65 65 0 1 1 99-4" fill="none" stroke="#304d3d" stroke-width="5" stroke-linecap="round"/>
+  <path d="M49 141a65 65 0 1 1 108-18" fill="none" stroke="url(#mint)" stroke-width="5" stroke-linecap="round"/>
+  <path d="m146 120 10 8 8-11" fill="none" stroke="#a3efcc" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="54" y="56" width="88" height="80" rx="18" fill="#14271c" stroke="#628e71" stroke-width="2"/>
+  <g stroke="#638b70" stroke-width="3" stroke-linecap="round">
+    <path d="M72 47v8m18-8v8m18-8v8m18-8v8M72 137v8m18-8v8m18-8v8m18-8v8M45 76h8m-8 20h8m-8 20h8m90-40h8m-8 20h8m-8 20h8"/>
+  </g>
+  <rect x="71" y="98" width="12" height="20" rx="4" fill="#8bd5af"/>
+  <rect x="92" y="84" width="12" height="34" rx="4" fill="#b1eed0"/>
+  <rect x="113" y="70" width="12" height="48" rx="4" fill="#edcc91"/>
+  <g fill="#466551"><rect x="69" y="163" width="14" height="4" rx="2"/><rect x="91" y="163" width="14" height="4" rx="2"/></g>
+  <rect x="113" y="163" width="14" height="4" rx="2" fill="#a7e6c5"/>
+</svg>

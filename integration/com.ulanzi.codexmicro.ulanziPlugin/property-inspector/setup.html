@@ -47,6 +47,10 @@
   <main>
     <h1 id="title"></h1>
     <p id="intro" class="intro"></p>
+    <section id="actionHelp" class="panel" hidden>
+      <strong id="actionHelpTitle"></strong>
+      <p id="actionHelpText" class="intro"></p>
+    </section>
     <section class="panel">
       <div class="row"><span id="appLabel"></span><span id="appValue" class="value"><i class="dot"></i><span></span></span></div>
       <div class="row"><span id="serviceLabel"></span><span id="serviceValue" class="value"><i class="dot"></i><span></span></span></div>
@@ -94,9 +98,17 @@
     };
 
     const query = new URLSearchParams(location.search);
-    const rawLanguage = query.get("language") || "en-US";
-    const locale = rawLanguage.startsWith("zh-HK") || rawLanguage.startsWith("zh-TW") ? "zh_HK" : rawLanguage.startsWith("zh") ? "zh_CN" : rawLanguage.split(/[-_]/)[0];
-    const t = { ...TEXT.en, ...(TEXT[locale] || {}) };
+    const rawLanguage = (query.get("language") || "en-US").replaceAll("_", "-").toLowerCase();
+    const locale = rawLanguage.startsWith("zh-hk") || rawLanguage.startsWith("zh-tw") ? "zh_HK" : rawLanguage.startsWith("zh") ? "zh_CN" : rawLanguage.split("-")[0];
+    const t = {
+      contextEncoderTitle: "Context Navigator",
+      permissionEncoderTitle: "Permission Pilot",
+      permissionEncoderHelp: "Turn to change the active chat's permission policy (ASK / REVIEW / FULL). During approval, choose ONCE / CHAT / DENY and press to submit. ONCE is selected initially. Unavailable options are skipped. For the FULL confirmation opened by this dial, press to confirm or turn left to cancel. Switching chats or closing the dialog invalidates confirmation.",
+      contextEncoderHelp: "First turn opens the + / @ context menu. Turn left to move up and right to move down. Click and release to select; hold and turn either way to close. Clicking or holding and turning while the menu is closed does nothing.",
+      modelEncoderTitle: "Model & Reasoning",
+      modelEncoderHelp: "Turn right toward the highest entry and left toward the lowest. Models run from Codex's last item on the left to its first on the right. Hold and turn to adjust reasoning effort. Lists stop at both ends. Holding highlights reasoning without changing the selection.",
+      ...TEXT.en, ...(TEXT[locale] || {})
+    };
     const connection = {
       address: query.get("address") || "127.0.0.1",
       port: query.get("port") || "3906",
@@ -115,6 +127,12 @@
         const response = await fetch(`../${resource}.json`);
         const localized = (await response.json()).Localization || {};
         Object.assign(t, {
+          contextEncoderTitle: localized.ContextEncoderTitle || t.contextEncoderTitle,
+          permissionEncoderTitle: localized.PermissionEncoderTitle || t.permissionEncoderTitle,
+          permissionEncoderHelp: localized.PermissionEncoderHelp || t.permissionEncoderHelp,
+          contextEncoderHelp: localized.ContextEncoderHelp || t.contextEncoderHelp,
+          modelEncoderTitle: localized.ModelEncoderTitle || t.modelEncoderTitle,
+          modelEncoderHelp: localized.ModelEncoderHelp || t.modelEncoderHelp,
           title: localized.BridgeSetup || t.title,
           intro: localized.BridgeSetupDescription || t.intro,
           app: localized.BridgeApp || t.app,
@@ -205,6 +223,21 @@
 
     async function start() {
       await loadLocalizedResources();
+      if (connection.uuid.endsWith(".model")) {
+        text("actionHelpTitle", t.modelEncoderTitle);
+        text("actionHelpText", t.modelEncoderHelp);
+        document.getElementById("actionHelp").hidden = false;
+      }
+      if (connection.uuid.endsWith(".context")) {
+        text("actionHelpTitle", t.contextEncoderTitle);
+        text("actionHelpText", t.contextEncoderHelp);
+        document.getElementById("actionHelp").hidden = false;
+      }
+      if (connection.uuid.endsWith(".permissions")) {
+        text("actionHelpTitle", t.permissionEncoderTitle);
+        text("actionHelpText", t.permissionEncoderHelp);
+        document.getElementById("actionHelp").hidden = false;
+      }
       text("title", t.title); text("intro", t.intro); text("appLabel", t.app); text("serviceLabel", t.service); text("cdpLabel", t.cdp);
       text("bridgeAppInfoTitle", t.bridgeAppInfoTitle); text("bridgeAppDescription", t.bridgeAppDescription); text("bridgeAppSafety", t.bridgeAppSafety); text("backgroundTitle", t.backgroundTitle); text("launchAgentDescription", t.launchAgentDescription); text("nodeSelectionStrategy", t.nodeSelectionStrategy); text("nodeInstallRecommendation", t.nodeInstallRecommendation); text("ulanziNodeSignatureNotice", t.ulanziNodeSignatureNotice); text("currentNodeRuntime", format(t.currentNode, { runtime:t.unknownNode }));
       text("install", t.install); text("launch", t.launch); text("uninstall", t.uninstall); text("refresh", t.refresh); text("guide", t.guide); text("message", t.checking);
