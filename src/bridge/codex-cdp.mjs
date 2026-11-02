@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import WebSocket from "ws";
 import { localThreadKey } from "./thread-key.mjs";
+import { selectRateLimitQuery } from "./rate-limit-query.mjs";
 import {
   collectRendererScriptUrls,
   readSignalValue,
@@ -268,25 +269,26 @@ const SNAPSHOT_EXPRESSION = `(async () => {
     if (!found) throw new Error("Codex Micro slot store was not found");
   }
   let usage = null;
-  for (const queryClient of queryClients) {
-    try {
-      const query = queryClient.getQueryCache().getAll().find((candidate) =>
-        JSON.stringify(candidate.queryKey) === '["rate-limit-status"]'
-      );
-      const now = Date.now();
-      const updatedAt = Number(query?.state?.dataUpdatedAt) || 0;
-      const refreshKey = Symbol.for("codex-keyboard-rate-limit-refresh-at");
-      const lastAttempt = Number(globalThis[refreshKey]) || 0;
-      if (
-        query && typeof query.fetch === "function" &&
-        now - updatedAt >= ${USAGE_REFRESH_MS} && now - lastAttempt >= ${USAGE_REFRESH_MS}
-      ) {
-        globalThis[refreshKey] = now;
-        try { Promise.resolve(query.fetch()).catch(() => {}); } catch {}
-      }
-      const data = query?.state?.data;
-      const rateLimit = data?.rate_limit;
-      if (!rateLimit || typeof rateLimit !== "object") continue;
+  const selectRateLimitQuery = ${selectRateLimitQuery.toString()};
+  try {
+    const queries = [...queryClients].flatMap((queryClient) => {
+      try { return queryClient.getQueryCache().getAll(); } catch { return []; }
+    });
+    const query = selectRateLimitQuery(queries);
+    const now = Date.now();
+    const updatedAt = Number(query?.state?.dataUpdatedAt) || 0;
+    const refreshKey = Symbol.for("codex-keyboard-rate-limit-refresh-at");
+    const lastAttempt = Number(globalThis[refreshKey]) || 0;
+    if (
+      query && typeof query.fetch === "function" &&
+      now - updatedAt >= ${USAGE_REFRESH_MS} && now - lastAttempt >= ${USAGE_REFRESH_MS}
+    ) {
+      globalThis[refreshKey] = now;
+      try { Promise.resolve(query.fetch()).catch(() => {}); } catch {}
+    }
+    const data = query?.state?.data;
+    const rateLimit = data?.rate_limit;
+    if (rateLimit && typeof rateLimit === "object") {
       const normalizeWindow = (window, role) => {
         if (!window || typeof window !== "object") return null;
         const usedPercent = Number(window.used_percent);
@@ -312,9 +314,8 @@ const SNAPSHOT_EXPRESSION = `(async () => {
         ].filter(Boolean),
         observedAt: updatedAt || now
       };
-      break;
-    } catch {}
-  }
+    }
+  } catch {}
   const active = document.querySelector("[data-app-action-sidebar-thread-id][data-app-action-sidebar-thread-active=true]")
     ?? document.querySelector("[data-app-action-sidebar-thread-id][aria-current=page]");
   const activeThreadKey = document.querySelector("[data-above-composer-conversation-id]")
