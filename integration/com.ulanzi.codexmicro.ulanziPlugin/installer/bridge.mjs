@@ -3710,7 +3710,7 @@ import { promisify as promisify2 } from "node:util";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-// ../../node_modules/ws/wrapper.mjs
+// node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
 var import_extension = __toESM(require_extension(), 1);
 var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
@@ -3745,6 +3745,50 @@ function decodeThreadPathSegment(segment) {
 }
 function localThreadKey(value) {
   return `local:${validateThreadId(value)}`;
+}
+
+// ../../src/bridge/rate-limit-query.mjs
+function selectRateLimitQuery(queries) {
+  const candidates = [];
+  for (const query of queries ?? []) {
+    const key = query?.queryKey;
+    if (!Array.isArray(key)) continue;
+    const legacy = key.length === 1 && key[0] === "rate-limit-status";
+    const account = key.length === 2 && key[0] === "account" && key[1] === "rateLimits";
+    const scoped2 = key.length === 3 && key[0] === "rate-limit-status" && key[1] !== "image-generation" && key.slice(1).every((value) => typeof value === "string" && value.trim());
+    if (!legacy && !account && !scoped2) continue;
+    let observed2 = false;
+    try {
+      observed2 = typeof query.getObserversCount === "function" ? query.getObserversCount() > 0 : (query.observers?.length ?? 0) > 0;
+    } catch {
+    }
+    candidates.push({
+      query,
+      identity: scoped2 ? JSON.stringify(key.slice(1)) : null,
+      observed: observed2
+    });
+  }
+  const observedScoped = candidates.filter(
+    (candidate) => candidate.observed && candidate.identity !== null
+  );
+  const observed = candidates.filter((candidate) => candidate.observed);
+  const scoped = candidates.filter((candidate) => candidate.identity !== null);
+  const pool = observedScoped.length ? observedScoped : observed.length ? observed : scoped.length ? scoped : candidates;
+  const identities = new Set(pool.map((candidate) => candidate.identity));
+  if (identities.size > 1) return null;
+  const selected = [...pool].sort(
+    (left, right) => (Number(right.query.state?.dataUpdatedAt) || 0) - (Number(left.query.state?.dataUpdatedAt) || 0)
+  )[0];
+  if (!selected) return null;
+  if (selected.identity !== null) {
+    const data = selected.query.state?.data;
+    const userId = data?.user_id ?? data?.userId;
+    const accountId = data?.account_id ?? data?.accountId;
+    const [, keyUserId, keyAccountId] = selected.query.queryKey;
+    if (userId != null && userId !== keyUserId) return null;
+    if (accountId != null && accountId !== "" && accountId !== keyAccountId) return null;
+  }
+  return selected.query;
 }
 
 // ../../src/bridge/renderer-resources.mjs
@@ -4443,25 +4487,26 @@ var SNAPSHOT_EXPRESSION = `(async () => {
     if (!found) throw new Error("Codex Micro slot store was not found");
   }
   let usage = null;
-  for (const queryClient of queryClients) {
-    try {
-      const query = queryClient.getQueryCache().getAll().find((candidate) =>
-        JSON.stringify(candidate.queryKey) === '["rate-limit-status"]'
-      );
-      const now = Date.now();
-      const updatedAt = Number(query?.state?.dataUpdatedAt) || 0;
-      const refreshKey = Symbol.for("codex-keyboard-rate-limit-refresh-at");
-      const lastAttempt = Number(globalThis[refreshKey]) || 0;
-      if (
-        query && typeof query.fetch === "function" &&
-        now - updatedAt >= ${USAGE_REFRESH_MS} && now - lastAttempt >= ${USAGE_REFRESH_MS}
-      ) {
-        globalThis[refreshKey] = now;
-        try { Promise.resolve(query.fetch()).catch(() => {}); } catch {}
-      }
-      const data = query?.state?.data;
-      const rateLimit = data?.rate_limit;
-      if (!rateLimit || typeof rateLimit !== "object") continue;
+  const selectRateLimitQuery = ${selectRateLimitQuery.toString()};
+  try {
+    const queries = [...queryClients].flatMap((queryClient) => {
+      try { return queryClient.getQueryCache().getAll(); } catch { return []; }
+    });
+    const query = selectRateLimitQuery(queries);
+    const now = Date.now();
+    const updatedAt = Number(query?.state?.dataUpdatedAt) || 0;
+    const refreshKey = Symbol.for("codex-keyboard-rate-limit-refresh-at");
+    const lastAttempt = Number(globalThis[refreshKey]) || 0;
+    if (
+      query && typeof query.fetch === "function" &&
+      now - updatedAt >= ${USAGE_REFRESH_MS} && now - lastAttempt >= ${USAGE_REFRESH_MS}
+    ) {
+      globalThis[refreshKey] = now;
+      try { Promise.resolve(query.fetch()).catch(() => {}); } catch {}
+    }
+    const data = query?.state?.data;
+    const rateLimit = data?.rate_limit;
+    if (rateLimit && typeof rateLimit === "object") {
       const normalizeWindow = (window, role) => {
         if (!window || typeof window !== "object") return null;
         const usedPercent = Number(window.used_percent);
@@ -4487,9 +4532,8 @@ var SNAPSHOT_EXPRESSION = `(async () => {
         ].filter(Boolean),
         observedAt: updatedAt || now
       };
-      break;
-    } catch {}
-  }
+    }
+  } catch {}
   const active = document.querySelector("[data-app-action-sidebar-thread-id][data-app-action-sidebar-thread-active=true]")
     ?? document.querySelector("[data-app-action-sidebar-thread-id][aria-current=page]");
   const activeThreadKey = document.querySelector("[data-above-composer-conversation-id]")
