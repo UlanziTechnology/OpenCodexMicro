@@ -3710,7 +3710,7 @@ import { promisify as promisify2 } from "node:util";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-// ../../node_modules/ws/wrapper.mjs
+// node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
 var import_extension = __toESM(require_extension(), 1);
 var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
@@ -3745,6 +3745,103 @@ function decodeThreadPathSegment(segment) {
 }
 function localThreadKey(value) {
   return `local:${validateThreadId(value)}`;
+}
+
+// ../../src/bridge/rate-limit-query.mjs
+function selectRateLimitQuery(queries) {
+  const candidates = [];
+  for (const query of queries ?? []) {
+    const key = query?.queryKey;
+    if (!Array.isArray(key)) continue;
+    const legacy = key.length === 1 && key[0] === "rate-limit-status";
+    const account = key.length === 2 && key[0] === "account" && key[1] === "rateLimits";
+    const scoped2 = key.length === 3 && key[0] === "rate-limit-status" && key[1] !== "image-generation" && key.slice(1).every((value) => typeof value === "string" && value.trim());
+    if (!legacy && !account && !scoped2) continue;
+    let observed2 = false;
+    try {
+      observed2 = typeof query.getObserversCount === "function" ? query.getObserversCount() > 0 : (query.observers?.length ?? 0) > 0;
+    } catch {
+    }
+    candidates.push({
+      query,
+      identity: scoped2 ? JSON.stringify(key.slice(1)) : null,
+      observed: observed2
+    });
+  }
+  const observedScoped = candidates.filter(
+    (candidate) => candidate.observed && candidate.identity !== null
+  );
+  const observed = candidates.filter((candidate) => candidate.observed);
+  const scoped = candidates.filter((candidate) => candidate.identity !== null);
+  const pool = observedScoped.length ? observedScoped : observed.length ? observed : scoped.length ? scoped : candidates;
+  const identities = new Set(pool.map((candidate) => candidate.identity));
+  if (identities.size > 1) return null;
+  const selected = [...pool].sort(
+    (left, right) => (Number(right.query.state?.dataUpdatedAt) || 0) - (Number(left.query.state?.dataUpdatedAt) || 0)
+  )[0];
+  if (!selected) return null;
+  if (selected.identity !== null) {
+    const data = selected.query.state?.data;
+    const userId = data?.user_id ?? data?.userId;
+    const accountId = data?.account_id ?? data?.accountId;
+    const [, keyUserId, keyAccountId] = selected.query.queryKey;
+    if (userId != null && userId !== keyUserId) return null;
+    if (accountId != null && accountId !== "" && accountId !== keyAccountId) return null;
+  }
+  return selected.query;
+}
+
+// ../../src/bridge/renderer-resources.mjs
+function collectRendererScriptUrls(frameTree) {
+  const urls = /* @__PURE__ */ new Set();
+  const visit = (tree) => {
+    for (const resource of tree?.resources ?? []) {
+      if (resource.type !== "Script") continue;
+      try {
+        const url = new URL(resource.url);
+        if (url.protocol === "app:" && url.pathname.startsWith("/assets/") && url.pathname.endsWith(".js")) {
+          urls.add(url.href);
+        }
+      } catch {
+      }
+    }
+    for (const child of tree?.childFrames ?? []) visit(child);
+  };
+  visit(frameTree);
+  return [...urls];
+}
+function rendererResourceUrls() {
+  return [.../* @__PURE__ */ new Set([
+    ...globalThis[Symbol.for("codex-keyboard-renderer-resource-urls")] ?? [],
+    ...[...document.querySelectorAll("link[href],script[src]")].map((element) => element.href || element.src),
+    ...performance.getEntriesByType("resource").map((entry) => entry.name)
+  ])].filter((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "app:" && url.pathname.startsWith("/assets/") && url.pathname.endsWith(".js");
+    } catch {
+      return false;
+    }
+  });
+}
+async function resolveMicroBus({ cachedBus, urls, importNamespace }) {
+  const isBus = (candidate) => Boolean(
+    candidate && typeof candidate === "object" && candidate.handlers instanceof Map && (typeof candidate.dispatchHostMessage === "function" || typeof candidate.dispatchMessage === "function")
+  );
+  if (isBus(cachedBus)) return cachedBus;
+  for (const url of [...new Set(urls)].filter((candidate) => /vscode-api|codex-micro|app-initial|app-shared/.test(candidate)).slice(0, 120)) {
+    try {
+      const namespace = await importNamespace(url);
+      const bus = Object.values(namespace).find(isBus);
+      if (bus) return bus;
+    } catch {
+    }
+  }
+  return null;
+}
+function readSignalValue(node, resolver, contextMap) {
+  const resolved = resolver.resolve(node, contextMap);
+  return node.store.get(resolved?.atom ?? resolved);
 }
 
 // ../../src/bridge/composer-control.mjs
@@ -4146,25 +4243,6 @@ var USAGE_REFRESH_MS = Math.max(
   15e3,
   Number(process.env.CODEX_KEYBOARD_USAGE_REFRESH_SECONDS || 600) * 1e3
 );
-async function resolveMicroBus({
-  cachedBus,
-  urls,
-  importNamespace
-}) {
-  const isBus = (candidate) => Boolean(
-    candidate && typeof candidate === "object" && candidate.handlers instanceof Map && (typeof candidate.dispatchHostMessage === "function" || typeof candidate.dispatchMessage === "function")
-  );
-  if (isBus(cachedBus)) return cachedBus;
-  for (const url of [...new Set(urls)].filter((candidate) => /vscode-api|codex-micro|app-initial/.test(candidate)).slice(0, 120)) {
-    try {
-      const namespace = await importNamespace(url);
-      const bus = Object.values(namespace).find(isBus);
-      if (bus) return bus;
-    } catch {
-    }
-  }
-  return null;
-}
 var DEVICE_STATE = {
   type: "codex-micro-device-state-changed",
   state: { status: "connected", error: null, battery: { percentage: 100, isCharging: true } }
@@ -4286,12 +4364,9 @@ var ENABLE_EXPRESSION = `(async () => {
       });
     }
     client._memoCache = {};
-    client.$emt?.({ name: "values_updated" });
+    client.$emt?.({ name: "values_updated", status: client.loadingStatus });
   }
-  const urls = [...new Set([
-    ...[...document.querySelectorAll("link[href],script[src]")].map((el) => el.href || el.src),
-    ...performance.getEntriesByType("resource").map((entry) => entry.name)
-  ])].filter((url) => url.includes("/assets/") && url.endsWith(".js"));
+  const urls = (${rendererResourceUrls.toString()})();
   const resolveMicroBus = ${resolveMicroBus.toString()};
   const bus = await resolveMicroBus({
     cachedBus: globalThis[Symbol.for("codex-keyboard-micro-bus")],
@@ -4315,15 +4390,14 @@ var SNAPSHOT_EXPRESSION = `(async () => {
   const validSlots = (slots) =>
     Array.isArray(slots) && slots.length === 6 &&
     slots.every((slot, index) => slot?.id === index);
+  const readSignalValue = ${readSignalValue.toString()};
   const readSource = (source) => {
     // A valid resolver may still refer to an old mount; periodically rediscover it.
     if (!source || source.root !== root || !source.node?.store ||
         !Number.isFinite(source.discoveredAt) || Date.now() - source.discoveredAt >= 2000) {
       throw new Error("Cached Codex Micro source is stale");
     }
-    const slots = source.node.store.get(
-      source.resolver.resolve(source.node, source.contextMap)
-    );
+    const slots = readSignalValue(source.node, source.resolver, source.contextMap);
     if (!validSlots(slots)) throw new Error("Cached Codex Micro slots are stale");
     return slots;
   };
@@ -4344,10 +4418,7 @@ var SNAPSHOT_EXPRESSION = `(async () => {
   }
 
   if (!found) {
-    const urls = [...new Set([
-      ...[...document.querySelectorAll("link[href],script[src]")].map((el) => el.href || el.src),
-      ...performance.getEntriesByType("resource").map((entry) => entry.name)
-    ])].filter((url) => url.includes("/assets/") && url.endsWith(".js"));
+    const urls = (${rendererResourceUrls.toString()})();
     const slotSignalsUrl = urls.find((url) => url.includes("/assets/codex-micro-slot-signals-"));
     if (!slotSignalsUrl) throw new Error("Codex Micro slot signals are not loaded");
 
@@ -4369,7 +4440,9 @@ var SNAPSHOT_EXPRESSION = `(async () => {
       candidate && typeof candidate === "object" &&
       typeof candidate.resolve === "function" && typeof candidate.createSubscriberAtom === "function"
     );
-    const queue = [root[reactKey]];
+    let rootFiber = root[reactKey];
+    while (rootFiber?.return) rootFiber = rootFiber.return;
+    const queue = [rootFiber?.stateNode?.current ?? rootFiber];
     const seen = new Set();
     queryClients = new Set();
     while (queue.length && seen.size < 30000 && !found) {
@@ -4389,7 +4462,7 @@ var SNAPSHOT_EXPRESSION = `(async () => {
           if (!node?.store || typeof node.store.get !== "function") continue;
           for (const resolver of resolvers) {
             try {
-              const slots = node.store.get(resolver.resolve(node, value));
+              const slots = readSignalValue(node, resolver, value);
               if (validSlots(slots)) {
                 found = slots;
                 source = {
@@ -4414,25 +4487,26 @@ var SNAPSHOT_EXPRESSION = `(async () => {
     if (!found) throw new Error("Codex Micro slot store was not found");
   }
   let usage = null;
-  for (const queryClient of queryClients) {
-    try {
-      const query = queryClient.getQueryCache().getAll().find((candidate) =>
-        JSON.stringify(candidate.queryKey) === '["rate-limit-status"]'
-      );
-      const now = Date.now();
-      const updatedAt = Number(query?.state?.dataUpdatedAt) || 0;
-      const refreshKey = Symbol.for("codex-keyboard-rate-limit-refresh-at");
-      const lastAttempt = Number(globalThis[refreshKey]) || 0;
-      if (
-        query && typeof query.fetch === "function" &&
-        now - updatedAt >= ${USAGE_REFRESH_MS} && now - lastAttempt >= ${USAGE_REFRESH_MS}
-      ) {
-        globalThis[refreshKey] = now;
-        try { Promise.resolve(query.fetch()).catch(() => {}); } catch {}
-      }
-      const data = query?.state?.data;
-      const rateLimit = data?.rate_limit;
-      if (!rateLimit || typeof rateLimit !== "object") continue;
+  const selectRateLimitQuery = ${selectRateLimitQuery.toString()};
+  try {
+    const queries = [...queryClients].flatMap((queryClient) => {
+      try { return queryClient.getQueryCache().getAll(); } catch { return []; }
+    });
+    const query = selectRateLimitQuery(queries);
+    const now = Date.now();
+    const updatedAt = Number(query?.state?.dataUpdatedAt) || 0;
+    const refreshKey = Symbol.for("codex-keyboard-rate-limit-refresh-at");
+    const lastAttempt = Number(globalThis[refreshKey]) || 0;
+    if (
+      query && typeof query.fetch === "function" &&
+      now - updatedAt >= ${USAGE_REFRESH_MS} && now - lastAttempt >= ${USAGE_REFRESH_MS}
+    ) {
+      globalThis[refreshKey] = now;
+      try { Promise.resolve(query.fetch()).catch(() => {}); } catch {}
+    }
+    const data = query?.state?.data;
+    const rateLimit = data?.rate_limit;
+    if (rateLimit && typeof rateLimit === "object") {
       const normalizeWindow = (window, role) => {
         if (!window || typeof window !== "object") return null;
         const usedPercent = Number(window.used_percent);
@@ -4458,9 +4532,8 @@ var SNAPSHOT_EXPRESSION = `(async () => {
         ].filter(Boolean),
         observedAt: updatedAt || now
       };
-      break;
-    } catch {}
-  }
+    }
+  } catch {}
   const active = document.querySelector("[data-app-action-sidebar-thread-id][data-app-action-sidebar-thread-active=true]")
     ?? document.querySelector("[data-app-action-sidebar-thread-id][aria-current=page]");
   const activeThreadKey = document.querySelector("[data-above-composer-conversation-id]")
@@ -4578,12 +4651,27 @@ var CodexCdpClient = class {
     socket.on("close", () => this.disconnect());
     socket.on("error", () => this.disconnect());
     this.socket = socket;
+    await this.refreshRendererResources();
     await this.evaluate(ENABLE_EXPRESSION);
+  }
+  async refreshRendererResources() {
+    const { frameTree } = await this.sendCommand("Page.getResourceTree", {});
+    const urls = collectRendererScriptUrls(frameTree);
+    await this.evaluate(`(() => {
+      globalThis[Symbol.for("codex-keyboard-renderer-resource-urls")] = ${JSON.stringify(urls)};
+      return true;
+    })()`);
   }
   async snapshot() {
     await this.connect();
     try {
-      this.lastSnapshot = await this.evaluate(SNAPSHOT_EXPRESSION);
+      try {
+        this.lastSnapshot = await this.evaluate(SNAPSHOT_EXPRESSION);
+      } catch (error) {
+        if (!/Codex Micro slot signals are not loaded/.test(error.message)) throw error;
+        await this.refreshRendererResources();
+        this.lastSnapshot = await this.evaluate(SNAPSHOT_EXPRESSION);
+      }
       return this.lastSnapshot;
     } catch (error) {
       this.disconnect();
@@ -4669,21 +4757,17 @@ var CodexCdpClient = class {
         );
       let bus = globalThis[cacheKey];
       if (!isMicroBus(bus)) {
-        const urls = [...new Set([
-          ...[...document.querySelectorAll("link[href],script[src]")].map((element) => element.href || element.src),
-          ...performance.getEntriesByType("resource").map((entry) => entry.name)
-        ])]
-          .filter((url) => url.includes("/assets/") && url.endsWith(".js"));
-        bus = null;
-        for (const url of urls) {
-          try {
-            const namespace = await import(url);
-            bus = Object.values(namespace).find(isMicroBus);
-            if (bus) {
-              globalThis[cacheKey] = bus;
-              break;
-            }
-          } catch {}
+        const urls = (${rendererResourceUrls.toString()})();
+        const resolveMicroBus = ${resolveMicroBus.toString()};
+        bus = await resolveMicroBus({
+          cachedBus: null,
+          urls,
+          importNamespace: (url) => import(url)
+        });
+        if (isMicroBus(bus)) {
+          globalThis[cacheKey] = bus;
+        } else {
+          bus = null;
         }
       }
       if (!bus) throw new Error("Codex Micro event bus was not found");
@@ -4730,6 +4814,13 @@ var CodexCdpClient = class {
     })()`);
   }
   evaluate(expression) {
+    return this.sendCommand("Runtime.evaluate", {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    });
+  }
+  sendCommand(method, params) {
     if (!this.socket || this.socket.readyState !== wrapper_default.OPEN) {
       return Promise.reject(new Error("Codex bridge is disconnected"));
     }
@@ -4739,11 +4830,11 @@ var CodexCdpClient = class {
         this.pending.delete(id);
         reject(new Error("Codex runtime response timed out"));
       }, 7e3);
-      this.pending.set(id, { resolve, reject, timer: timer2 });
+      this.pending.set(id, { resolve, reject, timer: timer2, method });
       this.socket.send(JSON.stringify({
         id,
-        method: "Runtime.evaluate",
-        params: { expression, awaitPromise: true, returnByValue: true }
+        method,
+        params
       }));
     });
   }
@@ -4764,7 +4855,7 @@ var CodexCdpClient = class {
         message.result.exceptionDetails.exception?.description ?? message.result.exceptionDetails.text ?? "Codex evaluation failed"
       ));
     }
-    pending.resolve(message.result?.result?.value);
+    pending.resolve(pending.method === "Runtime.evaluate" ? message.result?.result?.value : message.result);
   }
   disconnect() {
     const socket = this.socket;
