@@ -3701,16 +3701,16 @@ var require_websocket_server = __commonJS({
   }
 });
 
-// ../../src/bridge/server.mjs
+// src/bridge/server.mjs
 import { createServer } from "node:http";
 import { execFile as execFile2 } from "node:child_process";
 import { promisify as promisify2 } from "node:util";
 
-// ../../src/bridge/codex-cdp.mjs
+// src/bridge/codex-cdp.mjs
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-// node_modules/ws/wrapper.mjs
+// ../../openCodexMicro/ulanzi-official/node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
 var import_extension = __toESM(require_extension(), 1);
 var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
@@ -3721,7 +3721,7 @@ var import_websocket = __toESM(require_websocket(), 1);
 var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
 
-// ../../src/bridge/thread-key.mjs
+// src/bridge/thread-key.mjs
 var UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 var THREAD_KEY_PATTERN = new RegExp(
   `^(?:${UUID_PATTERN}|client-new-thread:${UUID_PATTERN})$`,
@@ -3747,7 +3747,7 @@ function localThreadKey(value) {
   return `local:${validateThreadId(value)}`;
 }
 
-// ../../src/bridge/rate-limit-query.mjs
+// src/bridge/rate-limit-query.mjs
 function selectRateLimitQuery(queries) {
   const candidates = [];
   for (const query of queries ?? []) {
@@ -3791,7 +3791,78 @@ function selectRateLimitQuery(queries) {
   return selected.query;
 }
 
-// ../../src/bridge/renderer-resources.mjs
+// src/bridge/rspack-modules.mjs
+async function resolveRspackModules({ urls, importNamespace, cache = {} }) {
+  const isRuntime = (value) => typeof value === "function" && value.c && typeof value.c === "object" && value.m && typeof value.m === "object";
+  let runtime = cache.runtime;
+  if (!isRuntime(runtime)) {
+    for (const url of [...new Set(urls)].filter((value) => {
+      try {
+        const parsed = new URL(value);
+        return parsed.protocol === "app:" && !parsed.search && !parsed.hash && /^\/assets\/[^/]+\.js$/.test(parsed.pathname);
+      } catch {
+        return false;
+      }
+    }).slice(0, 12)) {
+      try {
+        const candidate = (await importNamespace(url)).__webpack_require__;
+        if (isRuntime(candidate)) {
+          runtime = cache.runtime = candidate;
+          break;
+        }
+      } catch {
+      }
+    }
+  }
+  const empty = { resolvers: [], bus: null };
+  if (!isRuntime(runtime)) return empty;
+  const ids = Object.keys(runtime.c);
+  if (cache.bindings && cache.modules === runtime.c && cache.moduleCount === ids.length) return cache.bindings;
+  const resolvers = /* @__PURE__ */ new Set();
+  const buses = /* @__PURE__ */ new Set();
+  let sourceBytes = 0;
+  let inspected = 0;
+  for (const id of ids.slice(0, 2e4)) {
+    const module = runtime.c[id];
+    const factory = runtime.m[id];
+    if (!module || module.error || typeof factory !== "function") continue;
+    const source = Function.prototype.toString.call(factory);
+    sourceBytes += source.length;
+    if (sourceBytes > 64 * 1024 * 1024) break;
+    const slots = source.includes("inactivityTimeoutMs") && source.includes("voiceState") && source.includes("threadKeys") && /(?:\bslots|["']slots["'])\s*:/.test(source);
+    const bus = source.includes("handlers") && /dispatchHostMessage|dispatchMessage/.test(source);
+    if (!slots && !bus) continue;
+    if (++inspected > 256) break;
+    let exports = module.exports;
+    if (runtime.aE && exports?.[runtime.aE]) exports = exports[runtime.aE];
+    if (!exports || !["object", "function"].includes(typeof exports)) continue;
+    for (const key of Object.keys(exports).slice(0, 64)) {
+      try {
+        const value = exports[key];
+        if (!value || typeof value !== "object") continue;
+        if (slots && resolvers.size < 24 && typeof value.resolve === "function" && typeof value.createSubscriberAtom === "function") resolvers.add(value);
+        if (bus && value.handlers instanceof Map && (typeof value.dispatchHostMessage === "function" || typeof value.dispatchMessage === "function")) buses.add(value);
+      } catch {
+      }
+    }
+  }
+  const bindings = {
+    resolvers: [...resolvers],
+    bus: buses.size === 1 ? [...buses][0] : null
+  };
+  if (bindings.resolvers.length && bindings.bus) {
+    cache.bindings = bindings;
+    cache.modules = runtime.c;
+    cache.moduleCount = ids.length;
+  } else {
+    delete cache.bindings;
+    delete cache.modules;
+    delete cache.moduleCount;
+  }
+  return bindings;
+}
+
+// src/bridge/renderer-resources.mjs
 function collectRendererScriptUrls(frameTree) {
   const urls = /* @__PURE__ */ new Set();
   const visit = (tree) => {
@@ -3824,6 +3895,35 @@ function rendererResourceUrls() {
     }
   });
 }
+async function collectRendererCoreUrls({ urls, readSource }) {
+  const result = new Set(urls);
+  const visited = /* @__PURE__ */ new Set();
+  const isCore = (value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "app:" && /^\/assets\/(?:index(?:\.client)?|app-(?:main|runtime|initial|shared|primary)|vscode-api|codex-micro-(?:bridge|slot-signals))-[^/]+\.js$/.test(url.pathname);
+    } catch {
+      return false;
+    }
+  };
+  for (let depth = 0; depth < 6 && visited.size < 12; depth += 1) {
+    const batch = [...result].filter((url) => isCore(url) && !visited.has(url)).slice(0, 12 - visited.size);
+    if (!batch.length) break;
+    for (const url of batch) visited.add(url);
+    const sources = await Promise.allSettled(batch.map((url) => readSource(url)));
+    for (const [index, source] of sources.entries()) {
+      if (source.status !== "fulfilled" || typeof source.value !== "string") continue;
+      const imports = source.value.matchAll(
+        /(?:\bfrom\s*|\bimport\s*\(\s*)["'`](\.\/(?:app-(?:main|runtime|initial|shared|primary)|vscode-api|codex-micro-(?:bridge|slot-signals))-[^/"'`?#]+\.js)["'`]/g
+      );
+      for (const match of imports) {
+        const dependency = new URL(match[1], batch[index]);
+        if (isCore(dependency.href)) result.add(dependency.href);
+      }
+    }
+  }
+  return [...result];
+}
 async function resolveMicroBus({ cachedBus, urls, importNamespace }) {
   const isBus = (candidate) => Boolean(
     candidate && typeof candidate === "object" && candidate.handlers instanceof Map && (typeof candidate.dispatchHostMessage === "function" || typeof candidate.dispatchMessage === "function")
@@ -3844,7 +3944,7 @@ function readSignalValue(node, resolver, contextMap) {
   return node.store.get(resolved?.atom ?? resolved);
 }
 
-// ../../src/bridge/composer-control.mjs
+// src/bridge/composer-control.mjs
 async function composerControl(kind = "read", direction) {
   const trigger = [...document.querySelectorAll('[data-composer-navigation-target="reasoning"]')].find((element) => element.getClientRects().length > 0 && !element.closest(
     '[data-app-shell-active-page="false"],[hidden],[inert],[aria-hidden="true"]'
@@ -3939,7 +4039,7 @@ function composerControlExpression(kind, direction) {
   return `(${composerControl.toString()})(${JSON.stringify(kind)}, ${JSON.stringify(direction)})`;
 }
 
-// ../../src/bridge/permission-control.mjs
+// src/bridge/permission-control.mjs
 async function permissionControl(command = { kind: "read" }) {
   if (!command || !["read", "policy", "approval", "confirm", "cancel"].includes(command.kind) || command.kind === "policy" && !["left", "right"].includes(command.direction) || command.kind === "approval" && !["once", "session", "deny"].includes(command.decision)) {
     throw new Error("Invalid permission command");
@@ -4189,7 +4289,7 @@ function permissionControlExpression(command) {
   return `(${permissionControl.toString()})(${JSON.stringify(command)})`;
 }
 
-// ../../src/bridge/context-menu-control.mjs
+// src/bridge/context-menu-control.mjs
 async function contextMenuControl(action) {
   if (!["up", "down", "select", "close"].includes(action)) {
     throw new Error("Invalid context menu action");
@@ -4237,7 +4337,7 @@ function contextMenuControlExpression(action) {
   return `(${contextMenuControl.toString()})(${JSON.stringify(action)})`;
 }
 
-// ../../src/bridge/codex-cdp.mjs
+// src/bridge/codex-cdp.mjs
 var execFileAsync = promisify(execFile);
 var USAGE_REFRESH_MS = Math.max(
   15e3,
@@ -4281,6 +4381,11 @@ var STEER_ACTION_LABELS = Object.freeze([
   "\u8ABF\u6574\u65B9\u5411",
   "\u5F15\u5C0E"
 ]);
+var RSPACK_BINDINGS_EXPRESSION = `(await (${resolveRspackModules.toString()})({
+  urls: (${rendererResourceUrls.toString()})(),
+  importNamespace: (url) => import(url),
+  cache: globalThis[Symbol.for("codex-keyboard-rspack-modules")] ??= {}
+}))`;
 function rendererActionExpression(action) {
   return `(() => {
     const action = ${JSON.stringify(action)};
@@ -4368,11 +4473,12 @@ var ENABLE_EXPRESSION = `(async () => {
   }
   const urls = (${rendererResourceUrls.toString()})();
   const resolveMicroBus = ${resolveMicroBus.toString()};
-  const bus = await resolveMicroBus({
+  let bus = await resolveMicroBus({
     cachedBus: globalThis[Symbol.for("codex-keyboard-micro-bus")],
     urls,
     importNamespace: (url) => import(url)
   });
+  if (!bus) bus = ${RSPACK_BINDINGS_EXPRESSION}.bus;
   if (bus) {
     globalThis[Symbol.for("codex-keyboard-micro-bus")] = bus;
     const dispatch = bus.dispatchHostMessage ?? bus.dispatchMessage;
@@ -4420,10 +4526,16 @@ var SNAPSHOT_EXPRESSION = `(async () => {
   if (!found) {
     const urls = (${rendererResourceUrls.toString()})();
     const slotSignalsUrl = urls.find((url) => url.includes("/assets/codex-micro-slot-signals-"));
-    if (!slotSignalsUrl) throw new Error("Codex Micro slot signals are not loaded");
+    const rspack = slotSignalsUrl ? null : ${RSPACK_BINDINGS_EXPRESSION};
+    const signals = slotSignalsUrl ? await import(slotSignalsUrl) : null;
+    const resolvers = signals ? Object.values(signals).filter((candidate) =>
+      candidate && typeof candidate === "object" &&
+      typeof candidate.resolve === "function" && typeof candidate.createSubscriberAtom === "function"
+    ) : rspack.resolvers;
+    if (!resolvers.length) throw new Error("Codex Micro slot signals are not loaded");
 
     const resolveMicroBus = ${resolveMicroBus.toString()};
-    const bus = await resolveMicroBus({
+    const bus = rspack?.bus ?? await resolveMicroBus({
       cachedBus: globalThis[Symbol.for("codex-keyboard-micro-bus")],
       urls,
       importNamespace: (url) => import(url)
@@ -4435,17 +4547,12 @@ var SNAPSHOT_EXPRESSION = `(async () => {
       }
     }
 
-    const signals = await import(slotSignalsUrl);
-    const resolvers = Object.values(signals).filter((candidate) =>
-      candidate && typeof candidate === "object" &&
-      typeof candidate.resolve === "function" && typeof candidate.createSubscriberAtom === "function"
-    );
     let rootFiber = root[reactKey];
     while (rootFiber?.return) rootFiber = rootFiber.return;
     const queue = [rootFiber?.stateNode?.current ?? rootFiber];
     const seen = new Set();
     queryClients = new Set();
-    while (queue.length && seen.size < 30000 && !found) {
+    while (queue.length && seen.size < 30000) {
       const fiber = queue.pop();
       if (!fiber || seen.has(fiber)) continue;
       seen.add(fiber);
@@ -4457,7 +4564,7 @@ var SNAPSHOT_EXPRESSION = `(async () => {
           value && typeof value.getQueryCache === "function" &&
           typeof value.getQueryData === "function"
         ) queryClients.add(value);
-        if (!(value instanceof Map)) continue;
+        if (found || !(value instanceof Map)) continue;
         for (const node of value.values()) {
           if (!node?.store || typeof node.store.get !== "function") continue;
           for (const resolver of resolvers) {
@@ -4470,8 +4577,9 @@ var SNAPSHOT_EXPRESSION = `(async () => {
                   node,
                   resolver,
                   contextMap: value,
+                  moduleFormat: rspack ? "rspack" : "esm",
                   discoveredAt: Date.now(),
-                  queryClients: [...queryClients]
+                  queryClients: []
                 };
                 globalThis[sourceKey] = source;
                 break;
@@ -4480,11 +4588,11 @@ var SNAPSHOT_EXPRESSION = `(async () => {
           }
           if (found) break;
         }
-        if (found) break;
       }
       queue.push(fiber.child, fiber.sibling);
     }
     if (!found) throw new Error("Codex Micro slot store was not found");
+    source.queryClients = [...queryClients];
   }
   let usage = null;
   const selectRateLimitQuery = ${selectRateLimitQuery.toString()};
@@ -4557,6 +4665,7 @@ var SNAPSHOT_EXPRESSION = `(async () => {
     usage,
     bridgeSnapshot: {
       source: cacheHit ? "cache" : "discovery",
+      moduleFormat: source.moduleFormat ?? "esm",
       durationMs: performance.now() - startedAt
     }
   };
@@ -4657,8 +4766,19 @@ var CodexCdpClient = class {
   async refreshRendererResources() {
     const { frameTree } = await this.sendCommand("Page.getResourceTree", {});
     const urls = collectRendererScriptUrls(frameTree);
-    await this.evaluate(`(() => {
-      globalThis[Symbol.for("codex-keyboard-renderer-resource-urls")] = ${JSON.stringify(urls)};
+    await this.evaluate(`(async () => {
+      const key = Symbol.for("codex-keyboard-renderer-resource-urls");
+      globalThis[key] = ${JSON.stringify(urls)};
+      const rendererResourceUrls = ${rendererResourceUrls.toString()};
+      const collectRendererCoreUrls = ${collectRendererCoreUrls.toString()};
+      globalThis[key] = await collectRendererCoreUrls({
+        urls: rendererResourceUrls(),
+        readSource: async (url) => {
+          const response = await fetch(url, { signal: AbortSignal.timeout(700) });
+          if (!response.ok) throw new Error("Codex core module is unavailable");
+          return response.text();
+        }
+      });
       return true;
     })()`);
   }
@@ -4764,6 +4884,7 @@ var CodexCdpClient = class {
           urls,
           importNamespace: (url) => import(url)
         });
+        if (!bus) bus = ${RSPACK_BINDINGS_EXPRESSION}.bus;
         if (isMicroBus(bus)) {
           globalThis[cacheKey] = bus;
         } else {
@@ -4869,7 +4990,7 @@ var CodexCdpClient = class {
   }
 };
 
-// ../../src/bridge/server.mjs
+// src/bridge/server.mjs
 var execFileAsync2 = promisify2(execFile2);
 var HOST = "127.0.0.1";
 var PORT = Number(process.env.CODEX_KEYBOARD_PORT || 17373);
