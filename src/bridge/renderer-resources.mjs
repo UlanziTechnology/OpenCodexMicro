@@ -34,6 +34,37 @@ export function rendererResourceUrls() {
   });
 }
 
+export async function collectRendererCoreUrls({ urls, readSource }) {
+  const result = new Set(urls);
+  const visited = new Set();
+  const isCore = (value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "app:" &&
+        /^\/assets\/(?:index(?:\.client)?|app-(?:main|runtime|initial|shared|primary)|vscode-api|codex-micro-(?:bridge|slot-signals))-[^/]+\.js$/.test(url.pathname);
+    } catch { return false; }
+  };
+  // Static imports can be absent from both CDP resources and Resource Timing.
+  for (let depth = 0; depth < 6 && visited.size < 12; depth += 1) {
+    const batch = [...result].filter((url) => isCore(url) && !visited.has(url))
+      .slice(0, 12 - visited.size);
+    if (!batch.length) break;
+    for (const url of batch) visited.add(url);
+    const sources = await Promise.allSettled(batch.map((url) => readSource(url)));
+    for (const [index, source] of sources.entries()) {
+      if (source.status !== "fulfilled" || typeof source.value !== "string") continue;
+      const imports = source.value.matchAll(
+        /(?:\bfrom\s*|\bimport\s*\(\s*)["'`](\.\/(?:app-(?:main|runtime|initial|shared|primary)|vscode-api|codex-micro-(?:bridge|slot-signals))-[^/"'`?#]+\.js)["'`]/g
+      );
+      for (const match of imports) {
+        const dependency = new URL(match[1], batch[index]);
+        if (isCore(dependency.href)) result.add(dependency.href);
+      }
+    }
+  }
+  return [...result];
+}
+
 export async function resolveMicroBus({ cachedBus, urls, importNamespace }) {
   const isBus = (candidate) => Boolean(
     candidate && typeof candidate === "object" &&

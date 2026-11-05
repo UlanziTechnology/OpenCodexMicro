@@ -3,11 +3,61 @@ import test from "node:test";
 import vm from "node:vm";
 import { CodexCdpClient } from "../src/bridge/codex-cdp.mjs";
 import {
+  collectRendererCoreUrls,
   collectRendererScriptUrls,
   readSignalValue,
   rendererResourceUrls,
   resolveMicroBus
 } from "../src/bridge/renderer-resources.mjs";
+
+test("cold resource discovery follows core static imports absent from CDP and timing", async () => {
+  const shared = "app://-/assets/app-shared-a.js";
+  const initial = "app://-/assets/app-initial-b.js";
+  const primary = "app://-/assets/app-primary-c.js";
+  const bridge = "app://-/assets/codex-micro-bridge-d.js";
+  const slots = "app://-/assets/codex-micro-slot-signals-e.js";
+  const calls = [];
+  const sources = new Map([
+    [shared, `import { value } from "./app-initial-b.js"; import x from "./unrelated.js";`],
+    [initial, `import { value } from './app-primary-c.js'; import x from "https://example.com/app-initial-x.js";`],
+    [primary, 'import { value } from "./app-shared-a.js"; const micro = () => import(`./codex-micro-bridge-d.js`);'],
+    [bridge, `import { value } from "./codex-micro-slot-signals-e.js";`],
+    [slots, ""]
+  ]);
+  assert.deepEqual(await collectRendererCoreUrls({
+    urls: [shared, "app://-/assets/unrelated.js"],
+    readSource: async (url) => { calls.push(url); return sources.get(url); }
+  }), [shared, "app://-/assets/unrelated.js", initial, primary, bridge, slots]);
+  assert.deepEqual(calls, [shared, initial, primary, bridge, slots]);
+});
+
+test("core discovery tolerates unavailable source and bounds dependency reads", async () => {
+  const urls = Array.from({ length: 20 }, (_, index) => `app://-/assets/app-shared-${index}.js`);
+  let reads = 0;
+  const result = await collectRendererCoreUrls({
+    urls,
+    readSource: async () => { reads += 1; throw new Error("Not available"); }
+  });
+  assert.deepEqual(result, urls);
+  assert.equal(reads, 12);
+});
+
+test("entry-only discovery reaches Micro signals through main and lazy bridge imports", async () => {
+  const urls = ["index-a", "app-main-b", "app-initial-c", "app-runtime-d", "app-primary-e", "codex-micro-bridge-f", "codex-micro-slot-signals-g"]
+    .map((name) => `app://-/assets/${name}.js`);
+  const sources = new Map([
+    [urls[0], "import('./app-main-b.js')"],
+    [urls[1], `import x from "./app-initial-c.js"; import y from "./app-runtime-d.js";`],
+    [urls[2], ""],
+    [urls[3], `import x from "./app-primary-e.js";`],
+    [urls[4], "import(`./codex-micro-bridge-f.js`)"],
+    [urls[5], `import x from "./codex-micro-slot-signals-g.js";`],
+    [urls[6], ""]
+  ]);
+  assert.deepEqual(await collectRendererCoreUrls({
+    urls: [urls[0]], readSource: async (url) => sources.get(url)
+  }), urls);
+});
 
 test("CDP resources retain loaded Micro scripts after Resource Timing is cleared", () => {
   const shared = "app://-/assets/app-shared-hash.js";
