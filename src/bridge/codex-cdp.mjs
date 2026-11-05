@@ -3,7 +3,9 @@ import { promisify } from "node:util";
 import WebSocket from "ws";
 import { localThreadKey } from "./thread-key.mjs";
 import { selectRateLimitQuery } from "./rate-limit-query.mjs";
+import { resolveRspackModules } from "./rspack-modules.mjs";
 import {
+  collectRendererCoreUrls,
   collectRendererScriptUrls,
   readSignalValue,
   rendererResourceUrls,
@@ -59,6 +61,12 @@ const STEER_ACTION_LABELS = Object.freeze([
   "調整方向",
   "引導"
 ]);
+
+const RSPACK_BINDINGS_EXPRESSION = `(await (${resolveRspackModules.toString()})({
+  urls: (${rendererResourceUrls.toString()})(),
+  importNamespace: (url) => import(url),
+  cache: globalThis[Symbol.for("codex-keyboard-rspack-modules")] ??= {}
+}))`;
 
 export function rendererActionExpression(action) {
   return `(() => {
@@ -149,11 +157,12 @@ const ENABLE_EXPRESSION = `(async () => {
   }
   const urls = (${rendererResourceUrls.toString()})();
   const resolveMicroBus = ${resolveMicroBus.toString()};
-  const bus = await resolveMicroBus({
+  let bus = await resolveMicroBus({
     cachedBus: globalThis[Symbol.for("codex-keyboard-micro-bus")],
     urls,
     importNamespace: (url) => import(url)
   });
+  if (!bus) bus = ${RSPACK_BINDINGS_EXPRESSION}.bus;
   if (bus) {
     globalThis[Symbol.for("codex-keyboard-micro-bus")] = bus;
     const dispatch = bus.dispatchHostMessage ?? bus.dispatchMessage;
@@ -163,7 +172,7 @@ const ENABLE_EXPRESSION = `(async () => {
   return { ready: clients.length > 0, clients: clients.length };
 })()`;
 
-const SNAPSHOT_EXPRESSION = `(async () => {
+export const SNAPSHOT_EXPRESSION = `(async () => {
   const startedAt = performance.now();
   const root = document.getElementById("root");
   const reactKey = root && Object.getOwnPropertyNames(root).find((key) => key.startsWith("__reactContainer$"));
@@ -202,10 +211,16 @@ const SNAPSHOT_EXPRESSION = `(async () => {
   if (!found) {
     const urls = (${rendererResourceUrls.toString()})();
     const slotSignalsUrl = urls.find((url) => url.includes("/assets/codex-micro-slot-signals-"));
-    if (!slotSignalsUrl) throw new Error("Codex Micro slot signals are not loaded");
+    const rspack = slotSignalsUrl ? null : ${RSPACK_BINDINGS_EXPRESSION};
+    const signals = slotSignalsUrl ? await import(slotSignalsUrl) : null;
+    const resolvers = signals ? Object.values(signals).filter((candidate) =>
+      candidate && typeof candidate === "object" &&
+      typeof candidate.resolve === "function" && typeof candidate.createSubscriberAtom === "function"
+    ) : rspack.resolvers;
+    if (!resolvers.length) throw new Error("Codex Micro slot signals are not loaded");
 
     const resolveMicroBus = ${resolveMicroBus.toString()};
-    const bus = await resolveMicroBus({
+    const bus = rspack?.bus ?? await resolveMicroBus({
       cachedBus: globalThis[Symbol.for("codex-keyboard-micro-bus")],
       urls,
       importNamespace: (url) => import(url)
@@ -217,17 +232,12 @@ const SNAPSHOT_EXPRESSION = `(async () => {
       }
     }
 
-    const signals = await import(slotSignalsUrl);
-    const resolvers = Object.values(signals).filter((candidate) =>
-      candidate && typeof candidate === "object" &&
-      typeof candidate.resolve === "function" && typeof candidate.createSubscriberAtom === "function"
-    );
     let rootFiber = root[reactKey];
     while (rootFiber?.return) rootFiber = rootFiber.return;
     const queue = [rootFiber?.stateNode?.current ?? rootFiber];
     const seen = new Set();
     queryClients = new Set();
-    while (queue.length && seen.size < 30000 && !found) {
+    while (queue.length && seen.size < 30000) {
       const fiber = queue.pop();
       if (!fiber || seen.has(fiber)) continue;
       seen.add(fiber);
@@ -239,7 +249,7 @@ const SNAPSHOT_EXPRESSION = `(async () => {
           value && typeof value.getQueryCache === "function" &&
           typeof value.getQueryData === "function"
         ) queryClients.add(value);
-        if (!(value instanceof Map)) continue;
+        if (found || !(value instanceof Map)) continue;
         for (const node of value.values()) {
           if (!node?.store || typeof node.store.get !== "function") continue;
           for (const resolver of resolvers) {
@@ -252,8 +262,9 @@ const SNAPSHOT_EXPRESSION = `(async () => {
                   node,
                   resolver,
                   contextMap: value,
+                  moduleFormat: rspack ? "rspack" : "esm",
                   discoveredAt: Date.now(),
-                  queryClients: [...queryClients]
+                  queryClients: []
                 };
                 globalThis[sourceKey] = source;
                 break;
@@ -262,11 +273,11 @@ const SNAPSHOT_EXPRESSION = `(async () => {
           }
           if (found) break;
         }
-        if (found) break;
       }
       queue.push(fiber.child, fiber.sibling);
     }
     if (!found) throw new Error("Codex Micro slot store was not found");
+    source.queryClients = [...queryClients];
   }
   let usage = null;
   const selectRateLimitQuery = ${selectRateLimitQuery.toString()};
@@ -339,6 +350,7 @@ const SNAPSHOT_EXPRESSION = `(async () => {
     usage,
     bridgeSnapshot: {
       source: cacheHit ? "cache" : "discovery",
+      moduleFormat: source.moduleFormat ?? "esm",
       durationMs: performance.now() - startedAt
     }
   };
@@ -439,8 +451,19 @@ export class CodexCdpClient {
     // Resource Timing can be cleared while imported modules remain loaded.
     const { frameTree } = await this.sendCommand("Page.getResourceTree", {});
     const urls = collectRendererScriptUrls(frameTree);
-    await this.evaluate(`(() => {
-      globalThis[Symbol.for("codex-keyboard-renderer-resource-urls")] = ${JSON.stringify(urls)};
+    await this.evaluate(`(async () => {
+      const key = Symbol.for("codex-keyboard-renderer-resource-urls");
+      globalThis[key] = ${JSON.stringify(urls)};
+      const rendererResourceUrls = ${rendererResourceUrls.toString()};
+      const collectRendererCoreUrls = ${collectRendererCoreUrls.toString()};
+      globalThis[key] = await collectRendererCoreUrls({
+        urls: rendererResourceUrls(),
+        readSource: async (url) => {
+          const response = await fetch(url, { signal: AbortSignal.timeout(700) });
+          if (!response.ok) throw new Error("Codex core module is unavailable");
+          return response.text();
+        }
+      });
       return true;
     })()`);
   }
@@ -558,6 +581,7 @@ export class CodexCdpClient {
           urls,
           importNamespace: (url) => import(url)
         });
+        if (!bus) bus = ${RSPACK_BINDINGS_EXPRESSION}.bus;
         if (isMicroBus(bus)) {
           globalThis[cacheKey] = bus;
         } else {
